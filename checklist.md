@@ -26,7 +26,7 @@ NOTE: WHEN WORKING THROUGH CHECKLIST, MARK OFF COMPLETED ITEMS, ADD MISSING ITEM
 * [x] Fully asynchronous DNS resolution (c-ares required)
 * [x] Integrate c-ares with libev using c-ares fds → `ev_io` watchers and c-ares timeouts → `ev_timer`
 * [ ] Enforce aggressive reuse of TCP/TLS sessions to minimize handshake overhead
-* [ ] Optional TCP_NODELAY and optimized buffer sizes per connection
+* [x] Optional TCP_NODELAY and optimized buffer sizes per connection
 * [ ] Lock-free I/O path where possible (minimize mutex usage)
 
 **Next steps**
@@ -101,6 +101,7 @@ NOTE: WHEN WORKING THROUGH CHECKLIST, MARK OFF COMPLETED ITEMS, ADD MISSING ITEM
 ## **Code Quality / Portability**
 
 * [x] Modern build system (Meson)
+* [x] Targeted unit tests for TCP tuning options (tcp_nodelay + buffer sizing)
 * [ ] Broad unit-test coverage and fuzz testing
 * [ ] Minimized legacy code and compatibility hacks
 * [ ] Clean modular architecture oriented around event loop–driven state machines

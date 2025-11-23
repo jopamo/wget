@@ -33,6 +33,7 @@ sources = [
   'recur.c',
   'res.c',
   'retr.c',
+  'socket_opts.c',
   'signals.c',
   'spider.c',
   'strcase.c',

@@ -325,6 +325,9 @@ static const struct {
     {"spider", &opt.spider, cmd_boolean},
     {"startpos", &opt.start_pos, cmd_bytes},
     {"strictcomments", &opt.strict_comments, cmd_boolean},
+    {"tcpnodelay", &opt.tcp_nodelay, cmd_boolean},
+    {"tcprecvbuf", &opt.tcp_rcvbuf, cmd_bytes},
+    {"tcpsndbuf", &opt.tcp_sndbuf, cmd_bytes},
     {"timeout", NULL, cmd_spec_timeout},
     {"timestamping", &opt.timestamping, cmd_boolean},
     {"tries", &opt.ntry, cmd_number_inf},
@@ -414,6 +417,9 @@ void defaults(void) {
   opt.if_modified_since = true;
 
   opt.read_timeout = 900;
+  opt.tcp_nodelay = false;
+  opt.tcp_rcvbuf = 0;
+  opt.tcp_sndbuf = 0;
   opt.use_robots = true;
 
   opt.remove_listing = true;

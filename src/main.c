@@ -376,6 +376,9 @@ static struct cmdline_option option_data[] = {
     {"spider", 0, OPT_BOOLEAN, "spider", -1},
     {"start-pos", 0, OPT_VALUE, "startpos", -1},
     {"strict-comments", 0, OPT_BOOLEAN, "strictcomments", -1},
+    {"tcp-nodelay", 0, OPT_BOOLEAN, "tcpnodelay", -1},
+    {"tcp-recv-buffer", 0, OPT_VALUE, "tcprecvbuf", -1},
+    {"tcp-send-buffer", 0, OPT_VALUE, "tcpsndbuf", -1},
     {"timeout", 'T', OPT_VALUE, "timeout", -1},
     {"timestamping", 'N', OPT_BOOLEAN, "timestamping", -1},
     {"if-modified-since", 0, OPT_BOOLEAN, "ifmodifiedsince", -1},
@@ -644,6 +647,12 @@ Download:\n"),
        --bind-address=ADDRESS      bind to ADDRESS (hostname or IP) on local host\n"),
                                N_("\
        --limit-rate=RATE           limit download rate to RATE\n"),
+                               N_("\
+       --tcp-nodelay               enable TCP_NODELAY on all TCP sockets\n"),
+                               N_("\
+       --tcp-recv-buffer=BYTES     force the TCP receive buffer to BYTES\n"),
+                               N_("\
+       --tcp-send-buffer=BYTES     force the TCP send buffer to BYTES\n"),
                                N_("\
        --no-dns-cache              disable caching DNS lookups\n"),
                                N_("\

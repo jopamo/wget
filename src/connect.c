@@ -19,6 +19,9 @@
 #include <netdb.h>
 #endif /* def __VMS [else] */
 #include <netinet/in.h>
+#ifdef HAVE_NETINET_TCP_H
+#include <netinet/tcp.h>
+#endif
 #ifndef __BEOS__
 #include <arpa/inet.h>
 #endif
@@ -34,6 +37,7 @@
 #include "connect.h"
 #include "hash.h"
 #include "evhelpers.h"
+#include "socket_opts.h"
 
 #include <stdint.h>
 
@@ -308,6 +312,11 @@ static int connect_with_timeout(int fd, const struct sockaddr* addr, socklen_t a
   return 0;
 }
 
+static void socket_apply_buffer_size(int sock, int optname, const char* optlabel, int value) {
+  if (setsockopt(sock, SOL_SOCKET, optname, (void*)&value, (socklen_t)sizeof(value)))
+    logprintf(LOG_NOTQUIET, _("setsockopt %s failed: %s\n"), optlabel, strerror(errno));
+}
+
 /* Connect via TCP to the specified address and port
    If PRINT is non-NULL, it is the host name to print that we're
    connecting to */
@@ -363,21 +372,25 @@ int connect_to_ip(const ip_address* ip, int port, const char* print) {
   }
 #endif
 
-  /* For very small rate limits, set the buffer size (and hence,
-     hopefully, the kernel's TCP window size) to the per-second limit
-     That way we should never have to sleep for more than 1s between
-     network reads */
-  if (opt.limit_rate && opt.limit_rate < 8192) {
-    int bufsize = opt.limit_rate;
-    if (bufsize < 512)
-      bufsize = 512; /* avoid pathologically small values */
 #ifdef SO_RCVBUF
-    if (setsockopt(sock, SOL_SOCKET, SO_RCVBUF, (void*)&bufsize, (socklen_t)sizeof(bufsize)))
-      logprintf(LOG_NOTQUIET, _("setsockopt SO_RCVBUF failed: %s\n"), strerror(errno));
+  int configured_rcvbuf = wget_socket_rcvbuf_value(&opt);
+  if (configured_rcvbuf > 0)
+    socket_apply_buffer_size(sock, SO_RCVBUF, "SO_RCVBUF", configured_rcvbuf);
 #endif
-    /* When we add limit_rate support for writing, which is useful
-       for POST, we should also set SO_SNDBUF here */
+
+#ifdef SO_SNDBUF
+  int configured_sndbuf = wget_socket_sndbuf_value(&opt);
+  if (configured_sndbuf > 0)
+    socket_apply_buffer_size(sock, SO_SNDBUF, "SO_SNDBUF", configured_sndbuf);
+#endif
+
+#ifdef TCP_NODELAY
+  if (wget_socket_use_nodelay(&opt)) {
+    int flag = 1;
+    if (setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (void*)&flag, (socklen_t)sizeof(flag)))
+      logprintf(LOG_NOTQUIET, _("setsockopt TCP_NODELAY failed: %s\n"), strerror(errno));
   }
+#endif
 
   if (opt.bind_address) {
     /* Bind the client side of the socket to the requested address */

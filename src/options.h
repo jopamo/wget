@@ -157,6 +157,9 @@ struct options {
   double read_timeout;    /* The read/write timeout. */
   double dns_timeout;     /* The DNS timeout. */
   double connect_timeout; /* The connect timeout. */
+  bool tcp_nodelay;       /* Enable TCP_NODELAY on sockets. */
+  wgint tcp_rcvbuf;       /* Override SO_RCVBUF, 0 to auto. */
+  wgint tcp_sndbuf;       /* Override SO_SNDBUF, 0 to auto. */
 
   bool random_wait; /* vary from 0 .. wait secs by random()? */
   double wait;      /* The wait period between retrievals. */

@@ -37,3 +37,18 @@ evhelpers_test = executable(
 )
 
 test('evhelpers_wait_and_sleep', evhelpers_test)
+
+socket_opts_sources = files(
+  'socket_opts_test.c',
+  '../src/socket_opts.c',
+)
+
+socket_opts_test = executable(
+  'socket_opts_test',
+  socket_opts_sources,
+  include_directories: test_includes,
+  dependencies: [],
+  install: false,
+)
+
+test('socket_opts_logic', socket_opts_test)

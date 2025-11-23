@@ -170,6 +170,9 @@ endif
 if cc.has_header('pwd.h')
   conf.set('HAVE_PWD_H', 1)
 endif
+if cc.has_header('netinet/tcp.h')
+  conf.set('HAVE_NETINET_TCP_H', 1)
+endif
 if cc.has_function('drand48', prefix: '#include <stdlib.h>')
   conf.set('HAVE_DRAND48', 1)
 endif
