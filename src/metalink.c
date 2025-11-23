@@ -479,8 +479,14 @@ retrieve_from_metalink (const metalink_t* metalink)
 
               opt.metalink_over_http = false;
               DEBUGP (("Storing to %s\n", destname));
-              retr_err = retrieve_url (url, mres->url, NULL, NULL,
-                                       NULL, NULL, opt.recursive, iri, false);
+              {
+                struct transfer_context tctx;
+                transfer_context_prepare (&tctx, &opt, mres->url);
+                retr_err = retrieve_url (url, mres->url, NULL, NULL,
+                                         NULL, NULL, opt.recursive, iri, false,
+                                         &tctx);
+                transfer_context_free (&tctx);
+              }
               opt.metalink_over_http = _metalink_http;
 
               /*
@@ -1212,8 +1218,13 @@ fetch_metalink_file (const char *url_str,
   opt.metalink_over_http = metalink_http;
 
   DEBUGP (("Storing to %s\n", local_file));
-  retr_err = retrieve_url (url, url_str, NULL, NULL,
-                           NULL, NULL, opt.recursive, iri, false);
+  {
+    struct transfer_context tctx;
+    transfer_context_prepare (&tctx, &opt, url_str);
+    retr_err = retrieve_url (url, url_str, NULL, NULL,
+                             NULL, NULL, opt.recursive, iri, false, &tctx);
+    transfer_context_free (&tctx);
+  }
 
   if (retr_err == RETROK)
     {

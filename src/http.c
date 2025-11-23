@@ -2838,8 +2838,14 @@ skip_content_type:
                   uerr_t retr_err;
 
                   opt.metalink_over_http = false;
-                  retr_err = retrieve_url (url, urlstr, NULL, NULL,
-                                           NULL, NULL, false, iri, false);
+                  {
+                    struct transfer_context tctx;
+                    transfer_context_prepare (&tctx, &opt, urlstr);
+                    retr_err = retrieve_url (url, urlstr, NULL, NULL,
+                                             NULL, NULL, false, iri, false,
+                                             &tctx);
+                    transfer_context_free (&tctx);
+                  }
                   opt.metalink_over_http = _metalink_http;
 
                   url_free (url);
@@ -4230,7 +4236,7 @@ check_retry_on_http_error (const int statcode)
 uerr_t
 http_loop (const struct url *u, struct url *original_url, char **newloc,
            char **local_file, const char *referer, int *dt, struct url *proxy,
-           struct iri *iri)
+           struct iri *iri, struct transfer_context *tctx)
 {
   int count;
   bool got_head = false;         /* used for time-stamping and filename detection */
@@ -4863,17 +4869,29 @@ Remote file exists.\n\n"));
   while (!opt.ntry || (count < opt.ntry));
 
 exit:
-  if ((ret == RETROK || opt.content_on_error) && local_file)
-    {
-      /* Bugfix: Prevent SIGSEGV when hstat.local_file was left NULL
-         (i.e. due to opt.content_disposition).  */
-      if (hstat.local_file)
-        {
-          *local_file = hstat.local_file;
-          hstat.local_file = NULL;
-        }
-    }
-  free_hstat (&hstat);
+  {
+    const char *final_path = hstat.local_file;
+    if ((ret == RETROK || opt.content_on_error) && local_file)
+      {
+        /* Bugfix: Prevent SIGSEGV when hstat.local_file was left NULL
+           (i.e. due to opt.content_disposition).  */
+        if (hstat.local_file)
+          {
+            *local_file = hstat.local_file;
+            final_path = *local_file;
+            hstat.local_file = NULL;
+          }
+      }
+
+    if (tctx)
+      {
+        if (final_path)
+          transfer_context_set_local_file (tctx, final_path);
+        transfer_context_record_stats (tctx, hstat.len, hstat.dltime);
+      }
+
+    free_hstat (&hstat);
+  }
 
   return ret;
 }

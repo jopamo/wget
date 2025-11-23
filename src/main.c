@@ -2168,8 +2168,11 @@ only if outputting to a regular file.\n"));
             }
           else
             {
+              struct transfer_context tctx;
+              transfer_context_prepare (&tctx, &opt, t);
               retrieve_url (url_parsed, t, &filename, &redirected_URL, NULL,
-                            &dt, opt.recursive, iri, true);
+                            &dt, opt.recursive, iri, true, &tctx);
+              transfer_context_free (&tctx);
             }
 
           if (opt.delete_after && filename != NULL && file_exists_p (filename, NULL))

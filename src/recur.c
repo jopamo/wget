@@ -327,8 +327,11 @@ retrieve_tree (struct url *start_url_parsed, struct iri *pi)
           else
             {
 
+              struct transfer_context tctx;
+              transfer_context_prepare (&tctx, &opt, url);
               status = retrieve_url (url_parsed, url, &file, &redirected, referer,
-                                     &dt, false, i, true);
+                                     &dt, false, i, true, &tctx);
+              transfer_context_free (&tctx);
 
               if (html_allowed && file && status == RETROK
                   && (dt & RETROKF) && (dt & TEXTHTML))

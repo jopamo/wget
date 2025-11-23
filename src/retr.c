@@ -870,7 +870,8 @@ static char *getproxy (struct url *);
 uerr_t
 retrieve_url (struct url * orig_parsed, const char *origurl, char **file,
               char **newloc, const char *refurl, int *dt, bool recursive,
-              struct iri *iri, bool register_status)
+              struct iri *iri, bool register_status,
+              struct transfer_context *tctx)
 {
   uerr_t result;
   char *url;
@@ -887,6 +888,14 @@ retrieve_url (struct url * orig_parsed, const char *origurl, char **file,
   char *saved_body_data = NULL;
   char *saved_method = NULL;
   char *saved_body_file_name = NULL;
+
+  if (tctx)
+    {
+      if (!tctx->has_options)
+        transfer_context_snapshot_options (tctx, &opt);
+      if (!tctx->requested_uri && origurl)
+        transfer_context_set_requested_uri (tctx, origurl);
+    }
 
   /* If dt is NULL, use local storage.  */
   if (!dt)
@@ -971,7 +980,7 @@ retrieve_url (struct url * orig_parsed, const char *origurl, char **file,
 	}
 #endif
       result = http_loop (u, orig_parsed, &mynewloc, &local_file, refurl, dt,
-                          proxy_url, iri);
+                          proxy_url, iri, tctx);
     }
   else if (u->scheme == SCHEME_FTP
 #ifdef HAVE_SSL
@@ -1146,6 +1155,9 @@ retrieve_url (struct url * orig_parsed, const char *origurl, char **file,
         register_css (local_file);
     }
 
+  if (tctx)
+    transfer_context_set_local_file (tctx, local_file);
+
   if (file)
     *file = local_file ? local_file : NULL;
   else
@@ -1227,10 +1239,15 @@ static uerr_t retrieve_from_url_list(struct urlpos *url_list, int *count, struct
           opt.follow_ftp = old_follow_ftp;
         }
       else
-        status = retrieve_url (parsed_url ? parsed_url : cur_url->url,
-                               cur_url->url->url, &filename,
-                               &new_file, NULL, &dt, opt.recursive, tmpiri,
-                               true);
+        {
+          struct transfer_context tctx;
+          transfer_context_prepare (&tctx, &opt, cur_url->url->url);
+          status = retrieve_url (parsed_url ? parsed_url : cur_url->url,
+                                 cur_url->url->url, &filename,
+                                 &new_file, NULL, &dt, opt.recursive, tmpiri,
+                                 true, &tctx);
+          transfer_context_free (&tctx);
+        }
       xfree (proxy);
 
       if (parsed_url)
@@ -1289,8 +1306,13 @@ retrieve_from_file (const char *file, bool html, int *count)
       if (!opt.base_href)
         opt.base_href = xstrdup (url);
 
-      status = retrieve_url (url_parsed, url, &url_file, NULL, NULL, &dt,
-                             false, iri, true);
+      {
+        struct transfer_context tctx;
+        transfer_context_prepare (&tctx, &opt, url);
+        status = retrieve_url (url_parsed, url, &url_file, NULL, NULL, &dt,
+                               false, iri, true, &tctx);
+        transfer_context_free (&tctx);
+      }
       url_free (url_parsed);
 
       if (!url_file || (status != RETROK))

@@ -32,6 +32,7 @@ as that of the covered work.  */
 #define RETR_H
 
 #include "url.h"
+#include "transfer.h"
 
 extern int numurls;
 
@@ -61,7 +62,8 @@ char *fd_read_hunk (int, hunk_terminator_t, long, long);
 char *fd_read_line (int);
 
 uerr_t retrieve_url (struct url *, const char *, char **, char **,
-                     const char *, int *, bool, struct iri *, bool);
+                     const char *, int *, bool, struct iri *, bool,
+                     struct transfer_context *);
 uerr_t retrieve_from_file (const char *, bool, int *);
 
 const char *retr_rate (wgint, double);

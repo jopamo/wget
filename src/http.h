@@ -32,11 +32,12 @@ as that of the covered work.  */
 #define HTTP_H
 
 #include "hsts.h"
+#include "transfer.h"
 
 struct url;
 
 uerr_t http_loop (const struct url *, struct url *, char **, char **, const char *,
-                  int *, struct url *, struct iri *);
+                  int *, struct url *, struct iri *, struct transfer_context *);
 void save_cookies (void);
 void http_cleanup (void);
 time_t http_atotm (const char *);

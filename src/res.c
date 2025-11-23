@@ -566,8 +566,11 @@ res_retrieve_file (const char *url, char **file, struct iri *iri)
     }
   else
     {
+      struct transfer_context tctx;
+      transfer_context_prepare (&tctx, &opt, robots_url);
       err = retrieve_url (url_parsed, robots_url, file, NULL, NULL, NULL,
-                          false, i, false);
+                          false, i, false, &tctx);
+      transfer_context_free (&tctx);
       url_free(url_parsed);
     }
 
