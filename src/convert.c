@@ -237,13 +237,15 @@ static void convert_links(const char* file, struct urlpos* links) {
     return;
   }
 
+  const size_t fm_length = fm->length < 0 ? 0 : (size_t)fm->length;
+
   /* Here we loop through all the URLs in file, replacing those of
      them that are downloaded with relative references */
   p = fm->content;
   for (link = links; link; link = link->next) {
     char* url_start = fm->content + link->pos;
 
-    if ((size_t)link->pos >= fm->length) {
+    if (link->pos < 0 || (size_t)link->pos >= fm_length) {
       DEBUGP(("Something strange is going on.  Please investigate."));
       break;
     }
@@ -331,8 +333,11 @@ static void convert_links(const char* file, struct urlpos* links) {
   }
 
   /* Output the rest of the file */
-  if ((size_t)(p - fm->content) < fm->length)
-    fwrite(p, 1, fm->length - (size_t)(p - fm->content), fp);
+  {
+    const size_t written = (size_t)(p - fm->content);
+    if (written < fm_length)
+      fwrite(p, 1, fm_length - written, fp);
+  }
 
   fclose(fp);
   wget_read_file_free(fm);
