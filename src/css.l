@@ -73,7 +73,8 @@ badstring1      \"([^\n\r\f\\"]|\\{nl}|{escape})*\\?
 badstring2      \'([^\n\r\f\\']|\\{nl}|{escape})*\\?
 badcomment1     \/\*[^*]*\*+([^/*][^*]*\*+)*
 badcomment2     \/\*[^*]*(\*+[^/*][^*]*)*
-baduri1         url\({w}([!#$%&*-\[\]-~]|{nonascii}|{escape})*{w}
+urlchar         [!#$%&*-/0-9:-@A-Z\[\]\\\]^_`{|}~]
+baduri1         url\({w}({urlchar}|{nonascii}|{escape})*{w}
 baduri2         url\({w}{string}{w}
 baduri3         url\({w}{badstring}
 comment		\/\*[^*]*\*+([^/*][^*]*\*+)*\/
@@ -84,7 +85,7 @@ string		{string1}|{string2}
 badstring       {badstring1}|{badstring2}
 badcomment      {badcomment1}|{badcomment2}
 baduri          {baduri1}|{baduri2}|{baduri3}
-url		([!#$%&*-~]|{nonascii}|{escape})*
+url		({urlchar}|{nonascii}|{escape})*
 s		[ \t\r\n\f]+
 w		{s}?
 nl		\n|\r\n|\r|\f
