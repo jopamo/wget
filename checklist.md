@@ -27,7 +27,7 @@ NOTE: WHEN WORKING THROUGH CHECKLIST, MARK OFF COMPLETED ITEMS, ADD MISSING ITEM
 * [x] Integrate c-ares with libev using c-ares fds → `ev_io` watchers and c-ares timeouts → `ev_timer`
 * [ ] Enforce aggressive reuse of TCP/TLS sessions to minimize handshake overhead — update `src/http.c`, `src/openssl.c`, `src/host.c`
 * [x] Optional TCP_NODELAY and optimized buffer sizes per connection
-* [ ] Lock-free I/O path where possible (minimize mutex usage) — update `src/threading.c`, `src/evloop.c`
+* [x] Lock-free I/O path where possible (minimize mutex usage) — update `src/threading.c`, `src/evloop.c`
 
 **Next steps**
 - Promote per-transfer state machines to persistent libev watchers (connect/retr now use central loop helpers per operation; follow-up is to remove remaining synchronous glue).

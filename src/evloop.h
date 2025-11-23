@@ -9,6 +9,8 @@
 
 struct ev_loop;
 
+typedef void (*wget_ev_loop_async_cb)(void*);
+
 void wget_ev_loop_init(void);
 void wget_ev_loop_deinit(void);
 struct ev_loop* wget_ev_loop_get(void);
@@ -21,5 +23,6 @@ void wget_ev_loop_transfer_ref(void);
 void wget_ev_loop_transfer_unref(void);
 bool wget_ev_loop_has_active_transfers(void);
 void wget_ev_loop_run_transfers(void);
+bool wget_ev_loop_post_async(wget_ev_loop_async_cb cb, void* arg);
 
 #endif /* WGET_EVLOOP_H */

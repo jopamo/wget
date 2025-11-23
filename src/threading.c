@@ -104,3 +104,43 @@ void wget_mutex_unlock(wget_mutex_t* mutex WGET_ATTR_UNUSED) {}
 void wget_mutex_destroy(wget_mutex_t* mutex WGET_ATTR_UNUSED) {}
 
 #endif
+
+void wget_async_mailbox_init(wget_async_mailbox_t* mailbox) {
+  if (!mailbox)
+    return;
+  atomic_store_explicit(&mailbox->head, (uintptr_t)NULL, memory_order_relaxed);
+}
+
+void wget_async_mailbox_push(wget_async_mailbox_t* mailbox, wget_async_task_t* task) {
+  if (!mailbox || !task)
+    return;
+
+  uintptr_t head = atomic_load_explicit(&mailbox->head, memory_order_relaxed);
+  do {
+    task->next = (wget_async_task_t*)head;
+  } while (!atomic_compare_exchange_weak_explicit(&mailbox->head, &head, (uintptr_t)task, memory_order_release, memory_order_relaxed));
+}
+
+wget_async_task_t* wget_async_mailbox_acquire_all(wget_async_mailbox_t* mailbox) {
+  if (!mailbox)
+    return NULL;
+  uintptr_t head = atomic_exchange_explicit(&mailbox->head, (uintptr_t)NULL, memory_order_acquire);
+  return (wget_async_task_t*)head;
+}
+
+wget_async_task_t* wget_async_mailbox_reverse(wget_async_task_t* head) {
+  wget_async_task_t* prev = NULL;
+  while (head) {
+    wget_async_task_t* next = head->next;
+    head->next = prev;
+    prev = head;
+    head = next;
+  }
+  return prev;
+}
+
+bool wget_async_mailbox_is_empty(const wget_async_mailbox_t* mailbox) {
+  if (!mailbox)
+    return true;
+  return atomic_load_explicit(&mailbox->head, memory_order_acquire) == (uintptr_t)NULL;
+}

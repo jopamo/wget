@@ -24,6 +24,8 @@
 
 #include "wget.h"
 
+#include <stdatomic.h>
+
 #if defined HAVE_PTHREAD_H && HAVE_PTHREAD_H
 #include <pthread.h>
 #endif
@@ -53,5 +55,23 @@ void wget_mutex_init(wget_mutex_t* mutex);
 void wget_mutex_lock(wget_mutex_t* mutex);
 void wget_mutex_unlock(wget_mutex_t* mutex);
 void wget_mutex_destroy(wget_mutex_t* mutex);
+
+typedef void (*wget_async_task_fn)(void*);
+
+typedef struct wget_async_task {
+  struct wget_async_task* next;
+  wget_async_task_fn fn;
+  void* arg;
+} wget_async_task_t;
+
+typedef struct wget_async_mailbox {
+  atomic_uintptr_t head;
+} wget_async_mailbox_t;
+
+void wget_async_mailbox_init(wget_async_mailbox_t* mailbox);
+void wget_async_mailbox_push(wget_async_mailbox_t* mailbox, wget_async_task_t* task);
+wget_async_task_t* wget_async_mailbox_acquire_all(wget_async_mailbox_t* mailbox);
+wget_async_task_t* wget_async_mailbox_reverse(wget_async_task_t* head);
+bool wget_async_mailbox_is_empty(const wget_async_mailbox_t* mailbox);
 
 #endif /* WGET_THREADING_H */
