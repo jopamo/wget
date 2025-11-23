@@ -20,7 +20,7 @@
 
 #if defined(WINDOWS)
 
-static BOOL CALLBACK mutex_init_once(PINIT_ONCE once _GL_UNUSED, PVOID param, PVOID* ctx _GL_UNUSED) {
+static BOOL CALLBACK mutex_init_once(PINIT_ONCE once WGET_ATTR_UNUSED, PVOID param, PVOID* ctx WGET_ATTR_UNUSED) {
   wget_mutex_t* mutex = (wget_mutex_t*)param;
   InitializeCriticalSection(&mutex->cs);
   mutex->initialized = true;
@@ -95,9 +95,9 @@ void wget_mutex_destroy(wget_mutex_t* mutex) {
 
 #else
 
-void wget_mutex_init(wget_mutex_t* mutex _GL_UNUSED) {}
-void wget_mutex_lock(wget_mutex_t* mutex _GL_UNUSED) {}
-void wget_mutex_unlock(wget_mutex_t* mutex _GL_UNUSED) {}
-void wget_mutex_destroy(wget_mutex_t* mutex _GL_UNUSED) {}
+void wget_mutex_init(wget_mutex_t* mutex WGET_ATTR_UNUSED) {}
+void wget_mutex_lock(wget_mutex_t* mutex WGET_ATTR_UNUSED) {}
+void wget_mutex_unlock(wget_mutex_t* mutex WGET_ATTR_UNUSED) {}
+void wget_mutex_destroy(wget_mutex_t* mutex WGET_ATTR_UNUSED) {}
 
 #endif

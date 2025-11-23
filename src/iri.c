@@ -200,7 +200,7 @@ static bool do_conversion(const char* tocode, const char* fromcode, char const* 
   return false;
 }
 #else
-static bool do_conversion(const char* tocode _GL_UNUSED, const char* fromcode _GL_UNUSED, char const* in_org _GL_UNUSED, size_t inlen _GL_UNUSED, char** out) {
+static bool do_conversion(const char* tocode WGET_ATTR_UNUSED, const char* fromcode WGET_ATTR_UNUSED, char const* in_org WGET_ATTR_UNUSED, size_t inlen WGET_ATTR_UNUSED, char** out) {
   *out = NULL;
   return false;
 }

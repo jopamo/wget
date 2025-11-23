@@ -181,7 +181,7 @@ void* progress_create(const char* f_download, wgint initial, wgint total) {
    progress bar is interactive because it regularly updates the ETA
    and current update.  */
 
-bool progress_interactive_p(void* progress _GL_UNUSED) {
+bool progress_interactive_p(void* progress WGET_ATTR_UNUSED) {
   bool interactive;
 
   progress_lock();
@@ -244,7 +244,7 @@ struct dot_progress {
 
 /* Dot-progress backend for progress_create. */
 
-static void* dot_create(const char* f_download _GL_UNUSED, wgint initial, wgint total) {
+static void* dot_create(const char* f_download WGET_ATTR_UNUSED, wgint initial, wgint total) {
   struct dot_progress* dp = xnew0(struct dot_progress);
   dp->initial_length = initial;
   dp->total_length = total;
@@ -1307,7 +1307,7 @@ static void bar_set_params(const char* params) {
 }
 
 #ifdef SIGWINCH
-void progress_handle_sigwinch(int sig _GL_UNUSED) {
+void progress_handle_sigwinch(int sig WGET_ATTR_UNUSED) {
   received_sigwinch = 1;
   signal(SIGWINCH, progress_handle_sigwinch);
 }

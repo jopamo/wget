@@ -1878,7 +1878,7 @@ double random_float(void) {
 
 static sigjmp_buf run_with_timeout_env;
 
-_Noreturn static void abort_run_with_timeout(int sig _GL_UNUSED) {
+_Noreturn static void abort_run_with_timeout(int sig WGET_ATTR_UNUSED) {
   assert(sig == SIGALRM);
   siglongjmp(run_with_timeout_env, -1);
 }
@@ -1887,7 +1887,7 @@ _Noreturn static void abort_run_with_timeout(int sig _GL_UNUSED) {
 
 static jmp_buf run_with_timeout_env;
 
-static void _Noreturn abort_run_with_timeout(int sig _GL_UNUSED) {
+static void _Noreturn abort_run_with_timeout(int sig WGET_ATTR_UNUSED) {
   assert(sig == SIGALRM);
   /* We don't have siglongjmp to preserve the set of blocked signals;
      if we longjumped out of the handler at this point, SIGALRM would

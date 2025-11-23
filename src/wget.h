@@ -12,8 +12,12 @@
 
 #include "config.h"
 
-#ifndef _GL_UNUSED
-#define _GL_UNUSED __attribute__((unused))
+#if !defined(WGET_ATTR_UNUSED)
+#if defined(__GNUC__) || defined(__clang__)
+#define WGET_ATTR_UNUSED __attribute__((unused))
+#else
+#define WGET_ATTR_UNUSED
+#endif
 #endif
 
 #if ((defined _WIN32 || defined __WIN32__) && !defined __CYGWIN__)

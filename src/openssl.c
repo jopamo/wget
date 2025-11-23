@@ -448,7 +448,7 @@ static void ssl_connect_with_timeout_callback(void* arg) {
   ctx->result = SSL_connect(ctx->ssl);
 }
 
-static int ssl_connect_with_timeout(int fd _GL_UNUSED, SSL* conn, double timeout) {
+static int ssl_connect_with_timeout(int fd WGET_ATTR_UNUSED, SSL* conn, double timeout) {
   struct scwt_context scwt_ctx;
   scwt_ctx.ssl = conn;
   errno = 0;
@@ -627,7 +627,7 @@ static int openssl_read(int fd, char* buf, int bufsize, void* arg, double timeou
   return openssl_read_peek(fd, buf, bufsize, arg, timeout, SSL_read);
 }
 
-static int openssl_write(int fd _GL_UNUSED, char* buf, int bufsize, void* arg) {
+static int openssl_write(int fd WGET_ATTR_UNUSED, char* buf, int bufsize, void* arg) {
   int ret = 0;
   struct openssl_transport_context* ctx = arg;
   SSL* conn = ctx->conn;
@@ -653,7 +653,7 @@ static int openssl_peek(int fd, char* buf, int bufsize, void* arg, double timeou
   return openssl_read_peek(fd, buf, bufsize, arg, timeout, SSL_peek);
 }
 
-static const char* openssl_errstr(int fd _GL_UNUSED, void* arg) {
+static const char* openssl_errstr(int fd WGET_ATTR_UNUSED, void* arg) {
   struct openssl_transport_context* ctx = arg;
   unsigned long errcode;
   char* errmsg = NULL;

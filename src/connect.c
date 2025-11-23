@@ -595,7 +595,7 @@ static void ensure_fd_in_select_range(int fd) {
    should be taken as such (for example, it doesn't implement Wget's
    0-timeout-means-no-timeout semantics) */
 
-static int select_fd_internal(int fd, double maxtime, int wait_for, bool convert_back _GL_UNUSED) {
+static int select_fd_internal(int fd, double maxtime, int wait_for, bool convert_back WGET_ATTR_UNUSED) {
   fd_set fdset;
   fd_set* rd = NULL;
   fd_set* wr = NULL;
