@@ -1,114 +1,107 @@
 /* Declarations for convert.c
-   Copyright (C) 2003-2006, 2009-2011, 2015, 2018-2024 Free Software
-   Foundation, Inc.
-
-This file is part of GNU Wget.
-
-GNU Wget is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 3 of the License, or
- (at your option) any later version.
-
-GNU Wget is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Wget.  If not, see <http://www.gnu.org/licenses/>.
-
-Additional permission under GNU GPL version 3 section 7
-
-If you modify this program, or any covered work, by linking or
-combining it with the OpenSSL project's OpenSSL library (or a
-modified version of that library), containing parts covered by the
-terms of the OpenSSL or SSLeay licenses, the Free Software Foundation
-grants you additional permission to convey the resulting work.
-Corresponding Source for a non-source form of such a combination
-shall include the source code for the parts of OpenSSL used as well
-as that of the covered work.  */
+ * src/convert.h
+ */
 
 #ifndef CONVERT_H
 #define CONVERT_H
 
-struct hash_table; /* forward decl */
+#include <stdbool.h>
+
+struct hash_table; /* forward declaration */
+struct url;        /* forward declaration */
+
+/* Maps URL -> local file used by link conversion */
 extern struct hash_table* dl_url_file_map;
+
+/* Sets of downloaded files used for post-processing link conversion */
 extern struct hash_table* downloaded_html_set;
 extern struct hash_table* downloaded_css_set;
 
 enum convert_options {
   CO_NOCONVERT = 0,         /* don't convert this URL */
-  CO_CONVERT_TO_RELATIVE,   /* convert to relative, e.g. to
-                               "../../otherdir/foo.gif" */
-  CO_CONVERT_BASENAME_ONLY, /* convert the file portion only (basename)
+  CO_CONVERT_TO_RELATIVE,   /* convert to relative, e.g. "../../otherdir/foo.gif" */
+  CO_CONVERT_BASENAME_ONLY, /* convert the file portion only (basename),
                                leaving the rest of the URL unchanged */
-  CO_CONVERT_TO_COMPLETE,   /* convert to absolute, e.g. to
-                               "http://orighost/somedir/bar.jpg". */
-  CO_NULLIFY_BASE           /* change to empty string. */
+  CO_CONVERT_TO_COMPLETE,   /* convert to absolute, e.g. "http://orighost/somedir/bar.jpg" */
+  CO_NULLIFY_BASE           /* change to empty string */
 };
 
-struct url;
-
-/* A structure that defines the whereabouts of a URL, i.e. its
-   position in an HTML document, etc.  */
+/* A structure that defines the whereabouts of a URL
+   i.e. its position in an HTML document and how it should be rewritten */
 
 struct urlpos {
-  struct url* url;  /* the URL of the link, after it has
-                       been merged with the base */
-  char* local_name; /* local file to which it was saved
-                       (used by convert_links) */
+  struct url* url;  /* the URL of the link, after it has been merged with the base */
+  char* local_name; /* local file to which it was saved (used by convert_links) */
 
   /* reserved for special links such as <base href="..."> which are
-     used when converting links, but ignored when downloading.  */
+     used when converting links, but ignored when downloading */
   unsigned int ignore_when_downloading : 1;
 
-  /* Information about the original link: */
+  /* Information about the original link */
 
   unsigned int link_relative_p : 1;     /* the link was relative */
   unsigned int link_complete_p : 1;     /* the link was complete (had host name) */
   unsigned int link_base_p : 1;         /* the url came from <base href=...> */
   unsigned int link_inline_p : 1;       /* needed to render the page */
   unsigned int link_css_p : 1;          /* the url came from CSS */
-  unsigned int link_noquote_html_p : 1; /* from HTML, but doesn't need " */
+  unsigned int link_noquote_html_p : 1; /* from HTML, but does not need quotes */
   unsigned int link_expect_html : 1;    /* expected to contain HTML */
   unsigned int link_expect_css : 1;     /* expected to contain CSS */
 
   unsigned int link_refresh_p : 1; /* link was received from
                                       <meta http-equiv=refresh content=...> */
-  int refresh_timeout;             /* for reconstructing the refresh. */
+  int refresh_timeout;             /* for reconstructing the refresh */
 
-  /* Conversion requirements: */
-  enum convert_options convert; /* is conversion required? */
+  /* Conversion requirements */
+  enum convert_options convert; /* is conversion required */
 
-  /* URL's position in the buffer. */
-  int pos, size;
+  /* URL's position in the buffer */
+  int pos;
+  int size;
 
   struct urlpos* next; /* next list element */
 };
 
-/* downloaded_file() takes a parameter of this type and returns this type. */
+/* downloaded_file() takes a parameter of this type and returns this type */
 typedef enum {
-  /* Return enumerators: */
+  /* Return enumerators */
   FILE_NOT_ALREADY_DOWNLOADED = 0,
 
-  /* Return / parameter enumerators: */
+  /* Return / parameter enumerators */
   FILE_DOWNLOADED_NORMALLY,
   FILE_DOWNLOADED_AND_HTML_EXTENSION_ADDED,
 
-  /* Parameter enumerators: */
+  /* Parameter enumerators */
   CHECK_FOR_FILE
 } downloaded_file_t;
 
-downloaded_file_t downloaded_file(downloaded_file_t, const char*);
+/* Record or query download bookkeeping for a local file name */
+downloaded_file_t downloaded_file(downloaded_file_t mode, const char* file);
 
-void register_download(const char*, const char*);
-void register_redirection(const char*, const char*);
-void register_html(const char*);
-void register_css(const char*);
-void register_delete_file(const char*);
+/* Register that URL has been downloaded to FILE for link conversion */
+void register_download(const char* url, const char* file);
+
+/* Register that FROM has been redirected to TO (TO must be registered) */
+void register_redirection(const char* from, const char* to);
+
+/* Register that FILE is an HTML file that has been downloaded */
+void register_html(const char* file);
+
+/* Register that FILE is a CSS file that has been downloaded */
+void register_css(const char* file);
+
+/* Register that FILE has been deleted and clear its mappings */
+void register_delete_file(const char* file);
+
+/* Perform link conversion on all downloaded HTML and CSS files */
 void convert_all_links(void);
-void convert_cleanup(void);
 
-char* html_quote_string(const char*);
+/* Free HTML entity-quoted string, allocated by html_quote_string */
+char* html_quote_string(const char* s);
+
+#if defined DEBUG_MALLOC || defined TESTING
+/* Cleanup the data structures associated with link conversion */
+void convert_cleanup(void);
+#endif
 
 #endif /* CONVERT_H */
