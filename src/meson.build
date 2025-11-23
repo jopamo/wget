@@ -32,6 +32,7 @@ sources = [
   'recur.c',
   'res.c',
   'retr.c',
+  'signals.c',
   'spider.c',
   'strcase.c',
   'threading.c',

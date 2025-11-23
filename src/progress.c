@@ -1309,7 +1309,6 @@ static void bar_set_params(const char* params) {
 #ifdef SIGWINCH
 void progress_handle_sigwinch(int sig WGET_ATTR_UNUSED) {
   received_sigwinch = 1;
-  signal(SIGWINCH, progress_handle_sigwinch);
 }
 #endif
 

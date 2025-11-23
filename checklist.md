@@ -78,7 +78,7 @@ NOTE: WHEN WORKING THROUGH CHECKLIST, MARK OFF COMPLETED ITEMS, ADD MISSING ITEM
 * [ ] Strict and consistent Content-Length enforcement
 * [ ] Retry and reconnection logic implemented via libev timers (never blocking)
 * [ ] Built-in checksum verification framework
-* [ ] Improved signal handling through `ev_signal`
+* [x] Improved signal handling through `ev_signal`
 * [ ] Graceful shutdown orchestrated through nonblocking teardown of all watchers
 * [ ] Per-connection rate limiting (optional) implemented via timers/throttling watchers
 * [ ] Per-host concurrency limiting enforced via nonblocking queue + watchers

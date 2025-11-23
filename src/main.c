@@ -26,6 +26,7 @@
 #include "evloop.h"
 #include "url.h"
 #include "progress.h" /* for progress_handle_sigwinch */
+#include "signals.h"
 #include "convert.h"
 #include "spider.h"
 #include "http.h" /* for save_cookies */
@@ -113,7 +114,6 @@ static void redirect_output_signal(int sig) {
 
   redirect_output(true, signal_name);
   progress_schedule_redirect();
-  signal(sig, redirect_output_signal);
 }
 #endif /* defined(SIGHUP) || defined(SIGUSR1) */
 
@@ -1876,14 +1876,22 @@ only if outputting to a regular file.\n"));
 #endif
 
 #ifdef SIGHUP
-  /* Setup the signal handler to redirect output when hangup is
-     received.  */
-  if (signal(SIGHUP, SIG_IGN) != SIG_IGN)
-    signal(SIGHUP, redirect_output_signal);
+  /* Respect environments (e.g. nohup) that have already disabled SIGHUP. */
+  {
+    void (*prev_sighup)(int) = signal(SIGHUP, SIG_IGN);
+    if (prev_sighup == SIG_ERR) {
+      wget_signals_watch(SIGHUP, redirect_output_signal);
+    }
+    else if (prev_sighup != SIG_IGN) {
+      signal(SIGHUP, prev_sighup);
+      wget_signals_watch(SIGHUP, redirect_output_signal);
+    }
+    else
+      signal(SIGHUP, SIG_IGN);
+  }
 #endif
-  /* ...and do the same for SIGUSR1.  */
 #ifdef SIGUSR1
-  signal(SIGUSR1, redirect_output_signal);
+  wget_signals_watch(SIGUSR1, redirect_output_signal);
 #endif
 #ifdef SIGPIPE
   /* Writing to a closed socket normally signals SIGPIPE, and the
@@ -1892,7 +1900,7 @@ only if outputting to a regular file.\n"));
   signal(SIGPIPE, SIG_IGN);
 #endif
 #ifdef SIGWINCH
-  signal(SIGWINCH, progress_handle_sigwinch);
+  wget_signals_watch(SIGWINCH, progress_handle_sigwinch);
 #endif
 
 #ifdef HAVE_HSTS
@@ -2065,6 +2073,7 @@ only if outputting to a regular file.\n"));
 
   cleanup();
 
+  wget_signals_shutdown();
   wget_ev_loop_deinit();
 
   exit(get_exit_status());
