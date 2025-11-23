@@ -5,6 +5,7 @@ sources = [
   build_info_src,
   'connect.c',
   'convert.c',
+  'evloop.c',
   'cookies.c',
   'css-url.c',
   'digest.c',
@@ -27,6 +28,7 @@ sources = [
   'progress.c',
   'ptimer.c',
   'quoting.c',
+  'safe_stdio.c',
   'recur.c',
   'res.c',
   'retr.c',
@@ -87,6 +89,9 @@ endif
 if libcares_dep.found()
   deps += libcares_dep
 endif
+if libev_dep.found()
+  deps += libev_dep
+endif
 if uuid_dep.found()
   deps += uuid_dep
 endif
@@ -94,6 +99,12 @@ if pcre2_dep.found()
   deps += pcre2_dep
 elif pcre_dep.found()
   deps += pcre_dep
+endif
+if metalink_dep.found()
+  deps += metalink_dep
+endif
+if gpgme_dep.found()
+  deps += gpgme_dep
 endif
 
 executable('wget', sources,

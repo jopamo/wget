@@ -312,7 +312,7 @@ struct options {
                                 name. */
   bool report_bps;           /*Output bandwidth in bits format*/
 
-#ifdef HAVE_LIBZ
+#if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
   enum compression_options { compression_auto, compression_gzip, compression_none } compression; /* type of HTTP compression to use */
 #endif
 

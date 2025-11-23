@@ -26,15 +26,18 @@
 #include <assert.h>
 #include <errno.h>
 #include <time.h>
-#ifdef HAVE_LIBPSL
+#if defined(ENABLE_COOKIES) && defined(HAVE_LIBPSL)
 #include <libpsl.h>
 #endif
 #include "utils.h"
 #include "hash.h"
 #include "cookies.h"
+#include "safe_stdio.h"
 #include "http.h" /* for http_atotm */
 #include "c-strcase.h"
 #include "threading.h"
+
+#ifdef ENABLE_COOKIES
 
 /* Declarations of `struct cookie' and the most basic functions. */
 
@@ -1134,7 +1137,7 @@ void cookie_jar_load(struct cookie_jar* jar, const char* file) {
   char* line = NULL;
   size_t bufsize = 0;
 
-  FILE* fp = fopen(file, "r");
+  FILE* fp = wget_safe_fopen(file, "r");
   if (!fp) {
     logprintf(LOG_NOTQUIET, _("Cannot open cookies file %s: %s\n"), quote(file), strerror(errno));
     return;
@@ -1237,7 +1240,8 @@ void cookie_jar_load(struct cookie_jar* jar, const char* file) {
 
   cookie_jar_unlock(jar);
   xfree(line);
-  fclose(fp);
+  if (wget_close_stream(fp) < 0)
+    logprintf(LOG_NOTQUIET, _("Failed to finish reading cookies file %s: %s\n"), quote(file), strerror(errno));
 }
 
 /* Save cookies, in format described above, to FILE. */
@@ -1250,7 +1254,7 @@ void cookie_jar_save(struct cookie_jar* jar, const char* file) {
 
   cookies_now = time(NULL);
 
-  fp = fopen(file, "w");
+  fp = wget_safe_fopen(file, "w");
   if (!fp) {
     logprintf(LOG_NOTQUIET, _("Cannot open cookies file %s: %s\n"), quote(file), strerror(errno));
     return;
@@ -1283,7 +1287,7 @@ unlock:
   cookie_jar_unlock(jar);
   if (ferror(fp))
     logprintf(LOG_NOTQUIET, _("Error writing to %s: %s\n"), quote(file), strerror(errno));
-  if (fclose(fp) < 0)
+  if (wget_close_stream(fp) < 0)
     logprintf(LOG_NOTQUIET, _("Error closing %s: %s\n"), quote(file), strerror(errno));
 
   DEBUGP(("Done saving cookies.\n"));
@@ -1396,3 +1400,23 @@ void test_cookies(void) {
   }
 }
 #endif /* TEST_COOKIES */
+
+#else /* !ENABLE_COOKIES */
+
+struct cookie_jar* cookie_jar_new(void) {
+  return NULL;
+}
+
+void cookie_jar_delete(struct cookie_jar* jar WGET_ATTR_UNUSED) {}
+
+void cookie_handle_set_cookie(struct cookie_jar* jar WGET_ATTR_UNUSED, const char* host WGET_ATTR_UNUSED, int port WGET_ATTR_UNUSED, const char* request_path WGET_ATTR_UNUSED, const char* header WGET_ATTR_UNUSED) {}
+
+char* cookie_header(struct cookie_jar* jar WGET_ATTR_UNUSED, const char* host WGET_ATTR_UNUSED, int port WGET_ATTR_UNUSED, const char* path WGET_ATTR_UNUSED, bool secure WGET_ATTR_UNUSED) {
+  return NULL;
+}
+
+void cookie_jar_load(struct cookie_jar* jar WGET_ATTR_UNUSED, const char* file WGET_ATTR_UNUSED) {}
+
+void cookie_jar_save(struct cookie_jar* jar WGET_ATTR_UNUSED, const char* file WGET_ATTR_UNUSED) {}
+
+#endif /* ENABLE_COOKIES */

@@ -12,10 +12,28 @@ const char* compiled_features[] = {
     "-cares",
 #endif
 
+#if defined HAVE_LIBEV
+    "+libev",
+#else
+    "-libev",
+#endif
+
 #if defined ENABLE_DIGEST
     "+digest",
 #else
     "-digest",
+#endif
+
+#if defined ENABLE_COOKIES
+    "+cookies",
+#else
+    "-cookies",
+#endif
+
+#if defined ENABLE_COMPRESSION
+    "+compression",
+#else
+    "-compression",
 #endif
 
 #if defined HAVE_GPGME
@@ -76,6 +94,12 @@ const char* compiled_features[] = {
     "+psl",
 #else
     "-psl",
+#endif
+
+#if defined HAVE_LIBPROXY
+    "+proxies",
+#else
+    "-proxies",
 #endif
 
 /* ssl choice */

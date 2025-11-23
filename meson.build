@@ -11,6 +11,17 @@ conf.set_quoted('LOCALEDIR', get_option('locale_dir'))
 conf.set_quoted('OS_TYPE', host_machine.system())
 conf.set('SIZEOF_OFF_T', cc.sizeof('off_t'))
 
+metalink_opt = get_option('metalink')
+cookies_opt = get_option('cookies')
+psl_opt = get_option('psl')
+proxies_opt = get_option('proxies')
+idn2_opt = get_option('idn2')
+compression_opt = get_option('compression')
+
+if not cookies_opt.disabled()
+  conf.set('ENABLE_COOKIES', 1)
+endif
+
 conf.set('ENABLE_DIGEST', 1)
 conf.set('ENABLE_IPV6', 1)
 conf.set('ENABLE_NTLM', 1)
@@ -25,21 +36,37 @@ if get_option('enable_xattr')
 endif
 
 zlib_dep = dependency('zlib', required: true)
+if not compression_opt.disabled()
+  conf.set('ENABLE_COMPRESSION', 1)
+endif
 threads_dep = dependency('threads')
 math_dep = cc.find_library('m', required: false)
 
-libpsl_dep = dependency('libpsl', required: false)
-libproxy_dep = dependency('libproxy-1.0', required: false)
-if not libproxy_dep.found()
-  libproxy_dep = dependency('libproxy', required: false)
+if psl_opt.disabled()
+  libpsl_dep = disabler()
+else
+  libpsl_dep = dependency('libpsl', required: psl_opt.enabled())
 endif
-libcares_dep = dependency('libcares', required: false)
+if proxies_opt.disabled()
+  libproxy_dep = disabler()
+else
+  libproxy_dep = dependency('libproxy-1.0', required: proxies_opt.enabled())
+  if not libproxy_dep.found()
+    libproxy_dep = dependency('libproxy', required: proxies_opt.enabled())
+  endif
+endif
+libcares_dep = dependency('libcares', required: true)
+libev_dep = dependency('libev', required: true)
 uuid_dep = dependency('uuid', required: false)
 
 pcre2_dep = dependency('libpcre2-8', required: false)
 pcre_dep = dependency('libpcre', required: not pcre2_dep.found())
 
-idn2_dep = dependency('libidn2', required: false)
+if idn2_opt.disabled()
+  idn2_dep = disabler()
+else
+  idn2_dep = dependency('libidn2', required: idn2_opt.enabled())
+endif
 have_iconv = cc.has_function('iconv_open', prefix: '#include <iconv.h>')
 iconv_dep = []
 if not have_iconv
@@ -80,7 +107,7 @@ if idn2_dep.found()
   conf.set('HAVE_LIBIDN2', 1)
 endif
 
-if not have_iri
+if not have_iri and not idn2_opt.disabled()
   message('Building without IRI support (requires iconv + libidn2).')
 endif
 
@@ -108,6 +135,9 @@ endif
 if libcares_dep.found()
   conf.set('HAVE_LIBCARES', 1)
 endif
+if libev_dep.found()
+  conf.set('HAVE_LIBEV', 1)
+endif
 if uuid_dep.found()
   conf.set('HAVE_LIBUUID', 1)
 endif
@@ -116,6 +146,22 @@ if pcre2_dep.found()
 endif
 if pcre_dep.found()
   conf.set('HAVE_LIBPCRE', 1)
+endif
+
+if metalink_opt.disabled()
+  metalink_dep = disabler()
+  gpgme_dep = disabler()
+else
+  metalink_dep = dependency('libmetalink', required: metalink_opt.enabled())
+  if metalink_dep.found()
+    conf.set('HAVE_METALINK', 1)
+    gpgme_dep = dependency('gpgme', required: false)
+    if gpgme_dep.found()
+      conf.set('HAVE_GPGME', 1)
+    endif
+  else
+    gpgme_dep = disabler()
+  endif
 endif
 
 if cc.has_header('pthread.h')
@@ -213,6 +259,9 @@ endif
 if libcares_dep.found()
   link_components += ['libcares']
 endif
+if libev_dep.found()
+  link_components += ['libev']
+endif
 if uuid_dep.found()
   link_components += ['libuuid']
 endif
@@ -220,6 +269,12 @@ if pcre2_dep.found()
   link_components += ['libpcre2']
 elif pcre_dep.found()
   link_components += ['libpcre']
+endif
+if metalink_dep.found()
+  link_components += ['libmetalink']
+endif
+if gpgme_dep.found()
+  link_components += ['gpgme']
 endif
 link_components += ['tls=openssl']
 link_string = ''
@@ -240,10 +295,6 @@ version_src = configure_file(
   input: 'src/version.c.meson.in',
   output: 'version.c',
   configuration: version_conf)
-
-if get_option('enable_metalink')
-  error('Metalink support is not available in this trimmed build.')
-endif
 
 configure_file(
   output: 'config.h',

@@ -37,7 +37,9 @@ as that of the covered work.  */
 struct url;
 
 uerr_t http_loop(const struct url*, struct url*, char**, char**, const char*, int*, struct url*, struct iri*, struct transfer_context*);
+#ifdef ENABLE_COOKIES
 void save_cookies(void);
+#endif
 void http_cleanup(void);
 time_t http_atotm(const char*);
 

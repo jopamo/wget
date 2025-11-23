@@ -23,6 +23,7 @@
 #include "retr.h"
 #include "recur.h"
 #include "host.h"
+#include "evloop.h"
 #include "url.h"
 #include "progress.h" /* for progress_handle_sigwinch */
 #include "convert.h"
@@ -242,7 +243,7 @@ static struct cmdline_option option_data[] = {
     IF_SSL("ca-certificate", 0, OPT_VALUE, "cacertificate", -1) IF_SSL("ca-directory", 0, OPT_VALUE, "cadirectory", -1){"cache", 0, OPT_BOOLEAN, "cache", -1},
     IF_SSL("certificate", 0, OPT_VALUE, "certificate", -1) IF_SSL("certificate-type", 0, OPT_VALUE, "certificatetype", -1)
         IF_SSL("check-certificate", 0, OPT_BOOLEAN, "checkcertificate", -1){"clobber", 0, OPT__CLOBBER, NULL, optional_argument},
-#ifdef HAVE_LIBZ
+#if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
     {"compression", 0, OPT_VALUE, "compression", -1},
 #endif
     {"config", 0, OPT_VALUE, "chooseconfig", -1},
@@ -392,7 +393,7 @@ static struct cmdline_option option_data[] = {
     {"wait", 'w', OPT_VALUE, "wait", -1},
     {"waitretry", 0, OPT_VALUE, "waitretry", -1},
     {"warc-cdx", 0, OPT_BOOLEAN, "warccdx", -1},
-#ifdef HAVE_LIBZ
+#if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
     {"warc-compression", 0, OPT_BOOLEAN, "warccompression", -1},
 #endif
     {"warc-dedup", 0, OPT_VALUE, "warccdxdedup", -1},
@@ -504,7 +505,7 @@ static void init_switches(void) {
 }
 
 /* Print the usage message.  */
-static int print_usage(_GL_UNUSED int error) {
+static int print_usage(WGET_ATTR_UNUSED int error) {
 #ifndef TESTING
   return fprintf(error ? stderr : stdout, _("Usage: %s [OPTION]... [URL]...\n"), exec_name);
 #else
@@ -728,7 +729,7 @@ HTTP options:\n"),
        --ignore-length             ignore 'Content-Length' header field\n"),
                                N_("\
        --header=STRING             insert STRING among the headers\n"),
-#ifdef HAVE_LIBZ
+#if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
                                N_("\
        --compression=TYPE          choose compression, one of auto, gzip and none. (default: none)\n"),
 #endif
@@ -877,7 +878,7 @@ WARC options:\n"),
        --warc-cdx                  write CDX index files\n"),
                                N_("\
        --warc-dedup=FILENAME       do not store records listed in this CDX file\n"),
-#ifdef HAVE_LIBZ
+#if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
                                N_("\
        --no-warc-compression       do not compress WARC files with GZIP\n"),
 #endif
@@ -1261,6 +1262,8 @@ int main(int argc, char** argv) {
   total_downloaded_bytes = 0;
   program_name = argv[0];
 
+  wget_ev_loop_init();
+
   i18n_initialize();
 
   /* Construct the name of the executable, without the directory part.  */
@@ -1567,7 +1570,7 @@ for details.\n\n"));
     }
   }
 
-#ifdef HAVE_LIBZ
+#if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
   if (opt.always_rest || opt.start_pos >= 0) {
     if (opt.compression == compression_auto) {
       /* Compression does not work with --continue or --start-pos.
@@ -1810,7 +1813,7 @@ only if outputting to a regular file.\n"));
   }
 
 #ifdef HAVE_LIBCARES
-  if (opt.bind_dns_address || opt.dns_servers) {
+  {
     struct ares_options options;
     int optmask = 0;
 
@@ -2047,8 +2050,10 @@ only if outputting to a regular file.\n"));
       logprintf(LOG_NOTQUIET, _("Download quota of %s EXCEEDED!\n"), human_readable(opt.quota, 10, 1));
   }
 
+#ifdef ENABLE_COOKIES
   if (opt.cookies_output)
     save_cookies();
+#endif
 
 #ifdef HAVE_HSTS
   if (opt.hsts && hsts_store)
@@ -2059,6 +2064,8 @@ only if outputting to a regular file.\n"));
     convert_all_links();
 
   cleanup();
+
+  wget_ev_loop_deinit();
 
   exit(get_exit_status());
 }

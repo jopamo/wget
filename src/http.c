@@ -29,7 +29,9 @@
 #ifdef ENABLE_NTLM
 #include "http-ntlm.h"
 #endif
+#ifdef ENABLE_COOKIES
 #include "cookies.h"
+#endif
 #include "md5.h"
 #include "convert.h"
 #include "spider.h"
@@ -58,10 +60,11 @@ static char* create_authorization_line(const char*, const char*, const char*, co
 static char* basic_authentication_encode(const char*, const char*);
 static bool known_authentication_scheme_p(const char*, const char*);
 static void ensure_extension(struct http_stat*, const char*, int*);
+#ifdef ENABLE_COOKIES
 static void load_cookies(void);
-
 static bool cookies_loaded_p;
 static struct cookie_jar* wget_cookie_jar;
+#endif
 
 #define TEXTHTML_S "text/html"
 #define TEXTXHTML_S "application/xhtml+xml"
@@ -1721,7 +1724,7 @@ static struct request* initialize_request(const struct url* u,
     request_set_header(req, "Range", aprintf("bytes=%s-", number_to_static_string(hs->restval)), rel_value);
   SET_USER_AGENT(req);
   request_set_header(req, "Accept", "*/*", rel_none);
-#ifdef HAVE_LIBZ
+#if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
   if (opt.compression != compression_none)
     request_set_header(req, "Accept-Encoding", "gzip", rel_none);
   else
@@ -2909,6 +2912,7 @@ retry_with_auth:
      without authorization header fails.  (Expected to happen at least
      for the Digest authorization scheme.)  */
 
+#ifdef ENABLE_COOKIES
   if (opt.cookies)
     request_set_header(req, "Cookie",
                        cookie_header(wget_cookie_jar, u->host, u->port, u->path,
@@ -2919,6 +2923,7 @@ retry_with_auth:
 #endif
                                      ),
                        rel_value);
+#endif
 
   /* Add the user headers. */
   if (opt.user_headers) {
@@ -3113,6 +3118,7 @@ retry_with_auth:
   if (resp_header_copy(resp, "Transfer-Encoding", hdrval, sizeof(hdrval)) && 0 == c_strcasecmp(hdrval, "chunked"))
     chunked_transfer_encoding = true;
 
+#ifdef ENABLE_COOKIES
   /* Handle (possibly multiple instances of) the Set-Cookie header. */
   if (opt.cookies) {
     int scpos;
@@ -3137,6 +3143,7 @@ retry_with_auth:
         xfree(set_cookie);
     }
   }
+#endif
 
   if (keep_alive)
     /* The server has promised that it will not close the connection
@@ -3327,7 +3334,7 @@ retry_with_auth:
       DEBUGP(("Unrecognized Content-Encoding: %s\n", hdrval));
       hs->local_encoding = ENC_NONE;
     }
-#ifdef HAVE_LIBZ
+#if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
     else if (hs->local_encoding == ENC_GZIP && opt.compression != compression_none) {
       const char* p;
 
@@ -3728,8 +3735,10 @@ uerr_t http_loop(const struct url* u, struct url* original_url, char** newloc, c
   /* This used to be done in main, but it's a better idea to do it
      here so that we don't go through the hoops if we're just using
      FTP or whatever. */
+#ifdef ENABLE_COOKIES
   if (opt.cookies)
     load_cookies();
+#endif
 
   /* Warn on (likely bogus) wildcard usage in HTTP. */
   if (opt.ftp_glob && has_wildcards_p(u->path))
@@ -4643,6 +4652,7 @@ static char* create_authorization_line(const char* au, const char* user, const c
   }
 }
 
+#ifdef ENABLE_COOKIES
 static void load_cookies(void) {
   if (!wget_cookie_jar)
     wget_cookie_jar = cookie_jar_new();
@@ -4656,16 +4666,19 @@ void save_cookies(void) {
   if (wget_cookie_jar)
     cookie_jar_save(wget_cookie_jar, opt.cookies_output);
 }
+#endif
 
 #if defined DEBUG_MALLOC || defined TESTING
 void http_cleanup(void) {
   if (pconn_active)
     invalidate_persistent();
 
+#ifdef ENABLE_COOKIES
   if (wget_cookie_jar) {
     cookie_jar_delete(wget_cookie_jar);
     wget_cookie_jar = NULL;
   }
+#endif
 
   if (basic_authed_hosts) {
     hash_table_iterator iter;

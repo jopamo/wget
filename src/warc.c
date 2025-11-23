@@ -43,7 +43,7 @@ as that of the covered work.  */
 #include <sha1.h>
 #include <base32.h>
 #include <unistd.h>
-#ifdef HAVE_LIBZ
+#if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
 #include <zlib.h>
 #endif
 
@@ -80,7 +80,7 @@ static FILE* warc_manifest_fp;
 /* The current WARC file (or NULL, if WARC is disabled). */
 static FILE* warc_current_file;
 
-#ifdef HAVE_LIBZ
+#if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
 /* The gzip stream for the current WARC file
    (or NULL, if WARC or gzip is disabled). */
 static gzFile warc_current_gzfile;
@@ -135,7 +135,7 @@ static int warc_cmp_sha1_digest(const void* digest1, const void* digest2) {
    through gzwrite if compression is enabled.
    Returns the number of uncompressed bytes written.  */
 static size_t warc_write_buffer(const char* buffer, size_t size) {
-#ifdef HAVE_LIBZ
+#if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
   if (warc_current_gzfile) {
     warc_current_gzfile_uncompressed_size += size;
     return gzwrite(warc_current_gzfile, buffer, size);
@@ -183,7 +183,7 @@ static bool warc_write_start_record(void) {
   if (opt.warc_maxsize > 0 && ftello(warc_current_file) >= opt.warc_maxsize)
     warc_start_new_file(false);
 
-#ifdef HAVE_LIBZ
+#if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
   /* Start a GZIP stream, if required. */
   if (opt.warc_compression_enabled) {
     int dup_fd;
@@ -300,7 +300,7 @@ static bool warc_write_end_record(void) {
     return false;
   }
 
-#ifdef HAVE_LIBZ
+#if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
   /* We start a new gzip stream for each record.  */
   if (warc_write_ok && warc_current_gzfile) {
     char extra_header[EXTRA_GZIP_HEADER_SIZE];
@@ -387,7 +387,7 @@ static bool warc_write_end_record(void) {
     fflush(warc_current_file);
     fseeko(warc_current_file, 0, SEEK_END);
   }
-#endif /* HAVE_LIBZ */
+#endif /* HAVE_LIBZ && ENABLE_COMPRESSION */
 
   return warc_write_ok;
 }
@@ -747,7 +747,7 @@ static bool warc_start_new_file(bool meta) {
 #define WARC_GZ "warc.gz"
 #endif /* def __VMS [else] */
 
-#ifdef HAVE_LIBZ
+#if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
   const char* extension = (opt.warc_compression_enabled ? WARC_GZ : "warc");
 #else
   const char* extension = "warc";
@@ -1180,7 +1180,7 @@ static bool warc_write_cdx_record(const char* url,
                                   const char* payload_digest,
                                   const char* redirect_location,
                                   off_t offset,
-                                  const char* warc_filename _GL_UNUSED,
+                                  const char* warc_filename WGET_ATTR_UNUSED,
                                   const char* response_uuid) {
   /* Transform the timestamp. */
   char timestamp_str_cdx[15];

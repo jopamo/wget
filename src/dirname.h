@@ -4,5 +4,6 @@
 
 char* base_name(const char* path);
 char* dir_name(const char* path);
+char* canonicalize_path(const char* path);
 
 #endif /* WGET_DIRNAME_H */

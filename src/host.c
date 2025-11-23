@@ -36,6 +36,7 @@
 #include "hash.h"
 #include "ptimer.h"
 #include "threading.h"
+#include "evloop.h"
 
 #ifndef NO_ADDRESS
 #define NO_ADDRESS NO_DATA
@@ -543,54 +544,142 @@ static void cache_remove(const char* host) {
 }
 
 #ifdef HAVE_LIBCARES
-#include <sys/select.h>
 #include <ares.h>
+#include <ev.h>
 extern ares_channel ares;
 
 struct ares_options;
 
 struct ares_socket_watch {
   ares_socket_t fd;
-  int readable;
-  int writable;
+  ev_io io;
+  int events;
 };
 
-static struct ares_socket_watch* ares_watches;
-static size_t ares_watch_count;
+struct dns_query_ctx {
+  struct address_list* result;
+  int status;
+  bool complete;
+};
 
-static void ares_track_socket_state(ares_socket_t fd, int readable, int writable) {
+static struct ares_socket_watch** ares_watches;
+static size_t ares_watch_count;
+static ev_timer ares_timer;
+static bool ares_timer_active;
+static void ares_clear_socket_state(void) WGET_ATTR_UNUSED;
+static void ares_timeout_cb(EV_P_ ev_timer* w, int revents);
+static void ares_update_timer(void);
+static bool dns_wait_for_completion(struct dns_query_ctx* ctx);
+
+static struct ares_socket_watch* ares_watch_by_fd(ares_socket_t fd, size_t* index_out) {
   size_t i;
 
   for (i = 0; i < ares_watch_count; ++i) {
-    if (ares_watches[i].fd == fd) {
-      if (!readable && !writable) {
-        if (i + 1 < ares_watch_count)
-          memmove(&ares_watches[i], &ares_watches[i + 1], (ares_watch_count - i - 1) * sizeof(*ares_watches));
-        --ares_watch_count;
-      }
-      else {
-        ares_watches[i].readable = readable;
-        ares_watches[i].writable = writable;
-      }
-      return;
+    if (ares_watches[i]->fd == fd) {
+      if (index_out)
+        *index_out = i;
+      return ares_watches[i];
     }
   }
 
-  if (!readable && !writable)
-    return;
-
-  ares_watches = xrealloc(ares_watches, (ares_watch_count + 1) * sizeof(*ares_watches));
-  ares_watches[ares_watch_count].fd = fd;
-  ares_watches[ares_watch_count].readable = readable;
-  ares_watches[ares_watch_count].writable = writable;
-  ++ares_watch_count;
+  if (index_out)
+    *index_out = SIZE_MAX;
+  return NULL;
 }
 
-static void ares_clear_socket_state(void) _GL_UNUSED;
+static void ares_remove_watch_index(struct ev_loop* loop, size_t index) {
+  struct ares_socket_watch* watch = ares_watches[index];
+
+  ev_io_stop(loop, &watch->io);
+  xfree(watch);
+
+  if (index + 1 < ares_watch_count)
+    memmove(&ares_watches[index], &ares_watches[index + 1], (ares_watch_count - index - 1) * sizeof(*ares_watches));
+
+  --ares_watch_count;
+  if (ares_watch_count == 0) {
+    xfree(ares_watches);
+    ares_watches = NULL;
+  }
+}
+
 static void ares_clear_socket_state(void) {
-  xfree(ares_watches);
-  ares_watches = NULL;
-  ares_watch_count = 0;
+  if (!wget_ev_loop_is_initialized())
+    return;
+
+  struct ev_loop* loop = wget_ev_loop_get();
+
+  while (ares_watch_count > 0)
+    ares_remove_watch_index(loop, ares_watch_count - 1);
+
+  if (ares_timer_active) {
+    ev_timer_stop(loop, &ares_timer);
+    ares_timer_active = false;
+  }
+}
+
+static void ares_update_timer(void) {
+  struct ev_loop* loop = wget_ev_loop_get();
+  struct timeval tv;
+  struct timeval* tvp = ares_timeout(ares, NULL, &tv);
+
+  if (!tvp) {
+    if (ares_timer_active) {
+      ev_timer_stop(loop, &ares_timer);
+      ares_timer_active = false;
+    }
+    return;
+  }
+
+  double after = tvp->tv_sec + (double)tvp->tv_usec / 1000000.0;
+  if (after < 0)
+    after = 0;
+
+  if (ares_timer_active)
+    ev_timer_stop(loop, &ares_timer);
+
+  ev_timer_init(&ares_timer, ares_timeout_cb, after, 0.);
+  ev_timer_start(loop, &ares_timer);
+  ares_timer_active = true;
+}
+
+static void ares_timeout_cb(EV_P_ ev_timer* w WGET_ATTR_UNUSED, int revents WGET_ATTR_UNUSED) {
+  ares_timer_active = false;
+  ares_process_fd(ares, ARES_SOCKET_BAD, ARES_SOCKET_BAD);
+  ares_update_timer();
+}
+
+static void ares_io_cb(EV_P_ ev_io* w, int revents) {
+  struct ares_socket_watch* watch = (struct ares_socket_watch*)w->data;
+  ares_socket_t read_fd = (revents & EV_READ) ? watch->fd : ARES_SOCKET_BAD;
+  ares_socket_t write_fd = (revents & EV_WRITE) ? watch->fd : ARES_SOCKET_BAD;
+
+  ares_process_fd(ares, read_fd, write_fd);
+  ares_update_timer();
+}
+
+static bool dns_wait_for_completion(struct dns_query_ctx* ctx) {
+  struct ptimer* timer = NULL;
+  bool timed_out = false;
+
+  if (opt.dns_timeout > 0)
+    timer = ptimer_new();
+
+  while (!ctx->complete) {
+    if (timer && ptimer_measure(timer) >= opt.dns_timeout) {
+      timed_out = true;
+      ares_cancel(ares);
+      ares_update_timer();
+      break;
+    }
+
+    wget_ev_loop_run_once();
+  }
+
+  if (timer)
+    ptimer_destroy(timer);
+
+  return !timed_out && ctx->complete;
 }
 
 static struct address_list* address_list_from_ares_nodes(const struct ares_addrinfo_node* nodes) {
@@ -639,118 +728,50 @@ static struct address_list* address_list_from_ares_nodes(const struct ares_addri
   return al;
 }
 
-static void wget_ares_addrinfo_callback(void* arg, int status, int timeouts _GL_UNUSED, struct ares_addrinfo* info) {
-  struct address_list** al = (struct address_list**)arg;
+static void wget_ares_addrinfo_callback(void* arg, int status, int timeouts WGET_ATTR_UNUSED, struct ares_addrinfo* info) {
+  struct dns_query_ctx* ctx = (struct dns_query_ctx*)arg;
 
-  if (!info || status != ARES_SUCCESS) {
-    *al = NULL;
-    if (info)
-      ares_freeaddrinfo(info);
-    return;
-  }
+  ctx->status = status;
+  ctx->result = NULL;
 
-  *al = address_list_from_ares_nodes(info->nodes);
-  ares_freeaddrinfo(info);
+  if (info && status == ARES_SUCCESS)
+    ctx->result = address_list_from_ares_nodes(info->nodes);
+
+  if (info)
+    ares_freeaddrinfo(info);
+
+  ctx->complete = true;
 }
 
-static void host_ares_socket_state_cb(void* data _GL_UNUSED, ares_socket_t socket_fd, int readable, int writable) {
-  ares_track_socket_state(socket_fd, readable, writable);
-}
+static void host_ares_socket_state_cb(void* data WGET_ATTR_UNUSED, ares_socket_t socket_fd, int readable, int writable) {
+  struct ev_loop* loop = wget_ev_loop_get();
+  int events = (readable ? EV_READ : 0) | (writable ? EV_WRITE : 0);
+  size_t index = SIZE_MAX;
+  struct ares_socket_watch* watch = ares_watch_by_fd(socket_fd, &index);
 
-/* Since GnuLib's select() (i.e. rpl_select()) cannot handle socket-numbers
- * returned from C-ares, we must use the original select() from Winsock.
- */
-#ifdef WINDOWS
-#undef select
-#endif
+  if (events == 0) {
+    if (watch && index != SIZE_MAX)
+      ares_remove_watch_index(loop, index);
+  }
+  else if (!watch) {
+    watch = xnew0(struct ares_socket_watch);
+    watch->fd = socket_fd;
+    watch->events = events;
+    ev_io_init(&watch->io, ares_io_cb, socket_fd, events);
+    watch->io.data = watch;
+    ev_io_start(loop, &watch->io);
 
-static void wait_ares(ares_channel channel) {
-  struct ptimer* timer = NULL;
-
-  if (opt.dns_timeout)
-    timer = ptimer_new();
-
-  for (;;) {
-    struct timeval *tvp, tv;
-    fd_set read_fds, write_fds;
-    int nfds = 0;
-    size_t i;
-
-    if (ares_watch_count == 0)
-      break;
-
-    FD_ZERO(&read_fds);
-    FD_ZERO(&write_fds);
-
-    for (i = 0; i < ares_watch_count; ++i) {
-      struct ares_socket_watch* watch = &ares_watches[i];
-      if (watch->readable) {
-        FD_SET(watch->fd, &read_fds);
-        if ((int)watch->fd + 1 > nfds)
-          nfds = (int)watch->fd + 1;
-      }
-      if (watch->writable) {
-        FD_SET(watch->fd, &write_fds);
-        if ((int)watch->fd + 1 > nfds)
-          nfds = (int)watch->fd + 1;
-      }
-    }
-
-    if (nfds == 0)
-      break;
-
-    if (timer) {
-      double max = opt.dns_timeout - ptimer_measure(timer);
-
-      tv.tv_sec = (long)max;
-      tv.tv_usec = 1000000 * (max - (long)max);
-      tvp = ares_timeout(channel, &tv, &tv);
-    }
-    else
-      tvp = ares_timeout(channel, NULL, &tv);
-
-    int rc = select(nfds, &read_fds, &write_fds, NULL, tvp);
-
-    if (rc == 0) {
-      if (timer && ptimer_measure(timer) >= opt.dns_timeout) {
-        ares_cancel(channel);
-        continue;
-      }
-    }
-    else if (rc < 0) {
-      if (errno == EINTR)
-        continue;
-      break;
-    }
-
-    ares_fd_events_t* events = NULL;
-    size_t event_count = 0;
-
-    if (rc > 0) {
-      events = xnew_array(ares_fd_events_t, ares_watch_count);
-      for (i = 0; i < ares_watch_count; ++i) {
-        unsigned int mask = 0;
-        struct ares_socket_watch* watch = &ares_watches[i];
-
-        if (watch->readable && FD_ISSET(watch->fd, &read_fds))
-          mask |= ARES_FD_EVENT_READ;
-        if (watch->writable && FD_ISSET(watch->fd, &write_fds))
-          mask |= ARES_FD_EVENT_WRITE;
-
-        if (mask != 0) {
-          events[event_count].fd = watch->fd;
-          events[event_count].events = mask;
-          ++event_count;
-        }
-      }
-    }
-
-    ares_process_fds(channel, events, event_count, ARES_PROCESS_FLAG_NONE);
-    xfree(events);
+    ares_watches = xrealloc(ares_watches, (ares_watch_count + 1) * sizeof(*ares_watches));
+    ares_watches[ares_watch_count++] = watch;
+  }
+  else if (watch->events != events) {
+    ev_io_stop(loop, &watch->io);
+    ev_io_set(&watch->io, socket_fd, events);
+    watch->events = events;
+    ev_io_start(loop, &watch->io);
   }
 
-  if (timer)
-    ptimer_destroy(timer);
+  ares_update_timer();
 }
 
 void host_prepare_ares_options(struct ares_options* options, int* optmask) {
@@ -861,7 +882,8 @@ struct address_list* lookup_host(const char* host, int flags) {
 #ifdef HAVE_LIBCARES
   if (ares) {
     struct ares_addrinfo_hints hints;
-    struct address_list* async_al = NULL;
+    struct dns_query_ctx async_ctx;
+    bool completed;
 
     xzero(hints);
     hints.ai_socktype = SOCK_STREAM;
@@ -874,10 +896,23 @@ struct address_list* lookup_host(const char* host, int flags) {
     if (flags & LH_BIND)
       hints.ai_flags |= AI_PASSIVE;
 
-    ares_getaddrinfo(ares, host, NULL, &hints, wget_ares_addrinfo_callback, &async_al);
-    wait_ares(ares);
+    xzero(async_ctx);
+    ares_getaddrinfo(ares, host, NULL, &hints, wget_ares_addrinfo_callback, &async_ctx);
+    ares_update_timer();
+    completed = dns_wait_for_completion(&async_ctx);
+    if (!completed) {
+      if (!silent)
+        logputs(LOG_VERBOSE, _("failed: timed out.\n"));
+      return NULL;
+    }
 
-    al = async_al;
+    if (async_ctx.status != ARES_SUCCESS) {
+      if (!silent)
+        logprintf(LOG_VERBOSE, _("failed: %s.\n"), ares_strerror(async_ctx.status));
+      return NULL;
+    }
+
+    al = async_ctx.result;
   }
   else
 #endif
@@ -936,6 +971,8 @@ struct address_list* lookup_host(const char* host, int flags) {
 #ifdef HAVE_LIBCARES
   if (ares) {
     struct ares_addrinfo_hints hints;
+    struct dns_query_ctx async_ctx;
+    bool completed;
 
     xzero(hints);
     hints.ai_family = AF_INET;
@@ -943,8 +980,23 @@ struct address_list* lookup_host(const char* host, int flags) {
     if (flags & LH_BIND)
       hints.ai_flags |= AI_PASSIVE;
 
-    ares_getaddrinfo(ares, host, NULL, &hints, wget_ares_addrinfo_callback, &al);
-    wait_ares(ares);
+    xzero(async_ctx);
+    ares_getaddrinfo(ares, host, NULL, &hints, wget_ares_addrinfo_callback, &async_ctx);
+    ares_update_timer();
+    completed = dns_wait_for_completion(&async_ctx);
+    if (!completed) {
+      if (!silent)
+        logputs(LOG_VERBOSE, _("failed: timed out.\n"));
+      return NULL;
+    }
+
+    if (async_ctx.status != ARES_SUCCESS) {
+      if (!silent)
+        logprintf(LOG_VERBOSE, _("failed: %s.\n"), ares_strerror(async_ctx.status));
+      return NULL;
+    }
+
+    al = async_ctx.result;
   }
   else
 #endif

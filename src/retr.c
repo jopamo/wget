@@ -40,7 +40,7 @@ as that of the covered work.  */
 #include <unixio.h> /* For delete(). */
 #endif
 
-#ifdef HAVE_LIBZ
+#if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
 #include <zlib.h>
 #endif
 
@@ -88,7 +88,7 @@ static void limit_bandwidth_reset(void) {
   xzero(limit_data);
 }
 
-#ifdef HAVE_LIBZ
+#if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
 static voidpf zalloc(voidpf opaque, unsigned int items, unsigned int size) {
   (void)opaque;
   return (voidpf)xcalloc(items, size);
@@ -269,7 +269,7 @@ int fd_read_body(const char* downloaded_filename,
   wgint sum_written = 0;
   wgint remaining_chunk_size = 0;
 
-#ifdef HAVE_LIBZ
+#if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
   /* try to minimize the number of calls to inflate() and write_data() per
      call to fd_read() */
   unsigned int gzbufsize = dlbufsize * 4;
@@ -417,7 +417,7 @@ int fd_read_body(const char* downloaded_filename,
 
       sum_read += ret;
 
-#ifdef HAVE_LIBZ
+#if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
       if (gzbuf) {
         int err;
         int towrite;
@@ -512,7 +512,7 @@ out:
     ptimer_destroy(timer);
   }
 
-#ifdef HAVE_LIBZ
+#if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
   if (gzbuf) {
     int err = inflateEnd(&gzstream);
     if (ret >= 0) {
@@ -678,7 +678,7 @@ char* fd_read_hunk(int fd, hunk_terminator_t terminator, long sizehint, long max
   }
 }
 
-static const char* line_terminator(const char* start _GL_UNUSED, const char* peeked, int peeklen) {
+static const char* line_terminator(const char* start WGET_ATTR_UNUSED, const char* peeked, int peeklen) {
   const char* p = memchr(peeked, '\n', peeklen);
   if (p)
     /* p+1 because the line must include '\n' */
