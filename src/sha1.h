@@ -1,4 +1,7 @@
-/* Minimal SHA1 interface compatible with gnulib.  */
+/* Minimal SHA1 interface
+ * src/sha1.h
+ */
+
 #ifndef WGET_SHA1_H
 #define WGET_SHA1_H
 
@@ -7,14 +10,10 @@
 
 #define SHA1_DIGEST_SIZE 20
 
-#ifdef HAVE_NETTLE
-#include <nettle/sha1.h>
-#else
 #include <openssl/sha.h>
 typedef struct sha1_ctx {
   SHA_CTX impl;
 } sha1_ctx;
-#endif
 
 void sha1_init_ctx(struct sha1_ctx* ctx);
 void sha1_process_bytes(const void* buffer, size_t len, struct sha1_ctx* ctx);

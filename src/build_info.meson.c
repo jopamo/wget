@@ -1,10 +1,5 @@
-/* src/build_info.meson.c
- * Feature summary for --version output when building with Meson.
- *
- * This is a standalone replacement for the Autotools-generated
- * build_info.c file.  It mirrors the feature list emitted by
- * build_info.pl so "wget --version" keeps its traditional output
- * without having to run Perl during Meson builds.
+/* Feature summary for --version output when building with Meson.
+ * src/build_info.meson.c
  */
 
 #include "wget.h"
@@ -86,8 +81,6 @@ const char* compiled_features[] = {
 /* ssl choice */
 #if defined HAVE_LIBSSL || defined HAVE_LIBSSL32
     "+ssl/openssl",
-#elif defined HAVE_LIBGNUTLS
-    "+ssl/gnutls",
 #else
     "-ssl",
 #endif

@@ -78,10 +78,6 @@ if WITH_OPENSSL
 wget_SOURCES += openssl.c
 endif
 
-if WITH_GNUTLS
-wget_SOURCES += gnutls.c
-endif
-
 nodist_wget_SOURCES = version.c
 EXTRA_wget_SOURCES = iri.c metalink.c xattr.c
 LDADD = $(CODE_COVERAGE_LIBS) $(LIBOBJS) ../lib/libgnu.a \

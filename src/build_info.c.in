@@ -15,4 +15,3 @@ gpgme           defined HAVE_GPGME
 
 ssl choice:
     openssl     defined HAVE_LIBSSL || defined HAVE_LIBSSL32
-    gnutls      defined HAVE_LIBGNUTLS

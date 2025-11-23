@@ -84,44 +84,18 @@ if not have_iri
   message('Building without IRI support (requires iconv + libidn2).')
 endif
 
-nettle_dep = dependency('nettle', required: false)
-have_nettle = nettle_dep.found()
-if have_nettle
-  conf.set('HAVE_NETTLE', 1)
-endif
-
-openssl_dep = dependency('openssl', required: get_option('tls_backend') == 'openssl')
-gnutls_dep = dependency('gnutls', required: get_option('tls_backend') == 'gnutls')
-
+openssl_dep = dependency('openssl', required: true)
 have_rand_egd = false
-have_gnutls_priority = false
 
-if get_option('tls_backend') == 'openssl'
-  if not openssl_dep.found()
-    error('OpenSSL backend requested but the dependency was not found')
-  endif
-  conf.set('HAVE_LIBSSL', 1)
-  have_rand_egd = cc.has_function('RAND_egd', prefix: '#include <openssl/rand.h>', dependencies: openssl_dep)
-else
-  conf.set('HAVE_LIBGNUTLS', 1)
-  if not gnutls_dep.found()
-    error('GnuTLS backend requested but the dependency was not found')
-  endif
-  have_gnutls_priority = cc.has_function('gnutls_priority_set_direct', prefix: '#include <gnutls/gnutls.h>', dependencies: gnutls_dep)
-  if not have_nettle
-    error('GnuTLS backend requires nettle for digest helpers')
-  endif
+if not openssl_dep.found()
+  error('OpenSSL dependency was not found; it is required for TLS and digest helpers')
 endif
 
-if not have_nettle and not openssl_dep.found()
-  error('Need nettle or OpenSSL to provide digest routines')
-endif
+conf.set('HAVE_LIBSSL', 1)
+have_rand_egd = cc.has_function('RAND_egd', prefix: '#include <openssl/rand.h>', dependencies: openssl_dep)
 
 if have_rand_egd
   conf.set('HAVE_RAND_EGD', 1)
-endif
-if have_gnutls_priority
-  conf.set('HAVE_GNUTLS_PRIORITY_SET_DIRECT', 1)
 endif
 
 conf.set('HAVE_LIBZ', 1)
@@ -221,14 +195,8 @@ endif
 if math_dep.found()
   link_components += ['libm']
 endif
-if nettle_dep.found()
-  link_components += ['nettle']
-endif
 if openssl_dep.found()
   link_components += ['openssl']
-endif
-if gnutls_dep.found()
-  link_components += ['gnutls']
 endif
 if idn2_dep.found()
   link_components += ['libidn2']
@@ -253,7 +221,7 @@ if pcre2_dep.found()
 elif pcre_dep.found()
   link_components += ['libpcre']
 endif
-link_components += ['tls=' + get_option('tls_backend')]
+link_components += ['tls=openssl']
 link_string = ''
 if link_components.length() > 0
   link_string = 'deps: ' + ' '.join(link_components)

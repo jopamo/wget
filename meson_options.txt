@@ -1,4 +1,3 @@
-option('tls_backend', type: 'combo', choices: ['openssl', 'gnutls'], value: 'openssl', description: 'TLS backend to use')
 option('system_wgetrc', type: 'string', value: '/etc/wgetrc', description: 'Location of the system-wide wgetrc')
 option('locale_dir', type: 'string', value: '/usr/share/locale', description: 'Locale directory path')
 option('enable_metalink', type: 'boolean', value: false, description: 'Enable Metalink support')

@@ -61,11 +61,7 @@ if get_option('enable_xattr')
   sources += 'xattr.c'
 endif
 
-if get_option('tls_backend') == 'openssl'
-  sources += 'openssl.c'
-else
-  sources += 'gnutls.c'
-endif
+sources += 'openssl.c'
 
 incdirs = [src_inc, config_inc]
 
@@ -73,14 +69,8 @@ deps = [zlib_dep, threads_dep]
 if math_dep.found()
   deps += math_dep
 endif
-if nettle_dep.found()
-  deps += nettle_dep
-endif
 if openssl_dep.found()
   deps += openssl_dep
-endif
-if gnutls_dep.found()
-  deps += gnutls_dep
 endif
 if idn2_dep.found()
   deps += idn2_dep

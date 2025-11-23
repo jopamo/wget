@@ -1,33 +1,6 @@
 /* NTLM code.
-   Copyright (C) 2005-2011, 2015, 2018-2024 Free Software Foundation,
-   Inc.
-   Contributed by Daniel Stenberg.
-
-This file is part of GNU Wget.
-
-GNU Wget is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 3 of the License, or
- (at your option) any later version.
-
-GNU Wget is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Wget.  If not, see <http://www.gnu.org/licenses/>.
-
-Additional permission under GNU GPL version 3 section 7
-
-If you modify this program, or any covered work, by linking or
-combining it with the OpenSSL project's OpenSSL library (or a
-modified version of that library), containing parts covered by the
-terms of the OpenSSL or SSLeay licenses, the Free Software Foundation
-grants you additional permission to convey the resulting work.
-Corresponding Source for a non-source form of such a combination
-shall include the source code for the parts of OpenSSL used as well
-as that of the covered work.  */
+ * src/http-ntlm.c
+ */
 
 #include "wget.h"
 
@@ -45,10 +18,6 @@ as that of the covered work.  */
 #include "utils.h"
 #include "http-ntlm.h"
 
-#ifdef HAVE_NETTLE
-#include <nettle/md4.h>
-#include <nettle/des.h>
-#else
 #include <openssl/des.h>
 #include <openssl/md4.h>
 #include <openssl/opensslv.h>
@@ -67,8 +36,6 @@ as that of the covered work.  */
 /* Modern version */
 #define DESKEYARG(x) *x
 #define DESKEY(x) &x
-#endif
-
 #endif
 
 /* Define this to make the type-3 message include the NT response message */
@@ -156,22 +123,6 @@ bool ntlm_input(struct ntlmdata* ntlm, const char* header) {
  * Turns a 56 bit key into the 64 bit, odd parity key and sets the key.  The
  * key schedule ks is also set.
  */
-#ifdef HAVE_NETTLE
-static void setup_des_key(unsigned char* key_56, struct des_ctx* des) {
-  unsigned char key[8];
-
-  key[0] = key_56[0];
-  key[1] = ((key_56[0] << 7) & 0xFF) | (key_56[1] >> 1);
-  key[2] = ((key_56[1] << 6) & 0xFF) | (key_56[2] >> 2);
-  key[3] = ((key_56[2] << 5) & 0xFF) | (key_56[3] >> 3);
-  key[4] = ((key_56[3] << 4) & 0xFF) | (key_56[4] >> 4);
-  key[5] = ((key_56[4] << 3) & 0xFF) | (key_56[5] >> 5);
-  key[6] = ((key_56[5] << 2) & 0xFF) | (key_56[6] >> 6);
-  key[7] = (key_56[6] << 1) & 0xFF;
-
-  nettle_des_set_key(des, key);
-}
-#else
 static void setup_des_key(unsigned char* key_56, DES_key_schedule DESKEYARG(ks)) {
   DES_cblock key;
 
@@ -187,7 +138,6 @@ static void setup_des_key(unsigned char* key_56, DES_key_schedule DESKEYARG(ks))
   DES_set_odd_parity(&key);
   DES_set_key(&key, ks);
 }
-#endif
 
 /*
  * takes a 21 byte array and treats it as 3 56-bit DES keys. The
@@ -195,18 +145,6 @@ static void setup_des_key(unsigned char* key_56, DES_key_schedule DESKEYARG(ks))
  * bytes are stored in the results array.
  */
 static void calc_resp(unsigned char* keys, unsigned char* plaintext, unsigned char* results) {
-#ifdef HAVE_NETTLE
-  struct des_ctx des;
-
-  setup_des_key(keys, &des);
-  nettle_des_encrypt(&des, 8, results, plaintext);
-
-  setup_des_key(keys + 7, &des);
-  nettle_des_encrypt(&des, 8, results + 8, plaintext);
-
-  setup_des_key(keys + 14, &des);
-  nettle_des_encrypt(&des, 8, results + 16, plaintext);
-#else
   DES_key_schedule ks;
 
   setup_des_key(keys, DESKEY(ks));
@@ -217,7 +155,6 @@ static void calc_resp(unsigned char* keys, unsigned char* plaintext, unsigned ch
 
   setup_des_key(keys + 14, DESKEY(ks));
   DES_ecb_encrypt((DES_cblock*)plaintext, (DES_cblock*)(results + 16), DESKEY(ks), DES_ENCRYPT);
-#endif
 }
 
 /*
@@ -252,15 +189,6 @@ static void mkhash(const char* password,
 
   {
     /* create LanManager hashed password */
-#ifdef HAVE_NETTLE
-    struct des_ctx des;
-
-    setup_des_key(pw, &des);
-    nettle_des_encrypt(&des, 8, lmbuffer, magic);
-
-    setup_des_key(pw + 7, &des);
-    nettle_des_encrypt(&des, 8, lmbuffer + 8, magic);
-#else
     DES_key_schedule ks;
 
     setup_des_key(pw, DESKEY(ks));
@@ -268,7 +196,6 @@ static void mkhash(const char* password,
 
     setup_des_key(pw + 7, DESKEY(ks));
     DES_ecb_encrypt((DES_cblock*)magic, (DES_cblock*)(lmbuffer + 8), DESKEY(ks), DES_ENCRYPT);
-#endif
 
     memset(lmbuffer + 16, 0, 5);
   }
@@ -277,11 +204,7 @@ static void mkhash(const char* password,
 
 #ifdef USE_NTRESPONSES
   {
-#ifdef HAVE_NETTLE
-    struct md4_ctx MD4;
-#else
     MD4_CTX MD4;
-#endif
 
     unsigned char pw4[64];
 
@@ -295,16 +218,10 @@ static void mkhash(const char* password,
       pw4[2 * i + 1] = 0;
     }
 
-#ifdef HAVE_NETTLE
-    nettle_md4_init(&MD4);
-    nettle_md4_update(&MD4, (unsigned)(2 * len), pw4);
-    nettle_md4_digest(&MD4, MD4_DIGEST_SIZE, ntbuffer);
-#else
     /* create NT hashed password */
     MD4_Init(&MD4);
     MD4_Update(&MD4, pw4, 2 * len);
     MD4_Final(ntbuffer, &MD4);
-#endif
 
     memset(ntbuffer + 16, 0, 5);
   }
