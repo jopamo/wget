@@ -57,6 +57,7 @@ as that of the covered work.  */
 #include "url.h"
 #include "ssl.h"
 #include "exits.h"
+#include "threading.h"
 
 #include <fcntl.h>
 
@@ -67,6 +68,7 @@ as that of the covered work.  */
 /* Application-wide SSL context.  This is common to all SSL
    connections.  */
 static SSL_CTX* ssl_ctx;
+static wget_mutex_t ssl_context_lock = WGET_MUTEX_INITIALIZER;
 
 /* Initialize the SSL's PRNG using various methods. */
 
@@ -174,6 +176,7 @@ bool ssl_init(void) {
 #if !defined(LIBRESSL_VERSION_NUMBER) && (OPENSSL_VERSION_NUMBER >= 0x10100000L)
   int ssl_proto_version = 0;
 #endif
+  bool success = false;
 
 #if OPENSSL_VERSION_NUMBER >= 0x00907000
   if (ssl_true_initialized == 0) {
@@ -186,9 +189,12 @@ bool ssl_init(void) {
   }
 #endif
 
-  if (ssl_ctx)
-    /* The SSL has already been initialized. */
-    return true;
+  wget_mutex_lock(&ssl_context_lock);
+
+  if (ssl_ctx) {
+    success = true;
+    goto out;
+  }
 
   /* Init the PRNG.  If that fails, bail out.  */
   init_prng();
@@ -397,16 +403,30 @@ bool ssl_init(void) {
      tell it to do so.  */
   SSL_CTX_set_mode(ssl_ctx, SSL_MODE_AUTO_RETRY);
 
-  return true;
+  success = true;
+  goto out;
 
 error:
-  if (ssl_ctx)
+  if (ssl_ctx) {
     SSL_CTX_free(ssl_ctx);
+    ssl_ctx = NULL;
+  }
   print_errors();
-  return false;
+  success = false;
+
+out:
+  wget_mutex_unlock(&ssl_context_lock);
+  return success;
 }
 
-void ssl_cleanup(void) {}
+void ssl_cleanup(void) {
+  wget_mutex_lock(&ssl_context_lock);
+  if (ssl_ctx) {
+    SSL_CTX_free(ssl_ctx);
+    ssl_ctx = NULL;
+  }
+  wget_mutex_unlock(&ssl_context_lock);
+}
 
 struct openssl_transport_context {
   SSL* conn;         /* SSL connection handle */
@@ -726,8 +746,13 @@ bool ssl_connect_wget(int fd, const char* hostname, int* continue_session) {
 
   DEBUGP(("Initiating SSL handshake.\n"));
 
-  assert(ssl_ctx != NULL);
+  wget_mutex_lock(&ssl_context_lock);
+  if (!ssl_ctx) {
+    wget_mutex_unlock(&ssl_context_lock);
+    goto error;
+  }
   conn = SSL_new(ssl_ctx);
+  wget_mutex_unlock(&ssl_context_lock);
   if (!conn)
     goto error;
 #if OPENSSL_VERSION_NUMBER >= 0x0090806fL && !defined(OPENSSL_NO_TLSEXT)

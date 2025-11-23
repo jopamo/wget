@@ -61,6 +61,7 @@ as that of the covered work.  */
 #include "url.h"
 #include "hash.h"
 #include "ptimer.h"
+#include "threading.h"
 
 #ifndef NO_ADDRESS
 #define NO_ADDRESS NO_DATA
@@ -506,32 +507,39 @@ bool is_valid_ipv6_address(const char* str, const char* end) {
 
 /* Mapping between known hosts and to lists of their addresses. */
 static struct hash_table* host_name_addresses_map;
+static wget_mutex_t dns_cache_lock = WGET_MUTEX_INITIALIZER;
 
 /* Return the host's resolved addresses from the cache, if
    available.  */
 
 static struct address_list* cache_query(const char* host) {
-  struct address_list* al;
-  if (!host_name_addresses_map)
-    return NULL;
-  al = hash_table_get(host_name_addresses_map, host);
-  if (al) {
-    DEBUGP(("Found %s in host_name_addresses_map (%p)\n", host, (void*)al));
-    ++al->refcount;
-    return al;
+  struct address_list* al = NULL;
+
+  wget_mutex_lock(&dns_cache_lock);
+  if (host_name_addresses_map) {
+    al = hash_table_get(host_name_addresses_map, host);
+    if (al)
+      ++al->refcount;
   }
-  return NULL;
+  wget_mutex_unlock(&dns_cache_lock);
+
+  if (al)
+    DEBUGP(("Found %s in host_name_addresses_map (%p)\n", host, (void*)al));
+
+  return al;
 }
 
 /* Cache the DNS lookup of HOST.  Subsequent invocations of
    lookup_host will return the cached value.  */
 
 static void cache_store(const char* host, struct address_list* al) {
+  wget_mutex_lock(&dns_cache_lock);
   if (!host_name_addresses_map)
     host_name_addresses_map = make_nocase_string_hash_table(0);
 
   ++al->refcount;
   hash_table_put(host_name_addresses_map, xstrdup_lower(host), al);
+  wget_mutex_unlock(&dns_cache_lock);
 
   IF_DEBUG {
     int i;
@@ -547,13 +555,17 @@ static void cache_store(const char* host, struct address_list* al) {
 
 static void cache_remove(const char* host) {
   struct address_list* al;
-  if (!host_name_addresses_map)
+  wget_mutex_lock(&dns_cache_lock);
+  if (!host_name_addresses_map) {
+    wget_mutex_unlock(&dns_cache_lock);
     return;
+  }
   al = hash_table_get(host_name_addresses_map, host);
   if (al) {
     address_list_release(al);
     hash_table_remove(host_name_addresses_map, host);
   }
+  wget_mutex_unlock(&dns_cache_lock);
 }
 
 #ifdef HAVE_LIBCARES
@@ -917,6 +929,7 @@ bool sufmatch(const char** list, const char* what) {
 
 #if defined DEBUG_MALLOC || defined TESTING
 void host_cleanup(void) {
+  wget_mutex_lock(&dns_cache_lock);
   if (host_name_addresses_map) {
     hash_table_iterator iter;
     for (hash_table_iterate(host_name_addresses_map, &iter); hash_table_iter_next(&iter);) {
@@ -929,6 +942,7 @@ void host_cleanup(void) {
     hash_table_destroy(host_name_addresses_map);
     host_name_addresses_map = NULL;
   }
+  wget_mutex_unlock(&dns_cache_lock);
 }
 #endif
 

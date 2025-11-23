@@ -35,6 +35,7 @@ as that of the covered work.  */
 #include "host.h" /* for is_valid_ip_address() */
 #include "hash.h"
 #include "c-ctype.h"
+#include "threading.h"
 #ifdef TESTING
 #include "init.h" /* for ajoin_dir_file() */
 #include "../tests/unit-tests.h"
@@ -53,7 +54,16 @@ struct hsts_store {
   struct hash_table* table;
   time_t last_mtime;
   bool changed;
+  wget_mutex_t lock;
 };
+
+static void hsts_lock(hsts_store_t store) {
+  wget_mutex_lock(&store->lock);
+}
+
+static void hsts_unlock(hsts_store_t store) {
+  wget_mutex_unlock(&store->lock);
+}
 
 struct hsts_kh {
   char* host;
@@ -315,6 +325,13 @@ bool hsts_match(hsts_store_t store, struct url* u) {
   enum hsts_kh_match match = NO_MATCH;
   int port = MAKE_EXPLICIT_PORT(u->scheme, u->port);
 
+  if (!store) {
+    xfree(kh);
+    return false;
+  }
+
+  hsts_lock(store);
+
   /* avoid doing any computation if we're already in HTTPS */
   if (!hsts_is_scheme_valid(u->scheme)) {
     entry = hsts_find_entry(store, u->host, port, &match, kh);
@@ -339,6 +356,7 @@ bool hsts_match(hsts_store_t store, struct url* u) {
   }
 
   xfree(kh);
+  hsts_unlock(store);
 
   return url_changed;
 }
@@ -370,6 +388,13 @@ bool hsts_store_entry(hsts_store_t store, enum url_scheme scheme, const char* ho
   enum hsts_kh_match match = NO_MATCH;
   struct hsts_kh* kh = xnew(struct hsts_kh);
   struct hsts_kh_info* entry = NULL;
+
+  if (!store) {
+    xfree(kh);
+    return false;
+  }
+
+  hsts_lock(store);
 
   if (hsts_is_host_eligible(scheme, host)) {
     port = MAKE_EXPLICIT_PORT(scheme, port);
@@ -413,6 +438,7 @@ bool hsts_store_entry(hsts_store_t store, enum url_scheme scheme, const char* ho
   }
 
   xfree(kh);
+  hsts_unlock(store);
 
   return result;
 }
@@ -422,6 +448,7 @@ hsts_store_t hsts_store_open(const char* filename) {
   file_stats_t fstats;
 
   store = xnew0(struct hsts_store);
+  wget_mutex_init(&store->lock);
   store->table = hash_table_new(0, hsts_hash_func, hsts_cmp_func);
   store->last_mtime = 0;
   store->changed = false;
@@ -468,6 +495,11 @@ void hsts_store_save(hsts_store_t store, const char* filename) {
   FILE* fp = NULL;
   int fd = 0;
 
+  if (!store)
+    return;
+
+  hsts_lock(store);
+
   if (filename && hash_table_count(store->table) > 0) {
     fp = fopen(filename, "a+");
     if (fp) {
@@ -494,14 +526,29 @@ void hsts_store_save(hsts_store_t store, const char* filename) {
       fclose(fp);
     }
   }
+
+  hsts_unlock(store);
 }
 
 bool hsts_store_has_changed(hsts_store_t store) {
-  return (store ? store->changed : false);
+  bool changed = false;
+
+  if (!store)
+    return false;
+
+  hsts_lock(store);
+  changed = store->changed;
+  hsts_unlock(store);
+  return changed;
 }
 
 void hsts_store_close(hsts_store_t store) {
   hash_table_iterator it;
+
+  if (!store)
+    return;
+
+  hsts_lock(store);
 
   /* free all the host fields */
   for (hash_table_iterate(store->table, &it); hash_table_iter_next(&it);) {
@@ -511,6 +558,10 @@ void hsts_store_close(hsts_store_t store) {
   }
 
   hash_table_destroy(store->table);
+  store->table = NULL;
+
+  hsts_unlock(store);
+  wget_mutex_destroy(&store->lock);
 }
 
 #ifdef TESTING

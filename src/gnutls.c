@@ -49,6 +49,7 @@ as that of the covered work.  */
 #include "ptimer.h"
 #include "hash.h"
 #include "ssl.h"
+#include "threading.h"
 
 #include <fcntl.h>
 
@@ -90,16 +91,21 @@ static int key_type_to_gnutls_type(enum keyfile_type type) {
 static bool ssl_initialized = false;
 
 static gnutls_certificate_credentials_t credentials;
+static wget_mutex_t ssl_state_lock = WGET_MUTEX_INITIALIZER;
 bool ssl_init(void) {
   /* Becomes true if GnuTLS is initialized. */
   const char* ca_directory;
   DIR* dir;
   int ncerts = -1;
   int rc;
+  bool success = false;
 
   /* GnuTLS should be initialized only once. */
-  if (ssl_initialized)
-    return true;
+  wget_mutex_lock(&ssl_state_lock);
+  if (ssl_initialized) {
+    success = true;
+    goto out;
+  }
 
   gnutls_global_init();
   gnutls_certificate_allocate_credentials(&credentials);
@@ -169,7 +175,7 @@ bool ssl_init(void) {
   if (opt.crl_file) {
     if ((rc = gnutls_certificate_set_x509_crl_file(credentials, opt.crl_file, GNUTLS_X509_FMT_PEM)) <= 0) {
       logprintf(LOG_NOTQUIET, _("ERROR: Failed to load CRL file '%s': (%d)\n"), opt.crl_file, rc);
-      return false;
+      goto out;
     }
 
     logprintf(LOG_VERBOSE, _("Loaded CRL file '%s'\n"), opt.crl_file);
@@ -202,13 +208,19 @@ cert to be of the same type.\n"));
   }
 
   ssl_initialized = true;
+  success = true;
 
-  return true;
+out:
+  wget_mutex_unlock(&ssl_state_lock);
+  return success;
 }
 
 void ssl_cleanup(void) {
-  if (!ssl_initialized)
+  wget_mutex_lock(&ssl_state_lock);
+  if (!ssl_initialized) {
+    wget_mutex_unlock(&ssl_state_lock);
     return;
+  }
 
   if (credentials)
     gnutls_certificate_free_credentials(credentials);
@@ -216,6 +228,7 @@ void ssl_cleanup(void) {
   gnutls_global_deinit();
 
   ssl_initialized = false;
+  wget_mutex_unlock(&ssl_state_lock);
 }
 
 struct wgnutls_transport_context {

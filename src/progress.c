@@ -43,6 +43,7 @@ as that of the covered work.  */
 #include "utils.h"
 #include "retr.h"
 #include "c-strcase.h"
+#include "threading.h"
 
 struct progress_implementation {
   const char* name;
@@ -72,6 +73,15 @@ static struct progress_implementation implementations[] = {{"dot", 0, dot_create
                                                            {"bar", 1, bar_create, bar_update, bar_draw, bar_finish, bar_set_params}};
 static struct progress_implementation* current_impl;
 static int current_impl_locked;
+static wget_mutex_t progress_mutex = WGET_MUTEX_INITIALIZER;
+
+static void progress_lock(void) {
+  wget_mutex_lock(&progress_mutex);
+}
+
+static void progress_unlock(void) {
+  wget_mutex_unlock(&progress_mutex);
+}
 
 /* Progress implementation used by default.  Can be overridden in
    wgetrc or by the fallback one.  */
@@ -108,6 +118,8 @@ void set_progress_implementation(const char* name) {
   struct progress_implementation* pi = implementations;
   const char* colon;
 
+  progress_lock();
+
   if (!name)
     name = DEFAULT_PROGRESS_IMPLEMENTATION;
 
@@ -127,12 +139,14 @@ void set_progress_implementation(const char* name) {
 
       if (pi->set_params)
         pi->set_params(colon);
+      progress_unlock();
       return;
     }
+  progress_unlock();
   abort();
 }
 
-static int output_redirected;
+static volatile sig_atomic_t output_redirected;
 
 void progress_schedule_redirect(void) {
   output_redirected = 1;
@@ -145,6 +159,9 @@ void progress_schedule_redirect(void) {
    advance.  */
 
 void* progress_create(const char* f_download, wgint initial, wgint total) {
+  void* progress;
+
+  progress_lock();
   /* Check if the log status has changed under our feet. */
   if (output_redirected) {
     if (!current_impl_locked)
@@ -152,7 +169,9 @@ void* progress_create(const char* f_download, wgint initial, wgint total) {
     output_redirected = 0;
   }
 
-  return current_impl->create(f_download, initial, total);
+  progress = current_impl->create(f_download, initial, total);
+  progress_unlock();
+  return progress;
 }
 
 /* Return true if the progress gauge is "interactive", i.e. if it can
@@ -161,7 +180,12 @@ void* progress_create(const char* f_download, wgint initial, wgint total) {
    and current update.  */
 
 bool progress_interactive_p(void* progress _GL_UNUSED) {
-  return current_impl->interactive;
+  bool interactive;
+
+  progress_lock();
+  interactive = current_impl->interactive;
+  progress_unlock();
+  return interactive;
 }
 
 /* Inform the progress gauge of newly received bytes.  DLTIME is the
@@ -177,8 +201,10 @@ void progress_update(void* progress, wgint howmuch, double dltime) {
   if (howmuch < 0)
     howmuch = 0;
 
+  progress_lock();
   current_impl->update(progress, howmuch, dltime);
   current_impl->draw(progress);
+  progress_unlock();
 }
 
 /* Tell the progress gauge to clean up.  Calling this will free the
@@ -191,7 +217,9 @@ void progress_finish(void* progress, double dltime) {
   else if (dltime < 0)
     dltime = 0;
 
+  progress_lock();
   current_impl->finish(progress, dltime);
+  progress_unlock();
 }
 
 /* Dot-printing. */

@@ -41,6 +41,7 @@ as that of the covered work.  */
 #include "utils.h"
 #include "exits.h"
 #include "log.h"
+#include "threading.h"
 
 /* 2005-10-25 SMS.
    VMS log files are often VFC record format, not stream, so fputs() can
@@ -152,7 +153,19 @@ static int log_line_current = -1;
    than create new ones.  */
 static bool trailing_line;
 
-static void check_redirect_output(void);
+static void check_redirect_output_locked(void);
+static void redirect_output_locked(bool, const char*);
+static void logflush_locked(void);
+
+static wget_mutex_t log_mutex = WGET_MUTEX_INITIALIZER;
+
+static void log_lock(void) {
+  wget_mutex_lock(&log_mutex);
+}
+
+static void log_unlock(void) {
+  wget_mutex_unlock(&log_mutex);
+}
 
 #define ROT_ADVANCE(num)          \
   do {                            \
@@ -329,7 +342,9 @@ static FILE* get_warc_log_fp(void) {
 /* Sets the file descriptor for the secondary log file.  */
 
 void log_set_warc_log_fp(FILE* fp) {
+  log_lock();
   warclogfp = fp;
+  log_unlock();
 }
 
 /* Log a literal string S.  The string is logged as-is, without a
@@ -340,7 +355,11 @@ void logputs(enum log_options o, const char* s) {
   FILE* warcfp;
   int errno_save = errno;
 
-  check_redirect_output();
+  CHECK_VERBOSE(o);
+
+  log_lock();
+
+  check_redirect_output_locked();
   if (o == LOG_PROGRESS)
     fp = get_progress_fp();
   else
@@ -348,13 +367,13 @@ void logputs(enum log_options o, const char* s) {
 
   errno = errno_save;
 
-  if (fp == NULL)
+  if (fp == NULL) {
+    log_unlock();
     return;
+  }
 
   warcfp = get_warc_log_fp();
   errno = errno_save;
-
-  CHECK_VERBOSE(o);
 
   FPUTS(s, fp);
   if (warcfp != NULL)
@@ -362,11 +381,12 @@ void logputs(enum log_options o, const char* s) {
   if (save_context_p)
     saved_append(s);
   if (flush_log_p)
-    logflush();
+    logflush_locked();
   else
     needs_flushing = true;
 
   errno = errno_save;
+  log_unlock();
 }
 
 struct logvprintf_state {
@@ -455,7 +475,7 @@ static bool GCC_FORMAT_ATTR(2, 0) log_vprintf_internal(struct logvprintf_state* 
 
 flush:
   if (flush_log_p)
-    logflush();
+    logflush_locked();
   else
     needs_flushing = true;
 
@@ -463,7 +483,7 @@ flush:
 }
 
 /* Flush LOGFP.  Useful while flushing is disabled.  */
-void logflush(void) {
+static void logflush_locked(void) {
   FILE* fp = get_log_fp();
   FILE* warcfp = get_warc_log_fp();
   if (fp) {
@@ -485,10 +505,19 @@ void logflush(void) {
   needs_flushing = false;
 }
 
+void logflush(void) {
+  log_lock();
+  logflush_locked();
+  log_unlock();
+}
+
 /* Enable or disable log flushing. */
 void log_set_flush(bool flush) {
-  if (flush == flush_log_p)
+  log_lock();
+  if (flush == flush_log_p) {
+    log_unlock();
     return;
+  }
 
   if (flush == false) {
     /* Disable flushing by setting flush_log_p to 0. */
@@ -498,9 +527,11 @@ void log_set_flush(bool flush) {
     /* Re-enable flushing.  If anything was printed in no-flush mode,
        flush the log now.  */
     if (needs_flushing)
-      logflush();
+      logflush_locked();
     flush_log_p = true;
   }
+
+  log_unlock();
 }
 
 /* (Temporarily) disable storing log to memory.  Returns the old
@@ -508,8 +539,12 @@ void log_set_flush(bool flush) {
    reestablish storing. */
 
 bool log_set_save_context(bool savep) {
-  bool old = save_context_p;
+  bool old;
+
+  log_lock();
+  old = save_context_p;
   save_context_p = savep;
+  log_unlock();
   return old;
 }
 
@@ -525,10 +560,14 @@ void logprintf(enum log_options o, const char* fmt, ...) {
 
   CHECK_VERBOSE(o);
 
-  check_redirect_output();
+  log_lock();
+
+  check_redirect_output_locked();
   errno = errno_saved;
-  if (inhibit_logging)
+  if (inhibit_logging) {
+    log_unlock();
     return;
+  }
 
   xzero(lpstate);
   errno = 0;
@@ -537,11 +576,14 @@ void logprintf(enum log_options o, const char* fmt, ...) {
     done = log_vprintf_internal(&lpstate, fmt, args);
     va_end(args);
 
-    if (done && errno == EPIPE)
+    if (done && errno == EPIPE) {
+      log_unlock();
       exit(WGET_EXIT_GENERIC_ERROR);
+    }
   } while (!done);
 
   errno = errno_saved;
+  log_unlock();
 }
 
 #ifdef ENABLE_DEBUG
@@ -553,11 +595,14 @@ void debug_logprintf(const char* fmt, ...) {
     struct logvprintf_state lpstate;
     bool done;
 
+    log_lock();
 #ifndef TESTING
-    check_redirect_output();
+    check_redirect_output_locked();
 #endif
-    if (inhibit_logging)
+    if (inhibit_logging) {
+      log_unlock();
       return;
+    }
 
     xzero(lpstate);
     do {
@@ -565,6 +610,8 @@ void debug_logprintf(const char* fmt, ...) {
       done = log_vprintf_internal(&lpstate, fmt, args);
       va_end(args);
     } while (!done);
+
+    log_unlock();
   }
 }
 #endif /* ENABLE_DEBUG */
@@ -572,6 +619,7 @@ void debug_logprintf(const char* fmt, ...) {
 /* Open FILE and set up a logging stream.  If FILE cannot be opened,
    exit with status of 1.  */
 void log_init(const char* file, bool appendp) {
+  log_lock();
   if (file) {
     if (HYPHENP(file)) {
       stdlogfp = stdout;
@@ -613,12 +661,16 @@ void log_init(const char* file, bool appendp) {
   /* Initialize this values so we don't have to ask every time we print line */
   shell_is_interactive = isatty(STDIN_FILENO);
 #endif
+
+  log_unlock();
 }
 
 /* Close LOGFP (only if we opened it, not if it's stderr), inhibit
    further logging and free the memory associated with it.  */
 void log_close(void) {
   int i;
+
+  log_lock();
 
   if (logfp && logfp != stderr && logfp != stdout) {
     if (logfp == stdlogfp)
@@ -636,6 +688,8 @@ void log_close(void) {
     free_log_line(i);
   log_line_current = -1;
   trailing_line = false;
+
+  log_unlock();
 }
 
 /* Dump saved lines to logfp. */
@@ -824,8 +878,10 @@ const char* escnonprint_uri(const char* str) {
 #if defined DEBUG_MALLOC || defined TESTING
 void log_cleanup(void) {
   size_t i;
+  log_lock();
   for (i = 0; i < countof(ring); i++)
     xfree(ring[i].buffer);
+  log_unlock();
 }
 #endif
 
@@ -835,7 +891,7 @@ static const char* redirect_request_signal_name;
 
 /* Redirect output to `wget-log' or back to stdout/stderr.  */
 
-void redirect_output(bool to_file, const char* signal_name) {
+static void redirect_output_locked(bool to_file, const char* signal_name) {
   if (to_file && logfp != filelogfp) {
     if (signal_name) {
       fprintf(stderr, "\n%s received.", signal_name);
@@ -869,9 +925,15 @@ void redirect_output(bool to_file, const char* signal_name) {
   }
 }
 
+void redirect_output(bool to_file, const char* signal_name) {
+  log_lock();
+  redirect_output_locked(to_file, signal_name);
+  log_unlock();
+}
+
 /* Check whether there's a need to redirect output. */
 
-static void check_redirect_output(void) {
+static void check_redirect_output_locked(void) {
 #if !defined(WINDOWS) && !defined(__VMS)
   /* If it was redirected already to log file by SIGHUP, SIGUSR1 or -o parameter,
    * it was permanent.
@@ -882,11 +944,11 @@ static void check_redirect_output(void) {
 
     if (foreground_pgrp != -1 && foreground_pgrp != getpgrp() && !opt.quiet) {
       /* Process backgrounded */
-      redirect_output(true, NULL);
+      redirect_output_locked(true, NULL);
     }
     else {
       /* Process foregrounded */
-      redirect_output(false, NULL);
+      redirect_output_locked(false, NULL);
     }
   }
 #endif /* !defined(WINDOWS) && !defined(__VMS) */
