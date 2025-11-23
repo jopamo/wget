@@ -37,6 +37,7 @@
 #include "html-url.h"
 #include "iri.h"
 #include "hsts.h"
+#include <ev.h>
 #include "evhelpers.h"
 
 /* Total size of downloaded files.  Used to enforce quota.  */
@@ -517,6 +518,113 @@ out:
   return ret;
 }
 
+/* Asynchronous wrapper for fd_read_body(), driven by libev watchers.
+   This is a transitional helper so higher level code can attach
+   per-transfer state to the central event loop without changing the
+   existing blocking body reader yet.  */
+
+typedef void (*retr_body_done_cb)(int status, wgint qtyread, wgint qtywritten, double elapsed, void* user_data);
+
+struct retr_async_ctx {
+  struct ev_loop* loop;
+  ev_io io_watcher;
+
+  const char* downloaded_filename;
+  int fd;
+  FILE* out;
+  wgint toread;
+  wgint startpos;
+  wgint* qtyread;
+  wgint* qtywritten;
+  double* elapsed;
+  int flags;
+  FILE* out2;
+
+  retr_body_done_cb done_cb;
+  void* user_data;
+};
+
+static void retr_async_finish(struct retr_async_ctx* ctx, int status, wgint qtyread, wgint qtywritten, double elapsed) {
+  if (ctx->loop)
+    ev_io_stop(ctx->loop, &ctx->io_watcher);
+
+  if (ctx->qtyread)
+    *ctx->qtyread += qtyread;
+  if (ctx->qtywritten)
+    *ctx->qtywritten += qtywritten;
+  if (ctx->elapsed)
+    *ctx->elapsed = elapsed;
+
+  if (ctx->done_cb)
+    ctx->done_cb(status, ctx->qtyread ? *ctx->qtyread : qtyread, ctx->qtywritten ? *ctx->qtywritten : qtywritten, ctx->elapsed ? *ctx->elapsed : elapsed, ctx->user_data);
+
+  xfree(ctx);
+}
+
+static void retr_async_io_cb(EV_P_ ev_io* w, int revents) {
+  struct retr_async_ctx* ctx = (struct retr_async_ctx*)w->data;
+  wgint local_read = 0;
+  wgint local_written = 0;
+  double local_elapsed = 0.0;
+  int status;
+
+  if (!(revents & EV_READ))
+    return;
+
+  /* Stop watching the fd while we run the synchronous body reader.
+     A later refactor can inline the body loop here and make the
+     whole path nonblocking. */
+  ev_io_stop(loop, w);
+
+  status = fd_read_body(ctx->downloaded_filename, ctx->fd, ctx->out, ctx->toread, ctx->startpos, ctx->qtyread ? ctx->qtyread : &local_read, ctx->qtywritten ? ctx->qtywritten : &local_written,
+                        ctx->elapsed ? ctx->elapsed : &local_elapsed, ctx->flags, ctx->out2);
+
+  retr_async_finish(ctx, status, ctx->qtyread ? *ctx->qtyread : local_read, ctx->qtywritten ? *ctx->qtywritten : local_written, ctx->elapsed ? *ctx->elapsed : local_elapsed);
+}
+
+/* Start an asynchronous body read on FD.
+   The callback is invoked once fd_read_body() has completed.  */
+
+int retr_body_start_async(struct ev_loop* loop,
+                          const char* downloaded_filename,
+                          int fd,
+                          FILE* out,
+                          wgint toread,
+                          wgint startpos,
+                          wgint* qtyread,
+                          wgint* qtywritten,
+                          double* elapsed,
+                          int flags,
+                          FILE* out2,
+                          retr_body_done_cb done_cb,
+                          void* user_data) {
+  struct retr_async_ctx* ctx;
+
+  if (!loop || fd < 0)
+    return -1;
+
+  ctx = xcalloc(1, sizeof(*ctx));
+  ctx->loop = loop;
+  ctx->downloaded_filename = downloaded_filename;
+  ctx->fd = fd;
+  ctx->out = out;
+  ctx->toread = toread;
+  ctx->startpos = startpos;
+  ctx->qtyread = qtyread;
+  ctx->qtywritten = qtywritten;
+  ctx->elapsed = elapsed;
+  ctx->flags = flags;
+  ctx->out2 = out2;
+  ctx->done_cb = done_cb;
+  ctx->user_data = user_data;
+
+  ev_io_init(&ctx->io_watcher, retr_async_io_cb, fd, EV_READ);
+  ctx->io_watcher.data = ctx;
+  ev_io_start(loop, &ctx->io_watcher);
+
+  return 0;
+}
+
 /* Read a hunk of data from FD, up until a terminator.  The hunk is
    limited by whatever the TERMINATOR callback chooses as its
    terminator.  For example, if terminator stops at newline, the hunk
@@ -731,7 +839,7 @@ double calc_rate(wgint bytes, double secs, int* units) {
   else {
     *units = 4, dlrate /= (bibyte * bibyte * bibyte * bibyte);
     if (dlrate > 99.99)
-      dlrate = 99.99;  // upper limit 99.99TB/s
+      dlrate = 99.99; /* upper limit 99.99TB/s */
   }
 
   return dlrate;
@@ -1321,9 +1429,9 @@ void rotate_backups(const char* fname) {
     if (overflow)
       errno = ENAMETOOLONG;
     if (overflow || rename(from, to)) {
-      // The original file may not exist. In which case rename() will
-      // return ENOENT. This is not a real error. We could make this better
-      // by calling stat() first and making sure that the file exists.
+      /* The original file may not exist. In which case rename() will
+       * return ENOENT. This is not a real error. We could make this better
+       * by calling stat() first and making sure that the file exists. */
       if (errno != ENOENT)
         logprintf(LOG_NOTQUIET, "Failed to rename %s to %s: (%d) %s\n", from, to, errno, strerror(errno));
     }
