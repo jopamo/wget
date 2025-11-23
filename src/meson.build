@@ -2,7 +2,7 @@ src_inc = include_directories('.')
 
 sources = [
   'base32.c',
-  'build_info.c',
+  build_info_src,
   'connect.c',
   'convert.c',
   'cookies.c',
@@ -37,7 +37,7 @@ sources = [
   'transfer.c',
   'url.c',
   'utils.c',
-  'version.c',
+  version_src,
   'warc.c',
   'xalloc.c'
 ]

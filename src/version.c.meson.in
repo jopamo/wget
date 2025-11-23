@@ -1,0 +1,7 @@
+/* Meson generated version information for --version output. */
+
+#include "version.h"
+
+const char *version_string = @VERSION_STRING@;
+const char *compilation_string = @COMPILATION_STRING@;
+const char *link_string = @LINK_STRING@;

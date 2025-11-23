@@ -4,11 +4,11 @@ cc = meson.get_compiler('c')
 add_project_arguments('-D_GNU_SOURCE', '-D_FILE_OFFSET_BITS=64', language: 'c')
 
 conf = configuration_data()
-conf.set('PACKAGE_NAME', 'wget')
-conf.set('PACKAGE_VERSION', meson.project_version())
-conf.set('SYSTEM_WGETRC', get_option('system_wgetrc'))
-conf.set('LOCALEDIR', get_option('locale_dir'))
-conf.set('OS_TYPE', host_machine.system())
+conf.set_quoted('PACKAGE_NAME', 'wget')
+conf.set_quoted('PACKAGE_VERSION', meson.project_version())
+conf.set_quoted('SYSTEM_WGETRC', get_option('system_wgetrc'))
+conf.set_quoted('LOCALEDIR', get_option('locale_dir'))
+conf.set_quoted('OS_TYPE', host_machine.system())
 conf.set('SIZEOF_OFF_T', cc.sizeof('off_t'))
 
 conf.set('ENABLE_DIGEST', 1)
@@ -208,11 +208,79 @@ if cc.has_type('struct sockaddr_storage', prefix: '#include <sys/types.h>\n#incl
   conf.set('HAVE_STRUCT_SOCKADDR_STORAGE', 1)
 endif
 
+if not cc.has_header_symbol('fcntl.h', 'O_BINARY')
+  conf.set('O_BINARY', 0)
+endif
+
+compilation_string = '@0@ @1@'.format(cc.get_id(), cc.version())
+link_components = []
+link_components += ['zlib']
+if threads_dep.found()
+  link_components += ['threads']
+endif
+if math_dep.found()
+  link_components += ['libm']
+endif
+if nettle_dep.found()
+  link_components += ['nettle']
+endif
+if openssl_dep.found()
+  link_components += ['openssl']
+endif
+if gnutls_dep.found()
+  link_components += ['gnutls']
+endif
+if idn2_dep.found()
+  link_components += ['libidn2']
+endif
+if have_iconv
+  link_components += ['iconv']
+endif
+if libpsl_dep.found()
+  link_components += ['libpsl']
+endif
+if libproxy_dep.found()
+  link_components += ['libproxy']
+endif
+if libcares_dep.found()
+  link_components += ['libcares']
+endif
+if uuid_dep.found()
+  link_components += ['libuuid']
+endif
+if pcre2_dep.found()
+  link_components += ['libpcre2']
+elif pcre_dep.found()
+  link_components += ['libpcre']
+endif
+link_components += ['tls=' + get_option('tls_backend')]
+link_string = ''
+if link_components.length() > 0
+  link_string = 'deps: ' + ' '.join(link_components)
+endif
+
+build_info_src = configure_file(
+  input: 'src/build_info.meson.c',
+  output: 'build_info.c',
+  copy: true)
+
+version_conf = configuration_data()
+version_conf.set_quoted('VERSION_STRING', meson.project_version())
+version_conf.set_quoted('COMPILATION_STRING', compilation_string)
+version_conf.set_quoted('LINK_STRING', link_string)
+version_src = configure_file(
+  input: 'src/version.c.meson.in',
+  output: 'version.c',
+  configuration: version_conf)
+
 if get_option('enable_metalink')
   error('Metalink support is not available in this trimmed build.')
 endif
 
-config_h = configure_file(input: 'src/config.h.in', output: 'config.h', configuration: conf)
+configure_file(
+  output: 'config.h',
+  configuration: conf)
+
 config_inc = include_directories('.')
 
 subdir('src')
