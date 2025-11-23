@@ -1,4 +1,6 @@
-/* Minimal basename/dirname helpers.  */
+/* Minimal basename/dirname helpers.
+ * src/path.c
+ */
 
 #include "wget.h"
 #include "utils.h"

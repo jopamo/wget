@@ -1,4 +1,6 @@
 /* Minimal base32 helpers compatible with Wget's historical gnulib usage
+ * src/base32.c
+ *
  * Based on RFC 4648 reference implementations
  */
 

@@ -1,4 +1,6 @@
-/* Quoting helpers that mimic the bits of gnulib used by Wget.  */
+/* Quoting helpers that mimic the bits of gnulib used by Wget.
+ * src/quoting.c
+ */
 
 #include "wget.h"
 #include "quote.h"

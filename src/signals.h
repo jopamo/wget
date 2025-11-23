@@ -1,4 +1,7 @@
-/* Libev-backed signal helpers.  */
+/* Libev-backed signal helpers.
+ * src/signals.h
+ */
+
 #ifndef WGET_SIGNALS_H
 #define WGET_SIGNALS_H
 

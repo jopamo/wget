@@ -1,3 +1,7 @@
+/* NUL-terminating memory duplication helper
+ * src/xmemdup0.h
+ */
+
 #ifndef WGET_XMEMDUP0_H
 #define WGET_XMEMDUP0_H
 

@@ -1,4 +1,6 @@
-/* Safe stdio helpers replacing gnulib's close-stream wrappers.  */
+/* Safe stdio helpers replacing gnulib's close-stream wrappers.
+ * src/safe_stdio.c
+ */
 
 #include "wget.h"
 #include "safe_stdio.h"

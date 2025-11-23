@@ -1,3 +1,7 @@
+/* Helper glue translating sockets and timers into libev primitives
+ * src/evhelpers.c
+ */
+
 #include "wget.h"
 
 #include <errno.h>
@@ -30,7 +34,7 @@ static void fd_wait_io_cb(EV_P_ ev_io* w, int revents) {
   ctx->done = true;
   ev_io_stop(EV_A_ w);
   if (ctx->has_timer)
-    ev_timer_stop(EV_A_ &ctx->timer);
+    ev_timer_stop(EV_A_ & ctx->timer);
 }
 
 static void fd_wait_timer_cb(EV_P_ ev_timer* w, int revents WGET_ATTR_UNUSED) {
@@ -42,7 +46,7 @@ static void fd_wait_timer_cb(EV_P_ ev_timer* w, int revents WGET_ATTR_UNUSED) {
   ctx->timed_out = true;
   ctx->done = true;
   ev_timer_stop(EV_A_ w);
-  ev_io_stop(EV_A_ &ctx->io);
+  ev_io_stop(EV_A_ & ctx->io);
 }
 
 int wget_ev_io_wait(int fd, double maxtime, int wait_for) {

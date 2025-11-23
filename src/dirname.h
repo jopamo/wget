@@ -1,4 +1,7 @@
-/* Minimal dirname/basename helpers.  */
+/* Minimal dirname/basename helpers.
+ * src/dirname.h
+ */
+
 #ifndef WGET_DIRNAME_H
 #define WGET_DIRNAME_H
 

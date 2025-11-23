@@ -1,3 +1,7 @@
+/* Central libev event loop driver and orchestration
+ * src/evloop.c
+ */
+
 #include "wget.h"
 
 #include <ev.h>

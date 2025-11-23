@@ -1,4 +1,7 @@
-/* Simplified quotearg interface compatible with gnulib's headers.  */
+/* Simplified quotearg interface compatible with gnulib's headers.
+ * src/quotearg.h
+ */
+
 #ifndef WGET_QUOTEARG_H
 #define WGET_QUOTEARG_H
 

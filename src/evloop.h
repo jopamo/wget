@@ -1,3 +1,7 @@
+/* Interfaces for the central libev event loop
+ * src/evloop.h
+ */
+
 #ifndef WGET_EVLOOP_H
 #define WGET_EVLOOP_H
 

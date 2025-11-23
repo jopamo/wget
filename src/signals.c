@@ -1,3 +1,7 @@
+/* Signal subscription and dispatch helpers built on libev
+ * src/signals.c
+ */
+
 #include "wget.h"
 
 #include <ev.h>

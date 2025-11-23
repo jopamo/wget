@@ -1,4 +1,7 @@
-/* Locale independent ctype helpers.  */
+/* Locale independent ctype helpers.
+ * src/c-ctype.h
+ */
+
 #ifndef WGET_C_CTYPE_H
 #define WGET_C_CTYPE_H
 

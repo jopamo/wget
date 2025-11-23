@@ -1,4 +1,7 @@
-/* Path helpers derived from gnulib functionality.  */
+/* Path helpers derived from gnulib functionality.
+ * src/filename.h
+ */
+
 #ifndef WGET_FILENAME_H
 #define WGET_FILENAME_H
 

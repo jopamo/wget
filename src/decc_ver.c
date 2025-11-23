@@ -1,3 +1,7 @@
+/* Utility to print VMS compiler and runtime version macros
+ * src/decc_ver.c
+ */
+
 #include <stdio.h>
 
 int main(void) {

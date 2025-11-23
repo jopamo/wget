@@ -1,4 +1,7 @@
-/* Minimal gettext stubs used because translations were dropped.  */
+/* Minimal gettext stubs used because translations were dropped.
+ * src/gettext.h
+ */
+
 #ifndef WGET_GETTEXT_H
 #define WGET_GETTEXT_H
 

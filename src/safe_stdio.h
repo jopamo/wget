@@ -1,4 +1,7 @@
-/* Safe stdio wrappers replacing gnulib helpers.  */
+/* Safe stdio wrappers replacing gnulib helpers.
+ * src/safe_stdio.h
+ */
+
 #ifndef WGET_SAFE_STDIO_H
 #define WGET_SAFE_STDIO_H
 

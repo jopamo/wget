@@ -1,4 +1,7 @@
-/* Case insensitive comparison helpers.  */
+/* Case insensitive comparison helpers.
+ * src/c-strcase.h
+ */
+
 #ifndef WGET_C_STRCASE_H
 #define WGET_C_STRCASE_H
 

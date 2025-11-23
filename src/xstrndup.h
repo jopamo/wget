@@ -1,3 +1,7 @@
+/* Bounded string duplication helper
+ * src/xstrndup.h
+ */
+
 #ifndef WGET_XSTRNDUP_H
 #define WGET_XSTRNDUP_H
 

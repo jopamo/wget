@@ -1,4 +1,6 @@
-/* Replacement for gnulib xalloc helpers.  */
+/* Replacement for gnulib xalloc helpers.
+ * src/xalloc.c
+ */
 
 #include "wget.h"
 #include "exits.h"

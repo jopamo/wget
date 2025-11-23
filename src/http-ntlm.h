@@ -1,3 +1,7 @@
+/* Declarations for HTTP NTLM authentication helpers
+ * src/http-ntlm.h
+ */
+
 #ifndef __HTTP_NTLM_H
 #define __HTTP_NTLM_H
 /* Declarations for http_ntlm.c

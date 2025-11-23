@@ -381,10 +381,10 @@ char* ntlm_output(struct ntlmdata* ntlm, const char* user, const char* passwd, b
 
         if (!mkhash(passwd, &ntlm->nonce[0], lmresp
 #ifdef USE_NTRESPONSES
-                   ,
-                   ntresp
+                    ,
+                    ntresp
 #endif
-            )) {
+                    )) {
           DEBUGP(("Failed to create NTLM hash values.\n"));
           return NULL;
         }

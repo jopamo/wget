@@ -1409,7 +1409,11 @@ struct cookie_jar* cookie_jar_new(void) {
 
 void cookie_jar_delete(struct cookie_jar* jar WGET_ATTR_UNUSED) {}
 
-void cookie_handle_set_cookie(struct cookie_jar* jar WGET_ATTR_UNUSED, const char* host WGET_ATTR_UNUSED, int port WGET_ATTR_UNUSED, const char* request_path WGET_ATTR_UNUSED, const char* header WGET_ATTR_UNUSED) {}
+void cookie_handle_set_cookie(struct cookie_jar* jar WGET_ATTR_UNUSED,
+                              const char* host WGET_ATTR_UNUSED,
+                              int port WGET_ATTR_UNUSED,
+                              const char* request_path WGET_ATTR_UNUSED,
+                              const char* header WGET_ATTR_UNUSED) {}
 
 char* cookie_header(struct cookie_jar* jar WGET_ATTR_UNUSED, const char* host WGET_ATTR_UNUSED, int port WGET_ATTR_UNUSED, const char* path WGET_ATTR_UNUSED, bool secure WGET_ATTR_UNUSED) {
   return NULL;

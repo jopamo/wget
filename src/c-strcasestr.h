@@ -1,4 +1,7 @@
-/* Case insensitive substring search helper.  */
+/* Case insensitive substring search helper.
+ * src/c-strcasestr.h
+ */
+
 #ifndef WGET_C_STRCASESTR_H
 #define WGET_C_STRCASESTR_H
 

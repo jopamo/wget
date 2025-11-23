@@ -1,4 +1,7 @@
-/* Minimal allocation helpers that abort on OOM.  */
+/* Minimal allocation helpers that abort on OOM.
+ * src/xalloc.h
+ */
+
 #ifndef WGET_XALLOC_H
 #define WGET_XALLOC_H
 

@@ -1,4 +1,7 @@
-/* Simplified quoting helpers replacing gnulib's quote module.  */
+/* Simplified quoting helpers replacing gnulib's quote module.
+ * src/quote.h
+ */
+
 #ifndef WGET_QUOTE_H
 #define WGET_QUOTE_H
 

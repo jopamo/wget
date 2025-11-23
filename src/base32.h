@@ -1,4 +1,6 @@
 /* Minimal base32 encode/decode helpers
+ * src/base32.h
+ *
  * RFC 4648 alphabet with '=' padding, tuned for Wget compatibility
  */
 

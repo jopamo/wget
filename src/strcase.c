@@ -1,4 +1,6 @@
-/* Case insensitive helpers replacing gnulib pieces.  */
+/* Case insensitive helpers replacing gnulib pieces.
+ * src/strcase.c
+ */
 
 #include "wget.h"
 #include "c-strcase.h"

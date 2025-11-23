@@ -1,4 +1,7 @@
-/* Declarations of WARC helper methods. */
+/* Declarations of WARC helper methods.
+ * src/warc.h
+ */
+
 #ifndef WARC_H
 #define WARC_H
 
