@@ -1093,6 +1093,10 @@ static uerr_t retrieve_from_url_list(struct urlpos* url_list, int* count, struct
   struct urlpos* cur_url;
   uerr_t status;
 
+#ifndef ENABLE_IRI
+  (void)iri;
+#endif
+
   status = RETROK; /* Suppose everything is OK.  */
 
   for (cur_url = url_list; cur_url; cur_url = cur_url->next, ++*count) {
@@ -1169,7 +1173,7 @@ Removing file due to --delete-after in retrieve_from_file():\n"));
 
 uerr_t retrieve_from_file(const char* file, bool html, int* count) {
   uerr_t status;
-  struct urlpos *url_list, *cur_url;
+  struct urlpos* url_list;
   struct iri* iri = iri_new();
 
   char *input_file, *url_file = NULL;
