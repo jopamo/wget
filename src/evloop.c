@@ -14,6 +14,7 @@
 static struct ev_loop* main_loop;
 static ev_async wake_async;
 static bool wake_started;
+static unsigned int active_transfer_machines;
 
 static void evloop_wake_cb(EV_P_ ev_async* w WGET_ATTR_UNUSED, int revents WGET_ATTR_UNUSED) {}
 
@@ -72,4 +73,24 @@ void wget_ev_loop_break(void) {
 void wget_ev_loop_wakeup(void) {
   if (main_loop && wake_started)
     ev_async_send(main_loop, &wake_async);
+}
+
+void wget_ev_loop_transfer_ref(void) {
+  ++active_transfer_machines;
+}
+
+void wget_ev_loop_transfer_unref(void) {
+  if (active_transfer_machines == 0)
+    return;
+  --active_transfer_machines;
+}
+
+bool wget_ev_loop_has_active_transfers(void) {
+  return active_transfer_machines > 0;
+}
+
+void wget_ev_loop_run_transfers(void) {
+  struct ev_loop* loop = wget_ev_loop_get();
+  while (wget_ev_loop_has_active_transfers())
+    ev_run(loop, EVRUN_ONCE);
 }

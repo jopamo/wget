@@ -1,29 +1,12 @@
 /* Per-transfer context helpers for future concurrency work.
  * src/transfer.c
- *
- * Copyright (C) 2024 Free Software Foundation,
- * Inc.
- *
- * This file is part of GNU Wget.
- *
- * GNU Wget is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 3 of the License, or
- * (at your option) any later version.
- *
- * GNU Wget is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with Wget.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include "transfer.h"
 
 #include "wget.h"
 #include "utils.h"
+#include "evloop.h"
 
 #include <string.h>
 
@@ -40,12 +23,14 @@ void transfer_context_init(struct transfer_context* ctx) {
     return;
 
   memset(ctx, 0, sizeof(*ctx));
+  ctx->state = TRANSFER_STATE_IDLE;
 }
 
 void transfer_context_prepare(struct transfer_context* ctx, const struct options* template_opts, const char* requested_uri) {
   transfer_context_init(ctx);
   transfer_context_snapshot_options(ctx, template_opts);
   transfer_context_set_requested_uri(ctx, requested_uri);
+  transfer_context_bind_loop(ctx, NULL);
 }
 
 void transfer_context_free(struct transfer_context* ctx) {
@@ -90,4 +75,52 @@ void transfer_context_record_stats(struct transfer_context* ctx, wgint bytes, do
 
   ctx->stats.bytes_downloaded += bytes;
   ctx->stats.seconds_spent += seconds;
+}
+
+void transfer_context_bind_loop(struct transfer_context* ctx, struct ev_loop* loop) {
+  if (!ctx)
+    return;
+  if (!loop)
+    loop = wget_ev_loop_get();
+  ctx->loop = loop;
+}
+
+struct ev_loop* transfer_context_loop(struct transfer_context* ctx) {
+  if (!ctx)
+    return wget_ev_loop_get();
+  if (!ctx->loop)
+    ctx->loop = wget_ev_loop_get();
+  return ctx->loop;
+}
+
+void transfer_context_set_state(struct transfer_context* ctx, enum transfer_state state) {
+  if (!ctx)
+    return;
+  ctx->state = state;
+}
+
+enum transfer_state transfer_context_state(const struct transfer_context* ctx) {
+  if (!ctx)
+    return TRANSFER_STATE_IDLE;
+  return ctx->state;
+}
+
+const char* transfer_context_state_name(enum transfer_state state) {
+  switch (state) {
+    case TRANSFER_STATE_IDLE:
+      return "idle";
+    case TRANSFER_STATE_RESOLVING:
+      return "resolving";
+    case TRANSFER_STATE_CONNECTING:
+      return "connecting";
+    case TRANSFER_STATE_TRANSFERRING:
+      return "transferring";
+    case TRANSFER_STATE_COMPLETED:
+      return "completed";
+    case TRANSFER_STATE_FAILED:
+      return "failed";
+    default:
+      break;
+  }
+  return "unknown";
 }

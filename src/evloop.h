@@ -17,5 +17,9 @@ void wget_ev_loop_run_once(void);
 void wget_ev_loop_break(void);
 void wget_ev_loop_wakeup(void);
 bool wget_ev_loop_is_initialized(void);
+void wget_ev_loop_transfer_ref(void);
+void wget_ev_loop_transfer_unref(void);
+bool wget_ev_loop_has_active_transfers(void);
+void wget_ev_loop_run_transfers(void);
 
 #endif /* WGET_EVLOOP_H */

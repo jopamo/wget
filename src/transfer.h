@@ -24,6 +24,18 @@
 #define TRANSFER_H
 
 #include "wget.h"
+#include "evloop.h"
+
+struct ev_loop;
+
+enum transfer_state {
+  TRANSFER_STATE_IDLE = 0,
+  TRANSFER_STATE_RESOLVING,
+  TRANSFER_STATE_CONNECTING,
+  TRANSFER_STATE_TRANSFERRING,
+  TRANSFER_STATE_COMPLETED,
+  TRANSFER_STATE_FAILED
+};
 
 struct transfer_stats {
   wgint bytes_downloaded;
@@ -37,6 +49,8 @@ struct transfer_context {
   char* local_file;
   void* progress_handle;
   struct transfer_stats stats;
+  struct ev_loop* loop;
+  enum transfer_state state;
 };
 
 void transfer_context_init(struct transfer_context* ctx);
@@ -47,5 +61,10 @@ void transfer_context_set_requested_uri(struct transfer_context* ctx, const char
 void transfer_context_set_local_file(struct transfer_context* ctx, const char* path);
 void transfer_context_set_progress_handle(struct transfer_context* ctx, void* progress);
 void transfer_context_record_stats(struct transfer_context* ctx, wgint bytes, double seconds);
+void transfer_context_bind_loop(struct transfer_context* ctx, struct ev_loop* loop);
+struct ev_loop* transfer_context_loop(struct transfer_context* ctx);
+void transfer_context_set_state(struct transfer_context* ctx, enum transfer_state state);
+enum transfer_state transfer_context_state(const struct transfer_context* ctx);
+const char* transfer_context_state_name(enum transfer_state state);
 
 #endif /* TRANSFER_H */

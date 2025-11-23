@@ -39,6 +39,9 @@
 #include "hsts.h"
 #include <ev.h>
 #include "evhelpers.h"
+#include "evloop.h"
+
+#define FD_READ_LINE_MAX 4096
 
 /* Total size of downloaded files.  Used to enforce quota.  */
 wgint total_downloaded_bytes;
@@ -54,15 +57,71 @@ FILE* output_stream;
    i.e. not `-' or a device file. */
 bool output_stream_regular;
 
-static struct {
+struct bandwidth_limiter {
   wgint chunk_bytes;
   double chunk_start;
   double sleep_adjust;
-} limit_data;
+};
 
-static void limit_bandwidth_reset(void) {
-  xzero(limit_data);
+enum bandwidth_plan {
+  BANDWIDTH_PLAN_NONE = 0,
+  BANDWIDTH_PLAN_SLEEP,
+  BANDWIDTH_PLAN_DEFER
+};
+
+static void bandwidth_limiter_reset(struct bandwidth_limiter* limiter) {
+  if (!limiter)
+    return;
+  memset(limiter, 0, sizeof(*limiter));
 }
+
+static void bandwidth_limiter_reset_window(struct bandwidth_limiter* limiter, struct ptimer* timer) {
+  if (!limiter || !timer)
+    return;
+  limiter->chunk_bytes = 0;
+  limiter->chunk_start = ptimer_read(timer);
+}
+
+static enum bandwidth_plan bandwidth_limiter_plan(struct bandwidth_limiter* limiter, wgint bytes, struct ptimer* timer, double* sleep_time) {
+  double delta_t, expected;
+
+  if (!limiter || !timer)
+    return BANDWIDTH_PLAN_NONE;
+
+  if (limiter->chunk_start == 0)
+    limiter->chunk_start = ptimer_read(timer);
+
+  limiter->chunk_bytes += bytes;
+  delta_t = ptimer_read(timer) - limiter->chunk_start;
+  expected = (double)limiter->chunk_bytes / opt.limit_rate;
+
+  if (expected > delta_t) {
+    double slp = expected - delta_t + limiter->sleep_adjust;
+    if (slp < 0.2) {
+      DEBUGP(("deferring a %.2f ms sleep (%s/%.2f).\n", slp * 1000, number_to_static_string(limiter->chunk_bytes), delta_t));
+      return BANDWIDTH_PLAN_DEFER;
+    }
+    if (sleep_time)
+      *sleep_time = slp;
+    return BANDWIDTH_PLAN_SLEEP;
+  }
+
+  bandwidth_limiter_reset_window(limiter, timer);
+  return BANDWIDTH_PLAN_NONE;
+}
+
+static void bandwidth_limiter_commit(struct bandwidth_limiter* limiter, struct ptimer* timer, double requested_sleep, double actual_sleep) {
+  if (!limiter || !timer)
+    return;
+
+  bandwidth_limiter_reset_window(limiter, timer);
+  limiter->sleep_adjust = requested_sleep - actual_sleep;
+  if (limiter->sleep_adjust > 0.5)
+    limiter->sleep_adjust = 0.5;
+  else if (limiter->sleep_adjust < -0.5)
+    limiter->sleep_adjust = -0.5;
+}
+
 
 #if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
 static voidpf zalloc(voidpf opaque, unsigned int items, unsigned int size) {
@@ -80,46 +139,6 @@ static void zfree(voidpf opaque, voidpf address) {
    BYTES is the number of bytes received from the network, and TIMER
    is the timer that started at the beginning of download.  */
 
-static void limit_bandwidth(wgint bytes, struct ptimer* timer) {
-  double delta_t = ptimer_read(timer) - limit_data.chunk_start;
-  double expected;
-
-  limit_data.chunk_bytes += bytes;
-
-  /* Calculate the amount of time we expect downloading the chunk
-     should take.  If in reality it took less time, sleep to
-     compensate for the difference.  */
-  expected = (double)limit_data.chunk_bytes / opt.limit_rate;
-
-  if (expected > delta_t) {
-    double slp = expected - delta_t + limit_data.sleep_adjust;
-    double t0, t1;
-    if (slp < 0.2) {
-      DEBUGP(("deferring a %.2f ms sleep (%s/%.2f).\n", slp * 1000, number_to_static_string(limit_data.chunk_bytes), delta_t));
-      return;
-    }
-    DEBUGP(("\nsleeping %.2f ms for %s bytes, adjust %.2f ms\n", slp * 1000, number_to_static_string(limit_data.chunk_bytes), limit_data.sleep_adjust));
-
-    t0 = ptimer_read(timer);
-    wget_ev_sleep(slp);
-    t1 = ptimer_measure(timer);
-
-    /* Due to scheduling, we probably slept slightly longer (or
-       shorter) than desired.  Calculate the difference between the
-       desired and the actual sleep, and adjust the next sleep by
-       that amount.  */
-    limit_data.sleep_adjust = slp - (t1 - t0);
-    /* If sleep_adjust is very large, it's likely due to suspension
-       and not clock inaccuracy.  Don't enforce those.  */
-    if (limit_data.sleep_adjust > 0.5)
-      limit_data.sleep_adjust = 0.5;
-    else if (limit_data.sleep_adjust < -0.5)
-      limit_data.sleep_adjust = -0.5;
-  }
-
-  limit_data.chunk_bytes = 0;
-  limit_data.chunk_start = ptimer_read(timer);
-}
 
 /* Write data in BUF to OUT.  However, if *SKIP is non-zero, skip that
    amount of data and decrease SKIP.  Increment *TOTAL by the amount
@@ -207,317 +226,6 @@ static int write_data(FILE* out, FILE* out2, const char* buf, int bufsize, wgint
    writing data to OUT, -2 is returned.  In case of error while writing
    data to OUT2, -3 is returned.  */
 
-int fd_read_body(const char* downloaded_filename,
-                 int fd,
-                 FILE* out,
-                 wgint toread,
-                 wgint startpos,
-
-                 wgint* qtyread,
-                 wgint* qtywritten,
-                 double* elapsed,
-                 int flags,
-                 FILE* out2) {
-  int ret = 0;
-  int dlbufsize = MAX(BUFSIZ, 64 * 1024);
-  char* dlbuf = xmalloc(dlbufsize);
-
-  struct ptimer* timer = NULL;
-  double last_successful_read_tm = 0;
-
-  /* The progress gauge, set according to the user preferences. */
-  void* progress = NULL;
-
-  /* Non-zero if the progress gauge is interactive, i.e. if it can
-     continually update the display.  When true, smaller timeout
-     values are used so that the gauge can update the display when
-     data arrives slowly. */
-  bool progress_interactive = false;
-
-  bool exact = !!(flags & rb_read_exactly);
-
-  /* Used only by HTTP/HTTPS chunked transfer encoding.  */
-  bool chunked = flags & rb_chunked_transfer_encoding;
-  wgint skip = 0;
-
-  /* How much data we've read/written.  */
-  wgint sum_read = 0;
-  wgint sum_written = 0;
-  wgint remaining_chunk_size = 0;
-
-#if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
-  /* try to minimize the number of calls to inflate() and write_data() per
-     call to fd_read() */
-  unsigned int gzbufsize = dlbufsize * 4;
-  char* gzbuf = NULL;
-  z_stream gzstream;
-
-  if (flags & rb_compressed_gzip) {
-    gzbuf = xmalloc(gzbufsize);
-    gzstream.zalloc = zalloc;
-    gzstream.zfree = zfree;
-    gzstream.opaque = Z_NULL;
-    gzstream.next_in = Z_NULL;
-    gzstream.avail_in = 0;
-
-#define GZIP_DETECT 32 /* gzip format detection */
-#define GZIP_WINDOW 15 /* logarithmic window size (default: 15) */
-    ret = inflateInit2(&gzstream, GZIP_DETECT | GZIP_WINDOW);
-    if (ret != Z_OK) {
-      xfree(gzbuf);
-      errno = (ret == Z_MEM_ERROR) ? ENOMEM : EINVAL;
-      ret = -1;
-      goto out;
-    }
-  }
-#endif
-
-  if (flags & rb_skip_startpos)
-    skip = startpos;
-
-  if (opt.show_progress) {
-    const char* filename_progress;
-    /* If we're skipping STARTPOS bytes, pass 0 as the INITIAL
-       argument to progress_create because the indicator doesn't
-       (yet) know about "skipping" data.  */
-    wgint start = skip ? 0 : startpos;
-    if (opt.dir_prefix)
-      filename_progress = downloaded_filename + strlen(opt.dir_prefix) + 1;
-    else
-      filename_progress = downloaded_filename;
-    progress = progress_create(filename_progress, start, start + toread);
-    progress_interactive = progress_interactive_p(progress);
-  }
-
-  if (opt.limit_rate)
-    limit_bandwidth_reset();
-
-  /* A timer is needed for tracking progress, for throttling, and for
-     tracking elapsed time.  If either of these are requested, start
-     the timer.  */
-  if (progress || opt.limit_rate || elapsed) {
-    timer = ptimer_new();
-    last_successful_read_tm = 0;
-  }
-
-  /* Use a smaller buffer for low requested bandwidths.  For example,
-     with --limit-rate=2k, it doesn't make sense to slurp in 16K of
-     data and then sleep for 8s.  With buffer size equal to the limit,
-     we never have to sleep for more than one second.  */
-  if (opt.limit_rate && opt.limit_rate < dlbufsize)
-    dlbufsize = opt.limit_rate;
-
-  /* Read from FD while there is data to read.  Normally toread==0
-     means that it is unknown how much data is to arrive.  However, if
-     EXACT is set, then toread==0 means what it says: that no data
-     should be read.  */
-  while (!exact || (sum_read < toread)) {
-    int rdsize;
-    double tmout = opt.read_timeout;
-
-    if (chunked) {
-      if (remaining_chunk_size == 0) {
-        char* line = fd_read_line(fd);
-        char* endl;
-        if (line == NULL) {
-          ret = -1;
-          break;
-        }
-        else if (out2 != NULL)
-          fwrite(line, 1, strlen(line), out2);
-
-        remaining_chunk_size = strtol(line, &endl, 16);
-        xfree(line);
-
-        if (remaining_chunk_size < 0) {
-          ret = -1;
-          break;
-        }
-
-        if (remaining_chunk_size == 0) {
-          ret = 0;
-          line = fd_read_line(fd);
-          if (line == NULL)
-            ret = -1;
-          else {
-            if (out2 != NULL)
-              fwrite(line, 1, strlen(line), out2);
-            xfree(line);
-          }
-          break;
-        }
-      }
-
-      rdsize = MIN(remaining_chunk_size, dlbufsize);
-    }
-    else
-      rdsize = exact ? MIN(toread - sum_read, dlbufsize) : dlbufsize;
-
-    if (progress_interactive) {
-      /* For interactive progress gauges, always specify a ~1s
-         timeout, so that the gauge can be updated regularly even
-         when the data arrives very slowly or stalls.  */
-      tmout = 0.95;
-      /* avoid wrong 'interactive timeout' */
-      errno = 0;
-      if (opt.read_timeout) {
-        double waittm;
-        waittm = ptimer_read(timer) - last_successful_read_tm;
-        if (waittm + tmout > opt.read_timeout) {
-          /* Don't let total idle time exceed read timeout. */
-          tmout = opt.read_timeout - waittm;
-          /* if 0 fd_read can be 'blocked read' */
-          if (tmout <= 0) {
-            /* We've already exceeded the timeout. */
-            ret = -1, errno = ETIMEDOUT;
-            break;
-          }
-        }
-      }
-    }
-    ret = fd_read(fd, dlbuf, rdsize, tmout);
-
-    if (progress_interactive && ret < 0 && errno == ETIMEDOUT)
-      ret = 0; /* interactive timeout, handled above */
-    else if (ret <= 0)
-      break; /* EOF or read error */
-
-    if (progress || opt.limit_rate || elapsed) {
-      ptimer_measure(timer);
-      if (ret > 0)
-        last_successful_read_tm = ptimer_read(timer);
-    }
-
-    if (ret > 0) {
-      int write_res;
-
-      sum_read += ret;
-
-#if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
-      if (gzbuf) {
-        int err;
-        int towrite;
-
-        /* Write original data to WARC file */
-        write_res = write_data(NULL, out2, dlbuf, ret, NULL, NULL);
-        if (write_res < 0) {
-          ret = write_res;
-          goto out;
-        }
-
-        gzstream.avail_in = ret;
-        gzstream.next_in = (unsigned char*)dlbuf;
-
-        do {
-          gzstream.avail_out = gzbufsize;
-          gzstream.next_out = (unsigned char*)gzbuf;
-
-          err = inflate(&gzstream, Z_NO_FLUSH);
-
-          switch (err) {
-            case Z_MEM_ERROR:
-              errno = ENOMEM;
-              ret = -1;
-              goto out;
-            case Z_NEED_DICT:
-            case Z_DATA_ERROR:
-              errno = EINVAL;
-              ret = -1;
-              goto out;
-            case Z_STREAM_END:
-              if (exact && sum_read != toread) {
-                DEBUGP(("zlib stream ended unexpectedly after %" PRId64 "/%" PRId64 " bytes\n", sum_read, toread));
-              }
-          }
-
-          towrite = gzbufsize - gzstream.avail_out;
-          write_res = write_data(out, NULL, gzbuf, towrite, &skip, &sum_written);
-          if (write_res < 0) {
-            ret = write_res;
-            goto out;
-          }
-        } while (gzstream.avail_out == 0);
-      }
-      else
-#endif
-      {
-        write_res = write_data(out, out2, dlbuf, ret, &skip, &sum_written);
-        if (write_res < 0) {
-          ret = write_res;
-          goto out;
-        }
-      }
-
-      if (chunked) {
-        remaining_chunk_size -= ret;
-        if (remaining_chunk_size == 0) {
-          char* line = fd_read_line(fd);
-          if (line == NULL) {
-            ret = -1;
-            break;
-          }
-          else {
-            if (out2 != NULL)
-              fwrite(line, 1, strlen(line), out2);
-            xfree(line);
-          }
-        }
-      }
-    }
-
-    if (opt.limit_rate)
-      limit_bandwidth(ret, timer);
-
-    if (progress)
-      progress_update(progress, ret, ptimer_read(timer));
-#ifdef WINDOWS
-    if (toread > 0 && opt.show_progress)
-      ws_percenttitle(100.0 * (startpos + sum_read) / (startpos + toread));
-#endif
-  }
-  if (ret < -1)
-    ret = -1;
-
-out:
-  if (progress)
-    progress_finish(progress, ptimer_read(timer));
-
-  if (timer) {
-    if (elapsed)
-      *elapsed = ptimer_read(timer);
-    ptimer_destroy(timer);
-  }
-
-#if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
-  if (gzbuf) {
-    int err = inflateEnd(&gzstream);
-    if (ret >= 0) {
-      /* with compression enabled, ret must be 0 if successful */
-      if (err == Z_OK)
-        ret = 0;
-      else {
-        errno = EINVAL;
-        ret = -1;
-      }
-    }
-    xfree(gzbuf);
-
-    if (gzstream.total_in != (uLong)sum_read) {
-      DEBUGP(("zlib read size differs from raw read size (%lu/%" PRId64 ")\n", gzstream.total_in, sum_read));
-    }
-  }
-#endif
-
-  if (qtyread)
-    *qtyread += sum_read;
-  if (qtywritten)
-    *qtywritten += sum_written;
-
-  xfree(dlbuf);
-
-  return ret;
-}
-
 /* Asynchronous wrapper for fd_read_body(), driven by libev watchers.
    This is a transitional helper so higher level code can attach
    per-transfer state to the central event loop without changing the
@@ -525,10 +233,17 @@ out:
 
 typedef void (*retr_body_done_cb)(int status, wgint qtyread, wgint qtywritten, double elapsed, void* user_data);
 
+enum retr_chunk_state {
+  RETR_CHUNK_STATE_NONE = 0,
+  RETR_CHUNK_STATE_HEADER,
+  RETR_CHUNK_STATE_DATA,
+  RETR_CHUNK_STATE_DATA_CRLF,
+  RETR_CHUNK_STATE_FINAL_CRLF,
+  RETR_CHUNK_STATE_DONE
+};
+
 struct retr_async_ctx {
   struct ev_loop* loop;
-  ev_io io_watcher;
-
   const char* downloaded_filename;
   int fd;
   FILE* out;
@@ -542,50 +257,553 @@ struct retr_async_ctx {
 
   retr_body_done_cb done_cb;
   void* user_data;
+
+  ev_io io_watcher;
+  ev_timer timeout_watcher;
+  bool timeout_active;
+  ev_timer throttle_watcher;
+  bool throttle_active;
+  ev_timer progress_watcher;
+  bool progress_active;
+
+  bool exact;
+  bool chunked;
+  bool finished;
+  int result;
+  int error_no;
+
+  wgint sum_read;
+  wgint sum_written;
+  wgint skip;
+
+  struct bandwidth_limiter limiter;
+  double throttle_delay;
+  double throttle_start;
+
+  struct ptimer* timer;
+  double last_successful_read_tm;
+
+  void* progress;
+  bool progress_interactive;
+
+  char* dlbuf;
+  size_t dlbufsize;
+
+#if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
+  bool gzip_mode;
+  z_stream gzstream;
+  char* gzbuf;
+  unsigned int gzbufsize;
+#endif
+
+  struct {
+    enum retr_chunk_state phase;
+    wgint remaining;
+    char line[FD_READ_LINE_MAX + 1];
+    size_t line_len;
+  } chunk;
+
+  bool loop_ref;
 };
 
-static void retr_async_finish(struct retr_async_ctx* ctx, int status, wgint qtyread, wgint qtywritten, double elapsed) {
-  if (ctx->loop)
-    ev_io_stop(ctx->loop, &ctx->io_watcher);
+static void retr_async_stop_watchers(struct retr_async_ctx* ctx) {
+  if (!ctx || !ctx->loop)
+    return;
+  ev_io_stop(ctx->loop, &ctx->io_watcher);
+  if (ctx->timeout_active) {
+    ev_timer_stop(ctx->loop, &ctx->timeout_watcher);
+    ctx->timeout_active = false;
+  }
+  if (ctx->throttle_active) {
+    ev_timer_stop(ctx->loop, &ctx->throttle_watcher);
+    ctx->throttle_active = false;
+  }
+  if (ctx->progress_active) {
+    ev_timer_stop(ctx->loop, &ctx->progress_watcher);
+    ctx->progress_active = false;
+  }
+}
+
+static void retr_async_finish(struct retr_async_ctx* ctx, int status);
+
+static void retr_async_reset_timeout(struct retr_async_ctx* ctx) {
+  if (!ctx || !ctx->timeout_active)
+    return;
+  ev_timer_stop(ctx->loop, &ctx->timeout_watcher);
+  ctx->timeout_active = false;
+}
+
+static void retr_async_arm_timeout(struct retr_async_ctx* ctx) {
+  if (!ctx || !ctx->loop || opt.read_timeout <= 0)
+    return;
+  ev_timer_set(&ctx->timeout_watcher, opt.read_timeout, 0);
+  ctx->timeout_active = true;
+  ev_timer_start(ctx->loop, &ctx->timeout_watcher);
+}
+
+static void retr_async_start_progress_timer(struct retr_async_ctx* ctx) {
+  if (!ctx || !ctx->loop || !ctx->progress_interactive)
+    return;
+  ev_timer_set(&ctx->progress_watcher, 0.95, 0.95);
+  ctx->progress_active = true;
+  ev_timer_start(ctx->loop, &ctx->progress_watcher);
+}
+
+static void retr_async_destroy_buffers(struct retr_async_ctx* ctx) {
+  if (!ctx)
+    return;
+  xfree(ctx->dlbuf);
+  ctx->dlbuf = NULL;
+#if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
+  if (ctx->gzbuf) {
+    xfree(ctx->gzbuf);
+    ctx->gzbuf = NULL;
+  }
+  if (ctx->gzip_mode)
+    inflateEnd(&ctx->gzstream);
+#endif
+  if (ctx->timer) {
+    ptimer_destroy(ctx->timer);
+    ctx->timer = NULL;
+  }
+}
+
+static void retr_async_finish(struct retr_async_ctx* ctx, int status) {
+  double elapsed = 0;
+  if (!ctx || ctx->finished)
+    return;
+
+  ctx->finished = true;
+  retr_async_stop_watchers(ctx);
+
+  if (ctx->progress)
+    progress_finish(ctx->progress, ctx->timer ? ptimer_read(ctx->timer) : 0);
+
+  if (ctx->timer)
+    elapsed = ptimer_read(ctx->timer);
+
+  if (ctx->elapsed)
+    *ctx->elapsed += elapsed;
 
   if (ctx->qtyread)
-    *ctx->qtyread += qtyread;
+    *ctx->qtyread += ctx->sum_read;
   if (ctx->qtywritten)
-    *ctx->qtywritten += qtywritten;
-  if (ctx->elapsed)
-    *ctx->elapsed = elapsed;
+    *ctx->qtywritten += ctx->sum_written;
+
+  retr_async_destroy_buffers(ctx);
+
+  if (ctx->loop_ref) {
+    wget_ev_loop_transfer_unref();
+    ctx->loop_ref = false;
+  }
+
+  errno = ctx->error_no;
 
   if (ctx->done_cb)
-    ctx->done_cb(status, ctx->qtyread ? *ctx->qtyread : qtyread, ctx->qtywritten ? *ctx->qtywritten : qtywritten, ctx->elapsed ? *ctx->elapsed : elapsed, ctx->user_data);
+    ctx->done_cb(status, ctx->sum_read, ctx->sum_written, elapsed, ctx->user_data);
 
   xfree(ctx);
 }
 
-static void retr_async_io_cb(EV_P_ ev_io* w, int revents) {
-  struct retr_async_ctx* ctx = (struct retr_async_ctx*)w->data;
-  wgint local_read = 0;
-  wgint local_written = 0;
-  double local_elapsed = 0.0;
-  int status;
-
-  if (!(revents & EV_READ))
+static void retr_async_fail(struct retr_async_ctx* ctx, int status) {
+  if (!ctx)
     return;
-
-  /* Stop watching the fd while we run the synchronous body reader.
-     A later refactor can inline the body loop here and make the
-     whole path nonblocking. */
-  ev_io_stop(loop, w);
-
-  status = fd_read_body(ctx->downloaded_filename, ctx->fd, ctx->out, ctx->toread, ctx->startpos, ctx->qtyread ? ctx->qtyread : &local_read, ctx->qtywritten ? ctx->qtywritten : &local_written,
-                        ctx->elapsed ? ctx->elapsed : &local_elapsed, ctx->flags, ctx->out2);
-
-  retr_async_finish(ctx, status, ctx->qtyread ? *ctx->qtyread : local_read, ctx->qtywritten ? *ctx->qtywritten : local_written, ctx->elapsed ? *ctx->elapsed : local_elapsed);
+  ctx->result = status;
+  retr_async_finish(ctx, status);
 }
 
-/* Start an asynchronous body read on FD.
-   The callback is invoked once fd_read_body() has completed.  */
+static size_t retr_async_planned_read_size(struct retr_async_ctx* ctx) {
+  if (!ctx)
+    return 0;
+  if (ctx->chunked)
+    return ctx->dlbufsize;
+  if (ctx->exact) {
+    wgint remaining = ctx->toread - ctx->sum_read;
+    if (remaining <= 0)
+      return 0;
+    if ((wgint)ctx->dlbufsize < remaining)
+      return ctx->dlbufsize;
+    return remaining;
+  }
+  return ctx->dlbufsize;
+}
 
-int retr_body_start_async(struct ev_loop* loop,
+static void retr_async_maybe_throttle(struct retr_async_ctx* ctx, wgint bytes) {
+  double delay = 0;
+  enum bandwidth_plan plan;
+
+  if (!ctx || !opt.limit_rate || !ctx->timer)
+    return;
+
+  plan = bandwidth_limiter_plan(&ctx->limiter, bytes, ctx->timer, &delay);
+  if (plan != BANDWIDTH_PLAN_SLEEP)
+    return;
+
+  ctx->throttle_delay = delay;
+  ctx->throttle_start = ctx->timer ? ptimer_read(ctx->timer) : 0;
+  ctx->throttle_active = true;
+  retr_async_reset_timeout(ctx);
+  ev_timer_set(&ctx->throttle_watcher, delay, 0);
+  ev_timer_start(ctx->loop, &ctx->throttle_watcher);
+  ev_io_stop(ctx->loop, &ctx->io_watcher);
+}
+
+static bool retr_async_write_payload(struct retr_async_ctx* ctx, const char* buf, size_t len);
+static bool retr_async_process_buffer(struct retr_async_ctx* ctx, const char* buf, size_t len);
+
+static void retr_async_timeout_cb(EV_P_ ev_timer* w, int revents WGET_ATTR_UNUSED) {
+  struct retr_async_ctx* ctx = w->data;
+  ctx->timeout_active = false;
+  ctx->error_no = ETIMEDOUT;
+  retr_async_fail(ctx, -1);
+}
+
+static void retr_async_throttle_cb(EV_P_ ev_timer* w, int revents WGET_ATTR_UNUSED) {
+  struct retr_async_ctx* ctx = w->data;
+  double now = ctx->timer ? ptimer_read(ctx->timer) : ctx->throttle_start + ctx->throttle_delay;
+  double actual = now - ctx->throttle_start;
+
+  ctx->throttle_active = false;
+  bandwidth_limiter_commit(&ctx->limiter, ctx->timer, ctx->throttle_delay, actual);
+  ev_io_start(ctx->loop, &ctx->io_watcher);
+  retr_async_arm_timeout(ctx);
+}
+
+static void retr_async_progress_cb(EV_P_ ev_timer* w, int revents WGET_ATTR_UNUSED) {
+  struct retr_async_ctx* ctx = w->data;
+  if (!ctx->progress || !ctx->timer)
+    return;
+  ptimer_measure(ctx->timer);
+  progress_update(ctx->progress, 0, ptimer_read(ctx->timer));
+}
+
+static void retr_async_io_cb(EV_P_ ev_io* w, int revents) {
+  struct retr_async_ctx* ctx = w->data;
+  size_t rdsize;
+  int ret;
+
+  if (!ctx || !(revents & EV_READ) || ctx->finished)
+    return;
+
+  retr_async_reset_timeout(ctx);
+  retr_async_arm_timeout(ctx);
+
+  rdsize = retr_async_planned_read_size(ctx);
+  if (rdsize == 0 && !ctx->chunked) {
+    retr_async_finish(ctx, ctx->result);
+    return;
+  }
+
+  ret = fd_read(ctx->fd, ctx->dlbuf, rdsize ? rdsize : ctx->dlbufsize, 0);
+  if (ret < 0) {
+    ctx->error_no = errno;
+    retr_async_fail(ctx, -1);
+    return;
+  }
+  if (ret == 0) {
+    if (ctx->chunked && ctx->chunk.phase != RETR_CHUNK_STATE_DONE) {
+      ctx->error_no = 0;
+      retr_async_fail(ctx, -1);
+      return;
+    }
+    retr_async_finish(ctx, ctx->result);
+    return;
+  }
+
+  if (ctx->timer)
+    ptimer_measure(ctx->timer);
+
+  if (!retr_async_process_buffer(ctx, ctx->dlbuf, ret))
+    retr_async_fail(ctx, ctx->result ? ctx->result : -1);
+}
+
+static bool retr_async_chunk_handle_line(struct retr_async_ctx* ctx) {
+  wgint size;
+
+  if (!ctx)
+    return false;
+
+  if (ctx->out2 && ctx->chunk.line_len)
+    fwrite(ctx->chunk.line, 1, ctx->chunk.line_len, ctx->out2);
+
+  switch (ctx->chunk.phase) {
+    case RETR_CHUNK_STATE_HEADER:
+      size = strtol(ctx->chunk.line, NULL, 16);
+      if (size < 0) {
+        ctx->error_no = EINVAL;
+        return false;
+      }
+      ctx->chunk.remaining = size;
+      ctx->chunk.phase = (size == 0) ? RETR_CHUNK_STATE_FINAL_CRLF : RETR_CHUNK_STATE_DATA;
+      break;
+    case RETR_CHUNK_STATE_DATA_CRLF:
+      ctx->chunk.phase = RETR_CHUNK_STATE_HEADER;
+      break;
+    case RETR_CHUNK_STATE_FINAL_CRLF:
+      ctx->chunk.phase = RETR_CHUNK_STATE_DONE;
+      retr_async_finish(ctx, ctx->result);
+      break;
+    default:
+      break;
+  }
+  return true;
+}
+
+static bool retr_async_chunk_consume_line(struct retr_async_ctx* ctx, const char* buf, size_t len, size_t* consumed) {
+  size_t used = 0;
+  if (consumed)
+    *consumed = 0;
+
+  while (used < len) {
+    if (ctx->chunk.line_len >= FD_READ_LINE_MAX) {
+      ctx->error_no = ENOMEM;
+      return false;
+    }
+    ctx->chunk.line[ctx->chunk.line_len++] = buf[used++];
+    if (ctx->chunk.line[ctx->chunk.line_len - 1] == '\n') {
+      ctx->chunk.line[ctx->chunk.line_len] = '\0';
+      if (!retr_async_chunk_handle_line(ctx))
+        return false;
+      ctx->chunk.line_len = 0;
+      break;
+    }
+  }
+  if (consumed)
+    *consumed = used;
+  return true;
+}
+
+static bool retr_async_process_buffer(struct retr_async_ctx* ctx, const char* buf, size_t len) {
+  size_t offset = 0;
+
+  while (offset < len && !ctx->finished) {
+    if (ctx->chunked) {
+      switch (ctx->chunk.phase) {
+        case RETR_CHUNK_STATE_HEADER:
+        case RETR_CHUNK_STATE_DATA_CRLF:
+        case RETR_CHUNK_STATE_FINAL_CRLF: {
+          size_t consumed = 0;
+          if (!retr_async_chunk_consume_line(ctx, buf + offset, len - offset, &consumed))
+            return false;
+          offset += consumed;
+          break;
+        }
+        case RETR_CHUNK_STATE_DATA: {
+          wgint remaining = ctx->chunk.remaining;
+          size_t tocopy = MIN((size_t)remaining, len - offset);
+          if (!retr_async_write_payload(ctx, buf + offset, tocopy))
+            return false;
+          ctx->chunk.remaining -= tocopy;
+          offset += tocopy;
+          if (ctx->chunk.remaining == 0)
+            ctx->chunk.phase = RETR_CHUNK_STATE_DATA_CRLF;
+          break;
+        }
+        case RETR_CHUNK_STATE_DONE:
+          retr_async_finish(ctx, ctx->result);
+          return true;
+        default:
+          break;
+      }
+    }
+    else {
+      size_t tocopy = len - offset;
+      if (ctx->exact) {
+        wgint remaining = ctx->toread - ctx->sum_read;
+        if (remaining <= 0) {
+          retr_async_finish(ctx, ctx->result);
+          return true;
+        }
+        if (tocopy > (size_t)remaining)
+          tocopy = remaining;
+      }
+      if (!retr_async_write_payload(ctx, buf + offset, tocopy))
+        return false;
+      offset += tocopy;
+    }
+  }
+  return true;
+}
+
+static bool retr_async_write_payload(struct retr_async_ctx* ctx, const char* buf, size_t len) {
+  int write_res;
+  if (!len)
+    return true;
+
+#if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
+  if (ctx->gzip_mode) {
+    if (ctx->out2) {
+      write_res = write_data(NULL, ctx->out2, buf, len, NULL, NULL);
+      if (write_res < 0) {
+        ctx->error_no = errno;
+        ctx->result = write_res;
+        return false;
+      }
+    }
+    ctx->gzstream.avail_in = len;
+    ctx->gzstream.next_in = (unsigned char*)buf;
+    do {
+      ctx->gzstream.avail_out = ctx->gzbufsize;
+      ctx->gzstream.next_out = (unsigned char*)ctx->gzbuf;
+      int err = inflate(&ctx->gzstream, Z_NO_FLUSH);
+      if (err == Z_MEM_ERROR) {
+        ctx->error_no = ENOMEM;
+        ctx->result = -1;
+        return false;
+      }
+      if (err == Z_NEED_DICT || err == Z_DATA_ERROR) {
+        ctx->error_no = EINVAL;
+        ctx->result = -1;
+        return false;
+      }
+      unsigned int produced = ctx->gzbufsize - ctx->gzstream.avail_out;
+      if (produced > 0) {
+        write_res = write_data(ctx->out, NULL, ctx->gzbuf, produced, &ctx->skip, &ctx->sum_written);
+        if (write_res < 0) {
+          ctx->error_no = errno;
+          ctx->result = write_res;
+          return false;
+        }
+      }
+      if (err == Z_STREAM_END)
+        break;
+    } while (ctx->gzstream.avail_out == 0);
+  }
+  else
+#endif
+  {
+    write_res = write_data(ctx->out, ctx->out2, buf, len, &ctx->skip, &ctx->sum_written);
+    if (write_res < 0) {
+      ctx->error_no = errno;
+      ctx->result = write_res;
+      return false;
+    }
+  }
+
+  ctx->sum_read += len;
+  if (ctx->progress)
+    progress_update(ctx->progress, len, ctx->timer ? ptimer_read(ctx->timer) : 0);
+  retr_async_maybe_throttle(ctx, len);
+
+  if (ctx->exact && ctx->sum_read >= ctx->toread && !ctx->chunked)
+    retr_async_finish(ctx, ctx->result);
+
+  return true;
+}
+
+static void retr_async_init_watcher(ev_io* watcher, struct retr_async_ctx* ctx) {
+  ev_io_init(watcher, retr_async_io_cb, ctx->fd, EV_READ);
+  watcher->data = ctx;
+}
+
+static void retr_async_init_timers(struct retr_async_ctx* ctx) {
+  ev_timer_init(&ctx->timeout_watcher, retr_async_timeout_cb, 0, 0);
+  ctx->timeout_watcher.data = ctx;
+  ev_timer_init(&ctx->throttle_watcher, retr_async_throttle_cb, 0, 0);
+  ctx->throttle_watcher.data = ctx;
+  ev_timer_init(&ctx->progress_watcher, retr_async_progress_cb, 0, 0);
+  ctx->progress_watcher.data = ctx;
+}
+
+static struct retr_async_ctx* retr_async_ctx_create(struct ev_loop* loop,
+                                                    const char* downloaded_filename,
+                                                    int fd,
+                                                    FILE* out,
+                                                    wgint toread,
+                                                    wgint startpos,
+                                                    wgint* qtyread,
+                                                    wgint* qtywritten,
+                                                    double* elapsed,
+                                                    int flags,
+                                                    FILE* out2,
+                                                    retr_body_done_cb done_cb,
+                                                    void* user_data) {
+  struct retr_async_ctx* ctx = xcalloc(1, sizeof(*ctx));
+  ctx->loop = loop;
+  ctx->downloaded_filename = downloaded_filename;
+  ctx->fd = fd;
+  ctx->out = out;
+  ctx->toread = toread;
+  ctx->startpos = startpos;
+  ctx->qtyread = qtyread;
+  ctx->qtywritten = qtywritten;
+  ctx->elapsed = elapsed;
+  ctx->flags = flags;
+  ctx->out2 = out2;
+  ctx->done_cb = done_cb;
+  ctx->user_data = user_data;
+  ctx->exact = !!(flags & rb_read_exactly);
+  ctx->chunked = (flags & rb_chunked_transfer_encoding) != 0;
+  ctx->skip = (flags & rb_skip_startpos) ? startpos : 0;
+  ctx->result = 0;
+  ctx->error_no = 0;
+  ctx->dlbufsize = MAX(BUFSIZ, 64 * 1024);
+  ctx->dlbuf = xmalloc(ctx->dlbufsize);
+  ctx->chunk.phase = ctx->chunked ? RETR_CHUNK_STATE_HEADER : RETR_CHUNK_STATE_NONE;
+
+#if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
+  if (flags & rb_compressed_gzip) {
+    ctx->gzip_mode = true;
+    ctx->gzbufsize = ctx->dlbufsize * 4;
+    ctx->gzbuf = xmalloc(ctx->gzbufsize);
+    ctx->gzstream.zalloc = zalloc;
+    ctx->gzstream.zfree = zfree;
+    ctx->gzstream.opaque = Z_NULL;
+    ctx->gzstream.next_in = Z_NULL;
+    ctx->gzstream.avail_in = 0;
+    if (inflateInit2(&ctx->gzstream, 32 | 15) != Z_OK) {
+      ctx->error_no = EINVAL;
+      retr_async_destroy_buffers(ctx);
+      xfree(ctx);
+      return NULL;
+    }
+  }
+#endif
+
+  if (opt.show_progress) {
+    const char* filename_progress;
+    wgint start = ctx->skip ? 0 : startpos;
+    if (opt.dir_prefix)
+      filename_progress = downloaded_filename + strlen(opt.dir_prefix) + 1;
+    else
+      filename_progress = downloaded_filename;
+    ctx->progress = progress_create(filename_progress, start, start + toread);
+    ctx->progress_interactive = progress_interactive_p(ctx->progress);
+  }
+
+  if (ctx->progress || opt.limit_rate || elapsed) {
+    ctx->timer = ptimer_new();
+    ctx->last_successful_read_tm = 0;
+  }
+
+  if (opt.limit_rate && (size_t)opt.limit_rate < ctx->dlbufsize)
+    ctx->dlbufsize = opt.limit_rate;
+
+  bandwidth_limiter_reset(&ctx->limiter);
+  retr_async_init_watcher(&ctx->io_watcher, ctx);
+  retr_async_init_timers(ctx);
+  ctx->io_watcher.data = ctx;
+
+  return ctx;
+}
+
+static void retr_async_ctx_start(struct retr_async_ctx* ctx) {
+  if (!ctx || !ctx->loop)
+    return;
+  ev_io_start(ctx->loop, &ctx->io_watcher);
+  ctx->io_watcher.data = ctx;
+  ctx->timeout_watcher.data = ctx;
+  ctx->throttle_watcher.data = ctx;
+  ctx->progress_watcher.data = ctx;
+  if (opt.read_timeout > 0)
+    retr_async_arm_timeout(ctx);
+  if (ctx->progress_interactive)
+    retr_async_start_progress_timer(ctx);
+  ctx->loop_ref = true;
+  wget_ev_loop_transfer_ref();
+}
+
+static int retr_body_start_async(struct ev_loop* loop,
                           const char* downloaded_filename,
                           int fd,
                           FILE* out,
@@ -603,26 +821,51 @@ int retr_body_start_async(struct ev_loop* loop,
   if (!loop || fd < 0)
     return -1;
 
-  ctx = xcalloc(1, sizeof(*ctx));
-  ctx->loop = loop;
-  ctx->downloaded_filename = downloaded_filename;
-  ctx->fd = fd;
-  ctx->out = out;
-  ctx->toread = toread;
-  ctx->startpos = startpos;
-  ctx->qtyread = qtyread;
-  ctx->qtywritten = qtywritten;
-  ctx->elapsed = elapsed;
-  ctx->flags = flags;
-  ctx->out2 = out2;
-  ctx->done_cb = done_cb;
-  ctx->user_data = user_data;
+  ctx = retr_async_ctx_create(loop, downloaded_filename, fd, out, toread, startpos, qtyread, qtywritten, elapsed, flags, out2, done_cb, user_data);
+  if (!ctx)
+    return -1;
 
-  ev_io_init(&ctx->io_watcher, retr_async_io_cb, fd, EV_READ);
   ctx->io_watcher.data = ctx;
-  ev_io_start(loop, &ctx->io_watcher);
+  ctx->timeout_watcher.data = ctx;
+  ctx->throttle_watcher.data = ctx;
+  ctx->progress_watcher.data = ctx;
 
+  retr_async_ctx_start(ctx);
   return 0;
+}
+struct retr_body_sync_bridge {
+  int status;
+};
+
+static void retr_body_sync_cb(int status, wgint qtyread WGET_ATTR_UNUSED, wgint qtywritten WGET_ATTR_UNUSED, double elapsed WGET_ATTR_UNUSED, void* user_data) {
+  struct retr_body_sync_bridge* bridge = user_data;
+  bridge->status = status;
+}
+
+int fd_read_body(const char* downloaded_filename,
+                 int fd,
+                 FILE* out,
+                 wgint toread,
+                 wgint startpos,
+                 wgint* qtyread,
+                 wgint* qtywritten,
+                 double* elapsed,
+                 int flags,
+                 FILE* out2) {
+  struct ev_loop* loop = wget_ev_loop_get();
+  wgint local_read = 0;
+  wgint local_written = 0;
+  double local_elapsed = 0.0;
+  struct retr_body_sync_bridge bridge = {0};
+  wgint* qtyread_ptr = qtyread ? qtyread : &local_read;
+  wgint* qtywritten_ptr = qtywritten ? qtywritten : &local_written;
+  double* elapsed_ptr = elapsed ? elapsed : &local_elapsed;
+
+  if (retr_body_start_async(loop, downloaded_filename, fd, out, toread, startpos, qtyread_ptr, qtywritten_ptr, elapsed_ptr, flags, out2, retr_body_sync_cb, &bridge) < 0)
+    return -1;
+
+  wget_ev_loop_run_transfers();
+  return bridge.status;
 }
 
 /* Read a hunk of data from FD, up until a terminator.  The hunk is
@@ -773,8 +1016,6 @@ static const char* line_terminator(const char* start WGET_ATTR_UNUSED, const cha
    not meant to impose an arbitrary limit, but to protect the user
    from Wget slurping up available memory upon encountering malicious
    or buggy server output.  Define it to 0 to remove the limit.  */
-#define FD_READ_LINE_MAX 4096
-
 /* Read one line from FD and return it.  The line is allocated using
    malloc, but is never larger than FD_READ_LINE_MAX.
 
@@ -905,6 +1146,8 @@ uerr_t retrieve_url(struct url* orig_parsed,
       transfer_context_snapshot_options(tctx, &opt);
     if (!tctx->requested_uri && origurl)
       transfer_context_set_requested_uri(tctx, origurl);
+    transfer_context_bind_loop(tctx, wget_ev_loop_get());
+    transfer_context_set_state(tctx, TRANSFER_STATE_TRANSFERRING);
   }
 
   /* If dt is NULL, use local storage.  */
@@ -1166,6 +1409,9 @@ redirected:
   RESTORE_METHOD;
 
 bail:
+  if (tctx) {
+    transfer_context_set_state(tctx, result == RETROK ? TRANSFER_STATE_COMPLETED : TRANSFER_STATE_FAILED);
+  }
   if (register_status)
     inform_exit_status(result);
 

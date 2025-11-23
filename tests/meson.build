@@ -52,3 +52,37 @@ socket_opts_test = executable(
 )
 
 test('socket_opts_logic', socket_opts_test)
+
+transfer_context_sources = files(
+  'transfer_context_test.c',
+  'test_stubs.c',
+  '../src/transfer.c',
+  '../src/evloop.c',
+  '../src/xalloc.c',
+)
+
+transfer_context_test = executable(
+  'transfer_context_test',
+  transfer_context_sources,
+  include_directories: test_includes,
+  dependencies: [libev_dep],
+  install: false,
+)
+
+test('transfer_context_helpers', transfer_context_test)
+
+evloop_transfer_sources = files(
+  'evloop_transfer_test.c',
+  'test_stubs.c',
+  '../src/evloop.c',
+)
+
+evloop_transfer_test = executable(
+  'evloop_transfer_test',
+  evloop_transfer_sources,
+  include_directories: test_includes,
+  dependencies: [libev_dep],
+  install: false,
+)
+
+test('evloop_transfer_tracking', evloop_transfer_test)

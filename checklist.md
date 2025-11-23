@@ -15,7 +15,7 @@ NOTE: WHEN WORKING THROUGH CHECKLIST, MARK OFF COMPLETED ITEMS, ADD MISSING ITEM
 ## **Performance / Parallelism**
 
 * [x] Single, central **libev event loop** for all network I/O
-* [ ] Connection state machines implemented as pure libev watchers — update `src/retr.c`, `src/transfer.c`, `src/evloop.c`
+* [x] Connection state machines implemented as pure libev watchers — update `src/retr.c`, `src/transfer.c`, `src/evloop.c`
 * [x] Fully nonblocking sockets with `ev_io` for read/write readiness (connect/read/write paths now route through libev helpers)
 * [ ] Multi-threaded dispatch **only for CPU-heavy tasks** (hashing, decompression, HTML parsing) — update `src/threading.c`, `src/transfer.c`, `src/html-parse.c`
 * [ ] Parallel downloading of multiple files — update `src/recur.c`, `src/transfer.c`, `src/main.c`
