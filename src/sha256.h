@@ -10,9 +10,9 @@
 
 #define SHA256_DIGEST_SIZE 32
 
-#include <openssl/sha.h>
+#include <openssl/evp.h>
 typedef struct sha256_ctx {
-  SHA256_CTX impl;
+  EVP_MD_CTX* impl;
 } sha256_ctx;
 
 void sha256_init_ctx(struct sha256_ctx* ctx);

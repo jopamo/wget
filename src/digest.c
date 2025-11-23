@@ -10,39 +10,72 @@
 #include <stdio.h>
 
 void md5_init_ctx(struct md5_ctx* ctx) {
-  MD5_Init(&ctx->impl);
+  ctx->impl = EVP_MD_CTX_new();
+  if (!ctx->impl)
+    return;
+
+  EVP_DigestInit_ex(ctx->impl, EVP_md5(), NULL);
 }
 
 void md5_process_bytes(const void* buffer, size_t len, struct md5_ctx* ctx) {
-  MD5_Update(&ctx->impl, buffer, len);
+  if (ctx->impl)
+    EVP_DigestUpdate(ctx->impl, buffer, len);
 }
 
 void md5_finish_ctx(struct md5_ctx* ctx, void* resbuf) {
-  MD5_Final(resbuf, &ctx->impl);
+  if (ctx->impl) {
+    unsigned int outlen = 0;
+
+    EVP_DigestFinal_ex(ctx->impl, resbuf, &outlen);
+    EVP_MD_CTX_free(ctx->impl);
+    ctx->impl = NULL;
+  }
 }
 
 void sha1_init_ctx(struct sha1_ctx* ctx) {
-  SHA1_Init(&ctx->impl);
+  ctx->impl = EVP_MD_CTX_new();
+  if (!ctx->impl)
+    return;
+
+  EVP_DigestInit_ex(ctx->impl, EVP_sha1(), NULL);
 }
 
 void sha1_process_bytes(const void* buffer, size_t len, struct sha1_ctx* ctx) {
-  SHA1_Update(&ctx->impl, buffer, len);
+  if (ctx->impl)
+    EVP_DigestUpdate(ctx->impl, buffer, len);
 }
 
 void sha1_finish_ctx(struct sha1_ctx* ctx, void* resbuf) {
-  SHA1_Final(resbuf, &ctx->impl);
+  if (ctx->impl) {
+    unsigned int outlen = 0;
+
+    EVP_DigestFinal_ex(ctx->impl, resbuf, &outlen);
+    EVP_MD_CTX_free(ctx->impl);
+    ctx->impl = NULL;
+  }
 }
 
 void sha256_init_ctx(struct sha256_ctx* ctx) {
-  SHA256_Init(&ctx->impl);
+  ctx->impl = EVP_MD_CTX_new();
+  if (!ctx->impl)
+    return;
+
+  EVP_DigestInit_ex(ctx->impl, EVP_sha256(), NULL);
 }
 
 void sha256_process_bytes(const void* buffer, size_t len, struct sha256_ctx* ctx) {
-  SHA256_Update(&ctx->impl, buffer, len);
+  if (ctx->impl)
+    EVP_DigestUpdate(ctx->impl, buffer, len);
 }
 
 void sha256_finish_ctx(struct sha256_ctx* ctx, void* resbuf) {
-  SHA256_Final(resbuf, &ctx->impl);
+  if (ctx->impl) {
+    unsigned int outlen = 0;
+
+    EVP_DigestFinal_ex(ctx->impl, resbuf, &outlen);
+    EVP_MD_CTX_free(ctx->impl);
+    ctx->impl = NULL;
+  }
 }
 
 /* Generic streaming helper used by all digest_stream functions

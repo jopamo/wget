@@ -18,25 +18,7 @@
 #include "utils.h"
 #include "http-ntlm.h"
 
-#include <openssl/des.h>
-#include <openssl/md4.h>
-#include <openssl/opensslv.h>
-
-#if OPENSSL_VERSION_NUMBER < 0x00907001L
-#define DES_key_schedule des_key_schedule
-#define DES_cblock des_cblock
-#define DES_set_odd_parity des_set_odd_parity
-#define DES_set_key des_set_key
-#define DES_ecb_encrypt des_ecb_encrypt
-
-/* This is how things were done in the old days */
-#define DESKEY(x) x
-#define DESKEYARG(x) x
-#else
-/* Modern version */
-#define DESKEYARG(x) *x
-#define DESKEY(x) &x
-#endif
+#include <openssl/evp.h>
 
 /* Define this to make the type-3 message include the NT response message */
 #define USE_NTRESPONSES 1
@@ -119,13 +101,20 @@ bool ntlm_input(struct ntlmdata* ntlm, const char* header) {
   return true;
 }
 
-/*
- * Turns a 56 bit key into the 64 bit, odd parity key and sets the key.  The
- * key schedule ks is also set.
- */
-static void setup_des_key(unsigned char* key_56, DES_key_schedule DESKEYARG(ks)) {
-  DES_cblock key;
+static unsigned char odd_parity(unsigned char byte) {
+  unsigned char v = byte & 0xFE;
+  unsigned char parity = 1;
 
+  for (unsigned char b = v; b; b >>= 1)
+    parity ^= (b & 1);
+
+  return v | parity;
+}
+
+/*
+ * Turns a 56 bit key into the 64 bit, odd parity key.
+ */
+static void setup_des_key(const unsigned char* key_56, unsigned char key[8]) {
   key[0] = key_56[0];
   key[1] = ((key_56[0] << 7) & 0xFF) | (key_56[1] >> 1);
   key[2] = ((key_56[1] << 6) & 0xFF) | (key_56[2] >> 2);
@@ -135,8 +124,28 @@ static void setup_des_key(unsigned char* key_56, DES_key_schedule DESKEYARG(ks))
   key[6] = ((key_56[5] << 2) & 0xFF) | (key_56[6] >> 6);
   key[7] = (key_56[6] << 1) & 0xFF;
 
-  DES_set_odd_parity(&key);
-  DES_set_key(&key, ks);
+  for (int i = 0; i < 8; i++)
+    key[i] = odd_parity(key[i]);
+}
+
+static bool des_ecb_encrypt_block(const unsigned char key[8], const unsigned char* plaintext, unsigned char* results) {
+  bool ok = false;
+  EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+
+  if (!ctx)
+    return false;
+
+  if (EVP_EncryptInit_ex(ctx, EVP_des_ecb(), NULL, key, NULL) == 1 && EVP_CIPHER_CTX_set_padding(ctx, 0) == 1) {
+    int outlen = 0;
+    if (EVP_EncryptUpdate(ctx, results, &outlen, plaintext, 8) == 1 && outlen == 8) {
+      int finallen = 0;
+      if (EVP_EncryptFinal_ex(ctx, results + outlen, &finallen) == 1 && finallen == 0)
+        ok = true;
+    }
+  }
+
+  EVP_CIPHER_CTX_free(ctx);
+  return ok;
 }
 
 /*
@@ -144,23 +153,25 @@ static void setup_des_key(unsigned char* key_56, DES_key_schedule DESKEYARG(ks))
  * 8 byte plaintext is encrypted with each key and the resulting 24
  * bytes are stored in the results array.
  */
-static void calc_resp(unsigned char* keys, unsigned char* plaintext, unsigned char* results) {
-  DES_key_schedule ks;
+static bool calc_resp(unsigned char* keys, unsigned char* plaintext, unsigned char* results) {
+  unsigned char key[8];
 
-  setup_des_key(keys, DESKEY(ks));
-  DES_ecb_encrypt((DES_cblock*)plaintext, (DES_cblock*)results, DESKEY(ks), DES_ENCRYPT);
+  setup_des_key(keys, key);
+  if (!des_ecb_encrypt_block(key, plaintext, results))
+    return false;
 
-  setup_des_key(keys + 7, DESKEY(ks));
-  DES_ecb_encrypt((DES_cblock*)plaintext, (DES_cblock*)(results + 8), DESKEY(ks), DES_ENCRYPT);
+  setup_des_key(keys + 7, key);
+  if (!des_ecb_encrypt_block(key, plaintext, results + 8))
+    return false;
 
-  setup_des_key(keys + 14, DESKEY(ks));
-  DES_ecb_encrypt((DES_cblock*)plaintext, (DES_cblock*)(results + 16), DESKEY(ks), DES_ENCRYPT);
+  setup_des_key(keys + 14, key);
+  return des_ecb_encrypt_block(key, plaintext, results + 16);
 }
 
 /*
  * Set up lanmanager and nt hashed passwords
  */
-static void mkhash(const char* password,
+static bool mkhash(const char* password,
                    unsigned char* nonce, /* 8 bytes */
                    unsigned char* lmresp /* must fit 0x18 bytes */
 #ifdef USE_NTRESPONSES
@@ -188,24 +199,25 @@ static void mkhash(const char* password,
     pw[i] = 0;
 
   {
+    unsigned char key[8];
+
     /* create LanManager hashed password */
-    DES_key_schedule ks;
+    setup_des_key(pw, key);
+    if (!des_ecb_encrypt_block(key, magic, lmbuffer))
+      return false;
 
-    setup_des_key(pw, DESKEY(ks));
-    DES_ecb_encrypt((DES_cblock*)magic, (DES_cblock*)lmbuffer, DESKEY(ks), DES_ENCRYPT);
-
-    setup_des_key(pw + 7, DESKEY(ks));
-    DES_ecb_encrypt((DES_cblock*)magic, (DES_cblock*)(lmbuffer + 8), DESKEY(ks), DES_ENCRYPT);
+    setup_des_key(pw + 7, key);
+    if (!des_ecb_encrypt_block(key, magic, lmbuffer + 8))
+      return false;
 
     memset(lmbuffer + 16, 0, 5);
   }
   /* create LM responses */
-  calc_resp(lmbuffer, nonce, lmresp);
+  if (!calc_resp(lmbuffer, nonce, lmresp))
+    return false;
 
 #ifdef USE_NTRESPONSES
   {
-    MD4_CTX MD4;
-
     unsigned char pw4[64];
 
     len = strlen(password);
@@ -219,15 +231,27 @@ static void mkhash(const char* password,
     }
 
     /* create NT hashed password */
-    MD4_Init(&MD4);
-    MD4_Update(&MD4, pw4, 2 * len);
-    MD4_Final(ntbuffer, &MD4);
+    EVP_MD_CTX* md = EVP_MD_CTX_new();
+    unsigned int outlen = 0;
+
+    if (!md)
+      return false;
+
+    if (EVP_DigestInit_ex(md, EVP_md4(), NULL) != 1 || EVP_DigestUpdate(md, pw4, 2 * len) != 1 || EVP_DigestFinal_ex(md, ntbuffer, &outlen) != 1) {
+      EVP_MD_CTX_free(md);
+      return false;
+    }
+
+    EVP_MD_CTX_free(md);
 
     memset(ntbuffer + 16, 0, 5);
   }
 
-  calc_resp(ntbuffer, nonce, ntresp);
+  if (!calc_resp(ntbuffer, nonce, ntresp))
+    return false;
 #endif
+
+  return true;
 }
 
 #define SHORTPAIR(x) (char)((x) & 0xff), (char)((x) >> 8)
@@ -355,12 +379,15 @@ char* ntlm_output(struct ntlmdata* ntlm, const char* user, const char* passwd, b
           usr = user;
         userlen = strlen(usr);
 
-        mkhash(passwd, &ntlm->nonce[0], lmresp
+        if (!mkhash(passwd, &ntlm->nonce[0], lmresp
 #ifdef USE_NTRESPONSES
-               ,
-               ntresp
+                   ,
+                   ntresp
 #endif
-        );
+            )) {
+          DEBUGP(("Failed to create NTLM hash values.\n"));
+          return NULL;
+        }
 
         domoff = 64; /* always */
         useroff = domoff + domlen;

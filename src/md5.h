@@ -10,9 +10,9 @@
 
 #define MD5_DIGEST_SIZE 16
 
-#include <openssl/md5.h>
+#include <openssl/evp.h>
 typedef struct md5_ctx {
-  MD5_CTX impl;
+  EVP_MD_CTX* impl;
 } md5_ctx;
 
 void md5_init_ctx(struct md5_ctx* ctx);

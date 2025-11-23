@@ -10,9 +10,9 @@
 
 #define SHA1_DIGEST_SIZE 20
 
-#include <openssl/sha.h>
+#include <openssl/evp.h>
 typedef struct sha1_ctx {
-  SHA_CTX impl;
+  EVP_MD_CTX* impl;
 } sha1_ctx;
 
 void sha1_init_ctx(struct sha1_ctx* ctx);
