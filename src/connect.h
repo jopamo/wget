@@ -19,20 +19,20 @@ enum { E_HOST = -100 };
 /* Connect to a remote host name on the given TCP port
  * Returns a connected socket fd on success or E_HOST / -1 on error
  */
-int connect_to_host(const char *host, int port);
+int connect_to_host(const char* host, int port);
 
 /* Connect to a specific IP address on the given TCP port
  * PRINT is an optional host label used only in logs
  * Returns a connected socket fd on success or -1 on error
  */
-int connect_to_ip(const ip_address *ip, int port, const char *print);
+int connect_to_ip(const ip_address* ip, int port, const char* print);
 
 /* Create a listening socket bound to BIND_ADDRESS:*PORT
  * If *PORT is 0, the kernel chooses a port and the chosen value is
  * written back to *PORT
  * Returns a listening socket fd on success or -1 on error
  */
-int bind_local(const ip_address *bind_address, int *port);
+int bind_local(const ip_address* bind_address, int* port);
 
 /* Accept a single incoming connection on LOCAL_SOCK
  * Returns a new connected socket fd on success or -1 on error
@@ -47,7 +47,7 @@ enum { ENDPOINT_LOCAL, ENDPOINT_PEER };
  * When ENDPOINT_PEER is used, returns the remote side of the socket
  * Returns true on success, false on error
  */
-bool socket_ip_address(int sock, ip_address *ip, int endpoint);
+bool socket_ip_address(int sock, ip_address* ip, int endpoint);
 
 /* Return the socket family (AF_INET, AF_INET6, ...) of a connection
  * Returns the family on success or -1 on error
@@ -84,66 +84,64 @@ struct transport_implementation {
   /* Read at most BUF_LEN bytes into BUF
    * Returns number of bytes read, 0 on EOF, or -1 on error
    */
-  int (*reader)(int fd, char *buf, int buf_len, void *ctx, double timeout);
+  int (*reader)(int fd, char* buf, int buf_len, void* ctx, double timeout);
 
   /* Write up to BUF_LEN bytes from BUF
    * Returns number of bytes written or -1 on error
    */
-  int (*writer)(int fd, char *buf, int buf_len, void *ctx);
+  int (*writer)(int fd, char* buf, int buf_len, void* ctx);
 
   /* Poll FD for readiness based on WAIT_FOR flags
    * Returns 1 if ready, 0 on timeout, -1 on error
    */
-  int (*poller)(int fd, double timeout, int wait_for, void *ctx);
+  int (*poller)(int fd, double timeout, int wait_for, void* ctx);
 
   /* Peek at available data without consuming it
    * Returns number of bytes that can be read, 0 on EOF, or -1 on error
    */
-  int (*peeker)(int fd, char *buf, int buf_len, void *ctx, double timeout);
+  int (*peeker)(int fd, char* buf, int buf_len, void* ctx, double timeout);
 
   /* Optional transport specific error description
    * Returns a borrowed pointer which must remain valid until fd_close
    */
-  const char *(*errstr)(int fd, void *ctx);
+  const char* (*errstr)(int fd, void* ctx);
 
   /* Close the underlying transport and release any associated state */
-  void (*closer)(int fd, void *ctx);
+  void (*closer)(int fd, void* ctx);
 };
 
 /* Register a transport implementation for an existing socket like FD
  * After registration, fd_read/fd_write/fd_peek/fd_errstr/fd_close will
  * dispatch to the provided implementation where possible
  */
-void fd_register_transport(int fd,
-                           struct transport_implementation *imp,
-                           void *ctx);
+void fd_register_transport(int fd, struct transport_implementation* imp, void* ctx);
 
 /* Retrieve the opaque context pointer previously registered with FD
  * Returns NULL if no transport is registered
  */
-void *fd_transport_context(int fd);
+void* fd_transport_context(int fd);
 
 /* Read from FD with an optional timeout in seconds
  * If TIMEOUT is -1, opt.read_timeout will be used
  * Returns number of bytes read, 0 on EOF, or -1 on error
  */
-int fd_read(int fd, char *buf, int buf_len, double timeout);
+int fd_read(int fd, char* buf, int buf_len, double timeout);
 
 /* Write the contents of BUF to FD with an optional timeout in seconds
  * Loops until all data is written or an error occurs
  * Returns last write result, or -1 on error
  */
-int fd_write(int fd, char *buf, int buf_len, double timeout);
+int fd_write(int fd, char* buf, int buf_len, double timeout);
 
 /* Peek at pending data on FD without consuming it
  * Returns number of bytes peeked, 0 on EOF, or -1 on error
  */
-int fd_peek(int fd, char *buf, int buf_len, double timeout);
+int fd_peek(int fd, char* buf, int buf_len, double timeout);
 
 /* Return a human readable error string for the most recent fd_* failure
  * May return a transport specific message or fall back to strerror(errno)
  */
-const char *fd_errstr(int fd);
+const char* fd_errstr(int fd);
 
 /* Close FD and any transport layered on top of it
  * Safe to call with a negative fd, which is ignored
@@ -153,7 +151,9 @@ void fd_close(int fd);
 /* Free internal connect/transport state
  * Only used in debug and test configurations
  */
+#if defined DEBUG_MALLOC || defined TESTING
 void connect_cleanup(void);
+#endif
 
 #ifdef WINDOWS
 int select_fd_nb(int fd, double maxtime, int wait_for);
