@@ -41,7 +41,7 @@ typedef struct wget_mutex {
 #if defined(WINDOWS)
 #define WGET_MUTEX_INITIALIZER {INIT_ONCE_STATIC_INIT, {0}, false}
 #elif defined HAVE_PTHREAD_H && HAVE_PTHREAD_H
-#define WGET_MUTEX_INITIALIZER {{0}, false}
+#define WGET_MUTEX_INITIALIZER {PTHREAD_MUTEX_INITIALIZER, false}
 #else
 #define WGET_MUTEX_INITIALIZER {0}
 #endif
