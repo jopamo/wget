@@ -61,7 +61,6 @@ as that of the covered work.  */
 #include "dirname.h"
 #include "xmemdup0.h"
 #include <getopt.h>
-#include <getpass.h>
 #include <quote.h>
 
 #ifdef TESTING

@@ -67,7 +67,17 @@ This is now a **requirements checklist** for a fully modern wget.
 
 ### **Code Quality / Portability**
 
-* [ ] Modern build system (e.g., Meson)
+* [x] Modern build system (e.g., Meson)
 * [ ] Broad unit-test coverage and fuzz testing
 * [ ] Minimized legacy code and compatibility hacks
 * [ ] Clean modular architecture to replace legacy wget internals
+
+---
+
+### **Transition / Cleanup Tasks Added During Meson Migration**
+
+* [ ] Provide replacements for gnulib helpers still referenced (base32 encode/decode, tmpdir utilities, etc.)
+* [ ] Reconcile config-time feature toggles (Metalink, PSL, proxy, etc.) so Meson options match runtime expectations
+* [ ] Replace remaining `_GL_*` macros with local equivalents to keep non-gnulib builds warning-free
+* [ ] Ensure new xalloc/gettext stubs integrate with logging/exit paths and cover all call sites
+* [ ] Restore cryptographic helper coverage (MD5/SHA variants, Metalink checksum paths) or explicitly drop the features

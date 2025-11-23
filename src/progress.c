@@ -37,7 +37,9 @@ as that of the covered work.  */
 #include <unistd.h>
 #include <signal.h>
 #include <wchar.h>
+#if USE_NLS_PROGRESS_BAR
 #include <mbiter.h>
+#endif
 
 #include "progress.h"
 #include "utils.h"

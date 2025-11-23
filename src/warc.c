@@ -475,10 +475,8 @@ static int warc_sha1_stream_with_payload(FILE* stream, void* res_block, void* re
         goto process_partial_block;
     }
 
-    /* Process buffer with BLOCKSIZE bytes.  Note that
-                      BLOCKSIZE % 64 == 0
-     */
-    sha1_process_block(buffer, BLOCKSIZE, &ctx_block);
+    /* Process buffer with BLOCKSIZE bytes.  */
+    sha1_process_bytes(buffer, BLOCKSIZE, &ctx_block);
     if (payload_offset >= 0 && payload_offset < pos) {
       /* At least part of the buffer contains data from payload. */
       off_t start_of_payload = payload_offset - (pos - BLOCKSIZE);
@@ -486,12 +484,9 @@ static int warc_sha1_stream_with_payload(FILE* stream, void* res_block, void* re
         /* All bytes in the buffer belong to the payload. */
         start_of_payload = 0;
 
-      /* Process the payload part of the buffer.
-         Note: we can't use  sha1_process_block  here even if we
-         process the complete buffer.  Because the payload doesn't
-         have to start with a full block, there may still be some
-         bytes left from the previous buffer.  Therefore, we need
-         to continue with  sha1_process_bytes.  */
+      /* Process the payload part of the buffer even if the start does
+         not align to a block boundary; the streaming helper keeps
+         track of the tail that spills from the previous block. */
       sha1_process_bytes(buffer + start_of_payload, BLOCKSIZE - start_of_payload, &ctx_payload);
     }
   }
@@ -895,7 +890,7 @@ static void warc_process_cdx_line(char* lineptr, int field_num_original_url, int
     /* For some extra efficiency, we decode the base32 encoded
        checksum value.  This should produce exactly SHA1_DIGEST_SIZE
        bytes.  */
-    idx_t checksum_l;
+    size_t checksum_l;
     char* checksum_v;
     base32_decode_alloc(checksum, strlen(checksum), &checksum_v, &checksum_l);
     xfree(checksum);

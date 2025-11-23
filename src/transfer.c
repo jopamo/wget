@@ -20,6 +20,9 @@
 #include "transfer.h"
 
 #include "wget.h"
+#include "utils.h"
+
+#include <string.h>
 
 static void replace_string(char** dst, const char* src) {
   if (!dst)

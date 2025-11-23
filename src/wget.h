@@ -38,6 +38,10 @@ as that of the covered work.  */
 
 #include "config.h"
 
+#ifndef _GL_UNUSED
+#define _GL_UNUSED __attribute__((unused))
+#endif
+
 #if ((defined _WIN32 || defined __WIN32__) && !defined __CYGWIN__)
 #define WINDOWS
 #endif
