@@ -1,28 +1,14 @@
-/* Minimal base32 helpers compatible with Wget's historical gnulib usage.
-   Based on RFC 4648 reference implementations.
-   Copyright (C) 1999-2025
-   Free Software Foundation, Inc.
-
-   This file is free software: you can redistribute it and/or modify
-   it under the terms of the GNU Lesser General Public License as
-   published by the Free Software Foundation, either version 2.1 of the
-   License, or (at your option) any later version.
-
-   This file is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU Lesser General Public License for more details.
-
-   You should have received a copy of the GNU Lesser General Public License
-   along with this file.  If not, see <https://www.gnu.org/licenses/>.  */
+/* Minimal base32 helpers compatible with Wget's historical gnulib usage
+ * Based on RFC 4648 reference implementations
+ */
 
 #include "config.h"
 
 #include "base32.h"
 
 #include <ctype.h>
+#include <errno.h>
 #include <stdlib.h>
-#include <string.h>
 
 static unsigned char to_uchar(char ch) {
   return (unsigned char)ch;
@@ -30,40 +16,46 @@ static unsigned char to_uchar(char ch) {
 
 void base32_encode(const char* in, size_t inlen, char* out, size_t outlen) {
   static const char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  size_t outpos = 0;
+  size_t i = 0;
 
-  while (inlen && outlen) {
-    *out++ = alphabet[(to_uchar(in[0]) >> 3) & 0x1f];
-    if (!--outlen)
-      break;
-    *out++ = alphabet[((to_uchar(in[0]) << 2) + (--inlen ? to_uchar(in[1]) >> 6 : 0)) & 0x1f];
-    if (!--outlen)
-      break;
-    *out++ = (inlen ? alphabet[(to_uchar(in[1]) >> 1) & 0x1f] : '=');
-    if (!--outlen)
-      break;
-    *out++ = (inlen ? alphabet[((to_uchar(in[1]) << 4) + (--inlen ? to_uchar(in[2]) >> 4 : 0)) & 0x1f] : '=');
-    if (!--outlen)
-      break;
-    *out++ = (inlen ? alphabet[((to_uchar(in[2]) << 1) + (--inlen ? to_uchar(in[3]) >> 7 : 0)) & 0x1f] : '=');
-    if (!--outlen)
-      break;
-    *out++ = (inlen ? alphabet[(to_uchar(in[3]) >> 2) & 0x1f] : '=');
-    if (!--outlen)
-      break;
-    *out++ = (inlen ? alphabet[((to_uchar(in[3]) << 3) + (--inlen ? to_uchar(in[4]) >> 5 : 0)) & 0x1f] : '=');
-    if (!--outlen)
-      break;
-    *out++ = inlen ? alphabet[to_uchar(in[4]) & 0x1f] : '=';
-    if (!--outlen)
-      break;
-    if (inlen)
-      inlen--;
-    if (inlen)
-      in += 5;
+  if (outlen == 0)
+    return;
+
+  while (i < inlen && outpos + 8 < outlen) {
+    unsigned char b[5] = {0, 0, 0, 0, 0};
+    size_t chunk_len = inlen - i;
+
+    if (chunk_len > 5)
+      chunk_len = 5;
+
+    for (size_t j = 0; j < chunk_len; ++j)
+      b[j] = to_uchar(in[i + j]);
+
+    unsigned int x0 = b[0];
+    unsigned int x1 = b[1];
+    unsigned int x2 = b[2];
+    unsigned int x3 = b[3];
+    unsigned int x4 = b[4];
+
+    char ob[8];
+
+    ob[0] = alphabet[(x0 >> 3) & 0x1f];
+    ob[1] = alphabet[((x0 << 2) | (x1 >> 6)) & 0x1f];
+    ob[2] = (chunk_len > 1) ? alphabet[((x1 >> 1) & 0x1f)] : '=';
+    ob[3] = (chunk_len > 1) ? alphabet[((x1 << 4) | (x2 >> 4)) & 0x1f] : '=';
+    ob[4] = (chunk_len > 2) ? alphabet[((x2 << 1) | (x3 >> 7)) & 0x1f] : '=';
+    ob[5] = (chunk_len > 3) ? alphabet[((x3 >> 2) & 0x1f)] : '=';
+    ob[6] = (chunk_len > 3) ? alphabet[((x3 << 3) | (x4 >> 5)) & 0x1f] : '=';
+    ob[7] = (chunk_len > 4) ? alphabet[(x4 & 0x1f)] : '=';
+
+    for (size_t k = 0; k < 8 && outpos + 1 < outlen; ++k)
+      out[outpos++] = ob[k];
+
+    i += chunk_len;
   }
 
-  if (outlen)
-    *out = '\0';
+  out[outpos] = '\0';
 }
 
 static int base32_decode_value(unsigned char ch) {
@@ -90,6 +82,7 @@ static bool base32_decode_block(const unsigned char block[8], char* buffer, size
 
   for (int i = 0; i < 8; ++i) {
     unsigned char ch = block[i];
+
     if (ch == '=') {
       if (first_pad < 0)
         first_pad = i;
@@ -97,14 +90,16 @@ static bool base32_decode_block(const unsigned char block[8], char* buffer, size
     else {
       if (first_pad >= 0)
         return false;
+
       int v = base32_decode_value(ch);
       if (v < 0)
         return false;
+
       values[i] = (unsigned char)v;
     }
   }
 
-  size_t pad = (first_pad < 0) ? 0 : (size_t)(8 - first_pad);
+  size_t pad = (first_pad < 0) ? 0u : (size_t)(8 - first_pad);
 
   switch (pad) {
     case 0:
@@ -149,7 +144,7 @@ static bool base32_decode_block(const unsigned char block[8], char* buffer, size
 }
 
 bool base32_decode_alloc(const char* in, size_t inlen, char** out, size_t* outlen) {
-  size_t max_out = 5 * ((inlen >> 3) + 1);
+  size_t max_out;
   size_t written = 0;
   unsigned char block[8];
   size_t block_len = 0;
@@ -158,6 +153,11 @@ bool base32_decode_alloc(const char* in, size_t inlen, char** out, size_t* outle
   if (out == NULL)
     return false;
 
+  *out = NULL;
+  if (outlen)
+    *outlen = 0;
+
+  max_out = 5 * ((inlen >> 3) + 1);
   if (max_out == 0)
     max_out = 1;
 
@@ -165,15 +165,18 @@ bool base32_decode_alloc(const char* in, size_t inlen, char** out, size_t* outle
   if (buffer == NULL) {
     if (outlen)
       *outlen = max_out;
-    *out = NULL;
+    errno = ENOMEM;
     return true;
   }
 
   for (size_t i = 0; i < inlen; ++i) {
     unsigned char ch = to_uchar(in[i]);
+
     if (isspace(ch))
       continue;
+
     block[block_len++] = ch;
+
     if (block_len == 8) {
       if (!base32_decode_block(block, buffer, &written, max_out)) {
         free(buffer);
@@ -197,5 +200,6 @@ bool base32_decode_alloc(const char* in, size_t inlen, char** out, size_t* outle
   *out = buffer;
   if (outlen)
     *outlen = written;
+
   return true;
 }
