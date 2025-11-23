@@ -5,6 +5,7 @@ sources = [
   build_info_src,
   'connect.c',
   'convert.c',
+  'evhelpers.c',
   'evloop.c',
   'cookies.c',
   'css-url.c',

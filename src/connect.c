@@ -10,7 +10,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#include <sys/select.h>
 #include <sys/socket.h>
 
 #ifndef WINDOWS
@@ -27,12 +26,14 @@
 
 #include <errno.h>
 #include <string.h>
-#include <sys/time.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
 
 #include "utils.h"
 #include "host.h"
 #include "connect.h"
 #include "hash.h"
+#include "evhelpers.h"
 
 #include <stdint.h>
 
@@ -168,16 +169,86 @@ static bool resolve_bind_address(struct sockaddr* sa) {
   return true;
 }
 
-struct cwt_context {
-  int fd;
-  const struct sockaddr* addr;
-  socklen_t addrlen;
-  int result;
+struct socket_blocking_state {
+  bool have_saved_flags;
+#ifdef F_GETFL
+  int saved_flags;
+#endif
 };
 
-static void connect_with_timeout_callback(void* arg) {
-  struct cwt_context* ctx = (struct cwt_context*)arg;
-  ctx->result = connect(ctx->fd, ctx->addr, ctx->addrlen);
+static int socket_set_nonblocking(int fd, struct socket_blocking_state* state) {
+  if (state)
+    state->have_saved_flags = false;
+
+#ifdef F_GETFL
+  int flags = fcntl(fd, F_GETFL, 0);
+  if (flags < 0)
+    return -1;
+  if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0)
+    return -1;
+  if (state) {
+    state->saved_flags = flags;
+    state->have_saved_flags = true;
+  }
+#else
+#ifdef WINDOWS
+  unsigned long mode = 1;
+  if (ioctlsocket(fd, FIONBIO, &mode) != 0) {
+    errno = WSAGetLastError();
+    return -1;
+  }
+#else
+  int mode = 1;
+  if (ioctl(fd, FIONBIO, &mode) < 0)
+    return -1;
+#endif
+  if (state)
+    state->have_saved_flags = true;
+#endif
+  return 0;
+}
+
+static void socket_restore_blocking(int fd, struct socket_blocking_state* state) {
+  if (!state || !state->have_saved_flags)
+    return;
+
+#ifdef F_GETFL
+  fcntl(fd, F_SETFL, state->saved_flags);
+#else
+#ifdef WINDOWS
+  unsigned long mode = 0;
+  if (ioctlsocket(fd, FIONBIO, &mode) != 0)
+    errno = WSAGetLastError();
+#else
+  int mode = 0;
+  ioctl(fd, FIONBIO, &mode);
+#endif
+#endif
+  state->have_saved_flags = false;
+}
+
+static bool connect_in_progress_error(int err) {
+#ifdef EINPROGRESS
+  if (err == EINPROGRESS)
+    return true;
+#endif
+#ifdef EALREADY
+  if (err == EALREADY)
+    return true;
+#endif
+#ifdef EWOULDBLOCK
+  if (err == EWOULDBLOCK)
+    return true;
+#endif
+#ifdef EINTR
+  if (err == EINTR)
+    return true;
+#endif
+#ifdef EAGAIN
+  if (err == EAGAIN)
+    return true;
+#endif
+  return false;
 }
 
 /* Like connect, but specifies a timeout
@@ -185,20 +256,56 @@ static void connect_with_timeout_callback(void* arg) {
    errno is set to ETIMEDOUT */
 
 static int connect_with_timeout(int fd, const struct sockaddr* addr, socklen_t addrlen, double timeout) {
-  struct cwt_context ctx;
+  struct socket_blocking_state state;
+  xzero(state);
 
-  ctx.fd = fd;
-  ctx.addr = addr;
-  ctx.addrlen = addrlen;
-  ctx.result = -1;
+  if (socket_set_nonblocking(fd, &state) < 0)
+    return -1;
 
-  if (run_with_timeout(timeout, connect_with_timeout_callback, &ctx)) {
-    errno = ETIMEDOUT;
+  if (connect(fd, addr, addrlen) == 0) {
+    socket_restore_blocking(fd, &state);
+    return 0;
+  }
+
+  int saved_errno = errno;
+  if (!connect_in_progress_error(saved_errno)) {
+    socket_restore_blocking(fd, &state);
+    errno = saved_errno;
     return -1;
   }
-  if (ctx.result == -1 && errno == EINTR)
-    errno = ETIMEDOUT;
-  return ctx.result;
+
+  double wait_timeout = timeout;
+  if (wait_timeout <= 0)
+    wait_timeout = -1;
+
+  int wait_result = wget_ev_io_wait(fd, wait_timeout, WAIT_FOR_WRITE);
+  if (wait_result <= 0) {
+    if (wait_result == 0)
+      errno = ETIMEDOUT;
+    socket_restore_blocking(fd, &state);
+    return -1;
+  }
+
+  int sock_error = 0;
+#ifdef WINDOWS
+  int optlen = sizeof(sock_error);
+#else
+  socklen_t optlen = (socklen_t)sizeof(sock_error);
+#endif
+  if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&sock_error, &optlen) < 0) {
+    saved_errno = errno;
+    socket_restore_blocking(fd, &state);
+    errno = saved_errno;
+    return -1;
+  }
+
+  socket_restore_blocking(fd, &state);
+  if (sock_error) {
+    errno = sock_error;
+    return -1;
+  }
+
+  return 0;
 }
 
 /* Connect via TCP to the specified address and port
@@ -577,70 +684,13 @@ bool retryable_socket_connect_error(int err) {
   return true;
 }
 
-/* Helper to enforce select() fd range and provide a consistent error */
-
-static void ensure_fd_in_select_range(int fd) {
-  if (fd >= FD_SETSIZE) {
-    logprintf(LOG_NOTQUIET, _("Too many fds open.  Cannot use select on a fd >= %d\n"), FD_SETSIZE);
-    exit(WGET_EXIT_GENERIC_ERROR);
-  }
-}
-
-/* Wait for a single descriptor to become available, timing out after
-   MAXTIME seconds
-   Returns 1 if FD is available, 0 for timeout and -1 for error
-   The argument WAIT_FOR can be a combination of WAIT_FOR_READ and
-   WAIT_FOR_WRITE
-   This is a mere convenience wrapper around the select call, and
-   should be taken as such (for example, it doesn't implement Wget's
-   0-timeout-means-no-timeout semantics) */
-
-static int select_fd_internal(int fd, double maxtime, int wait_for, bool convert_back WGET_ATTR_UNUSED) {
-  fd_set fdset;
-  fd_set* rd = NULL;
-  fd_set* wr = NULL;
-  struct timeval tmout;
-  int result;
-
-  if (fd < 0)
-    return -1;
-
-  ensure_fd_in_select_range(fd);
-
-  FD_ZERO(&fdset);
-  FD_SET(fd, &fdset);
-  if (wait_for & WAIT_FOR_READ)
-    rd = &fdset;
-  if (wait_for & WAIT_FOR_WRITE)
-    wr = &fdset;
-
-  if (maxtime < 0)
-    maxtime = 0;
-
-  tmout.tv_sec = (long)maxtime;
-  tmout.tv_usec = (suseconds_t)((maxtime - (double)tmout.tv_sec) * 1000000.0);
-
-  do {
-    result = select(fd + 1, rd, wr, NULL, &tmout);
-#ifdef WINDOWS
-    /* gnulib select() converts blocking sockets to nonblocking on
-       Windows
-       wget uses blocking sockets so we must convert them back */
-    if (convert_back)
-      set_windows_fd_as_blocking_socket(fd);
-#endif
-  } while (result < 0 && errno == EINTR);
-
-  return result;
-}
-
 int select_fd(int fd, double maxtime, int wait_for) {
-  return select_fd_internal(fd, maxtime, wait_for, true);
+  return wget_ev_io_wait(fd, maxtime, wait_for);
 }
 
 #ifdef WINDOWS
 int select_fd_nb(int fd, double maxtime, int wait_for) {
-  return select_fd_internal(fd, maxtime, wait_for, false);
+  return wget_ev_io_wait(fd, maxtime, wait_for);
 }
 #endif
 
@@ -657,36 +707,8 @@ int select_fd_nb(int fd, double maxtime, int wait_for) {
    request */
 
 bool test_socket_open(int sock) {
-  fd_set check_set;
-  struct timeval to;
-  int ret;
-
-  ensure_fd_in_select_range(sock);
-
-  /* Check if we still have a valid (non-EOF) connection
-   * From Andrew Maholski's code in the Unix Socket FAQ */
-
-  FD_ZERO(&check_set);
-  FD_SET(sock, &check_set);
-
-  /* Wait one microsecond */
-  to.tv_sec = 0;
-  to.tv_usec = 1;
-
-  ret = select(sock + 1, &check_set, NULL, NULL, &to);
-#ifdef WINDOWS
-  /* gnulib select() converts blocking sockets to nonblocking in windows
-     wget uses blocking sockets so we must convert them back to blocking */
-  set_windows_fd_as_blocking_socket(sock);
-#endif
-
-  if (!ret)
-    /* We got a timeout, it means we're still connected */
-    return true;
-  else
-    /* Read now would not wait, it means we have either pending data
-       or EOF/error */
-    return false;
+  int ret = wget_ev_io_wait(sock, 0, WAIT_FOR_READ);
+  return ret == 0;
 }
 
 /* Basic socket operations, mostly EINTR wrappers */
@@ -708,7 +730,10 @@ static int sock_write(int fd, char* buf, int bufsize) {
 }
 
 static int sock_poll(int fd, double timeout, int wait_for) {
-  return select_fd(fd, timeout, wait_for);
+  double wait_timeout = timeout;
+  if (wait_timeout == 0)
+    wait_timeout = -1;
+  return select_fd(fd, wait_timeout, wait_for);
 }
 
 static int sock_peek(int fd, char* buf, int bufsize) {
@@ -803,17 +828,15 @@ void* fd_transport_context(int fd) {
 static bool poll_internal(int fd, struct transport_info* info, int wf, double timeout) {
   if (timeout == -1)
     timeout = opt.read_timeout;
-  if (timeout) {
-    int test;
-    if (info && info->imp->poller)
-      test = info->imp->poller(fd, timeout, wf, info->ctx);
-    else
-      test = sock_poll(fd, timeout, wf);
-    if (test == 0)
-      errno = ETIMEDOUT;
-    if (test <= 0)
-      return false;
-  }
+  int test;
+  if (info && info->imp->poller)
+    test = info->imp->poller(fd, timeout, wf, info->ctx);
+  else
+    test = sock_poll(fd, timeout, wf);
+  if (test == 0)
+    errno = ETIMEDOUT;
+  if (test <= 0)
+    return false;
   return true;
 }
 

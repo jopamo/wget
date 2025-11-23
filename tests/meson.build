@@ -20,3 +20,20 @@ signal_helper_test = executable(
 )
 
 test('signals_libev_dispatch', signal_helper_test)
+
+evhelpers_sources = files(
+  'evhelpers_test.c',
+  '../src/evhelpers.c',
+  '../src/evloop.c',
+  '../src/xalloc.c',
+)
+
+evhelpers_test = executable(
+  'evhelpers_test',
+  evhelpers_sources,
+  include_directories: test_includes,
+  dependencies: [libev_dep],
+  install: false,
+)
+
+test('evhelpers_wait_and_sleep', evhelpers_test)

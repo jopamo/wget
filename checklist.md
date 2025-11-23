@@ -16,7 +16,7 @@ NOTE: WHEN WORKING THROUGH CHECKLIST, MARK OFF COMPLETED ITEMS, ADD MISSING ITEM
 
 * [x] Single, central **libev event loop** for all network I/O
 * [ ] Connection state machines implemented as pure libev watchers
-* [ ] Fully nonblocking sockets with `ev_io` for read/write readiness
+* [x] Fully nonblocking sockets with `ev_io` for read/write readiness (connect/read/write paths now route through libev helpers)
 * [ ] Multi-threaded dispatch **only for CPU-heavy tasks** (hashing, decompression, HTML parsing)
 * [ ] Parallel downloading of multiple files
 * [ ] Parallel range-requests for single-file acceleration
@@ -30,7 +30,7 @@ NOTE: WHEN WORKING THROUGH CHECKLIST, MARK OFF COMPLETED ITEMS, ADD MISSING ITEM
 * [ ] Lock-free I/O path where possible (minimize mutex usage)
 
 **Next steps**
-- Port socket connect/read/write paths onto libev watchers (connect.c/retr.c) so transfers share the central loop.
+- Promote per-transfer state machines to persistent libev watchers (connect/retr now use central loop helpers per operation; follow-up is to remove remaining synchronous glue).
 - Add per-host pools / keep-alive reuse policies running under libev timers to prep for large-connection workloads.
 - Layer in `ev_async` cross-thread notifications + worker hand-off for CPU-heavy helpers (decompression, parsing).
 
@@ -129,7 +129,7 @@ All items updated to reflect **NO gnulib whatsoever** **and** the hard requireme
 
 * [ ] Confirm crypto codepaths (Metalink hashes, MD5/SHA variants) use your unified crypto backend or are removed
 
-* [ ] Replace all legacy blocking patterns (`sleep`, blocking DNS, blocking `poll`, blocking writes) with libev timers or nonblocking calls
+* [ ] Replace all legacy blocking patterns (`sleep`, blocking DNS, blocking `poll`, blocking writes) with libev timers or nonblocking calls (connect/read/write waits + rate limiting now share libev via `evhelpers`)
 
 * [ ] Ensure all DNS code paths are 100% async under c-ares with no fallbacks
 
