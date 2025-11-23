@@ -1,56 +1,30 @@
-/* Collect URLs from CSS source.
-   Copyright (C) 1998, 2000-2003, 2009-2011, 2014-2015, 2018-2024 Free
-   Software Foundation, Inc.
-
-This file is part of GNU Wget.
-
-GNU Wget is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 3 of the License, or (at
-your option) any later version.
-
-GNU Wget is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Wget.  If not, see <http://www.gnu.org/licenses/>.
-
-Additional permission under GNU GPL version 3 section 7
-
-If you modify this program, or any covered work, by linking or
-combining it with the OpenSSL project's OpenSSL library (or a
-modified version of that library), containing parts covered by the
-terms of the OpenSSL or SSLeay licenses, the Free Software Foundation
-grants you additional permission to convey the resulting work.
-Corresponding Source for a non-source form of such a combination
-shall include the source code for the parts of OpenSSL used as well
-as that of the covered work.  */
+/* Collect URLs from CSS source
+ * src/css-url.c
+ */
 
 /*
   Note that this is not an actual CSS parser, but just a lexical
-  scanner with a tiny bit more smarts bolted on top.  A full parser
-  is somewhat overkill for this job.  The only things we're interested
-  in are @import rules and url() tokens, so it's easy enough to
-  grab those without truly understanding the input.  The only downside
-  to this is that we might be coerced into downloading files that
-  a browser would ignore.  That might merit some more investigation.
+  scanner with a tiny bit more smarts bolted on top
+  A full parser is somewhat overkill for this job
+  The only things we're interested in are @import rules and url() tokens,
+  so it's easy enough to grab those without truly understanding the input
+  The only downside to this is that we might be coerced into downloading
+  files that a browser would ignore
  */
 
 #include "wget.h"
 
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
 #include <ctype.h>
 #include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
-#include "utils.h"
 #include "convert.h"
-#include "html-url.h"
 #include "css-tokens.h"
 #include "css-url.h"
+#include "html-url.h"
+#include "utils.h"
 #include "xstrndup.h"
 
 /* from lex.yy.c */
@@ -62,62 +36,72 @@ extern void yy_delete_buffer(YY_BUFFER_STATE b);
 extern int yylex(void);
 extern void yylex_destroy(void);
 
-/*
-  Given a detected URI token, get only the URI specified within.
-  Also adjust the starting position and length of the string.
+static unsigned char to_uchar(char ch) {
+  return (unsigned char)ch;
+}
 
+/*
+  Given a detected URI token, get only the URI specified within
+  Also adjust the starting position and length of the string
   A URI can be specified with or without quotes, and the quotes
-  can be single or double quotes.  In addition there can be
-  whitespace after the opening parenthesis and before the closing
-  parenthesis.
+  can be single or double quotes
+  In addition there can be whitespace after the opening parenthesis
+  and before the closing parenthesis
 */
 static char* get_uri_string(const char* at, int* pos, int* length) {
-  if (*length < 4)
+  /* need at minimum "url()" plus one character inside */
+  if (*length < 5)
     return NULL;
 
-  if (0 != strncasecmp(at + *pos, "url(", 4))
+  if (strncasecmp(at + *pos, "url(", 4) != 0)
     return NULL;
 
   *pos += 4;
-  *length -= 5; /* url() */
+  *length -= 5; /* drop "url(" and trailing ')' */
 
   /* skip leading space */
-  while (*length > 0 && isspace(at[*pos])) {
+  while (*length > 0 && isspace(to_uchar(at[*pos]))) {
     (*pos)++;
     if (--(*length) == 0)
       return NULL;
   }
 
   /* skip trailing space */
-  while (*length > 0 && isspace(at[*pos + *length - 1])) {
+  while (*length > 0 && isspace(to_uchar(at[*pos + *length - 1]))) {
     (*length)--;
   }
 
   /* trim off quotes */
   if (*length >= 2 && (at[*pos] == '\'' || at[*pos] == '"')) {
-    (*pos)++;
-    *length -= 2;
+    char quote = at[*pos];
+    /* only drop closing quote if it matches */
+    if (at[*pos + *length - 1] == quote) {
+      (*pos)++;
+      *length -= 2;
+    }
   }
 
   if (*length <= 0)
     return NULL;
 
-  return xstrndup(at + *pos, *length);
+  return xstrndup(at + *pos, (size_t)*length);
 }
 
 void get_urls_css(struct map_context* ctx, int offset, int buf_length) {
   int token;
-  /*char tmp[2048];*/
   int buffer_pos = 0;
-  int pos, length;
+  int pos;
+  int length;
   char* uri;
   YY_BUFFER_STATE b;
+
+  if (!ctx || !ctx->text || buf_length <= 0)
+    return;
 
   /* tell flex to scan from this buffer */
   b = yy_scan_bytes(ctx->text + offset, buf_length);
 
   while ((token = yylex()) != CSSEOF) {
-    /*DEBUGP (("%s ", token_names[token]));*/
     /* @import "foo.css"
        or @import url(foo.css)
     */
@@ -126,10 +110,7 @@ void get_urls_css(struct map_context* ctx, int offset, int buf_length) {
         buffer_pos += yyleng;
       } while ((token = yylex()) == S);
 
-      /*DEBUGP (("%s ", token_names[token]));*/
-
       if (token == STRING || token == URI) {
-        /*DEBUGP (("Got URI "));*/
         pos = buffer_pos + offset;
         length = yyleng;
 
@@ -138,14 +119,17 @@ void get_urls_css(struct map_context* ctx, int offset, int buf_length) {
         }
         else if (length >= 2) {
           /* cut out quote characters */
-          pos++;
-          length -= 2;
-          uri = xmalloc(length + 1);
-          memcpy(uri, yytext + 1, length);
-          uri[length] = '\0';
+          char* dst;
+          pos++;       /* account for initial quote in ctx->text */
+          length -= 2; /* drop both quotes from logical length */
+          uri = xmalloc((size_t)length + 1);
+          dst = uri;
+          memcpy(dst, yytext + 1, (size_t)length);
+          dst[length] = '\0';
         }
-        else
+        else {
           uri = NULL;
+        }
 
         if (uri) {
           struct urlpos* up = append_url(uri, pos, length, ctx);
@@ -162,8 +146,7 @@ void get_urls_css(struct map_context* ctx, int offset, int buf_length) {
       }
     }
     /* background-image: url(foo.png)
-       note that we don't care what
-       property this is actually on.
+       note that we don't care what property this is actually on
     */
     else if (token == URI) {
       pos = buffer_pos + offset;
@@ -181,6 +164,7 @@ void get_urls_css(struct map_context* ctx, int offset, int buf_length) {
         xfree(uri);
       }
     }
+
     buffer_pos += yyleng;
   }
 
@@ -194,13 +178,21 @@ struct urlpos* get_urls_css_file(const char* file, const char* url) {
   struct file_memory* fm;
   struct map_context ctx;
 
-  /* Load the file. */
+  /* Load the file */
   fm = wget_read_file(file);
   if (!fm) {
     logprintf(LOG_NOTQUIET, "%s: %s\n", file, strerror(errno));
     return NULL;
   }
+
   DEBUGP(("Loaded %s (size %s).\n", file, number_to_static_string(fm->length)));
+
+  /* flex uses int for buffer length, guard against overflow */
+  if (fm->length > INT_MAX) {
+    logprintf(LOG_NOTQUIET, _("%s: CSS file too large to scan (%s bytes)\n"), file, number_to_static_string(fm->length));
+    wget_read_file_free(fm);
+    return NULL;
+  }
 
   ctx.text = fm->content;
   ctx.head = NULL;
@@ -209,7 +201,7 @@ struct urlpos* get_urls_css_file(const char* file, const char* url) {
   ctx.document_file = file;
   ctx.nofollow = 0;
 
-  get_urls_css(&ctx, 0, fm->length);
+  get_urls_css(&ctx, 0, (int)fm->length);
   wget_read_file_free(fm);
   return ctx.head;
 }
