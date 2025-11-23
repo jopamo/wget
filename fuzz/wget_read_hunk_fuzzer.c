@@ -20,12 +20,12 @@
 #include <config.h>
 
 #include <sys/types.h>
-#include <stdint.h> // uint8_t
-#include <stdio.h>  // fmemopen
+#include <stdint.h>  // uint8_t
+#include <stdio.h>   // fmemopen
 #include <string.h>  // strncmp
 #include <stdlib.h>  // free
 #include <unistd.h>  // close
-#include <fcntl.h>  // open flags
+#include <fcntl.h>   // open flags
 #include <unistd.h>  // close
 #include <unistd.h>  // close
 
@@ -34,125 +34,108 @@
 #undef fopen_wgetrc
 
 #ifdef __cplusplus
-  extern "C" {
+extern "C" {
 #endif
-  #include "retr.h"
+#include "retr.h"
 
-  // declarations for wget internal functions
-  int main_wget(int argc, const char **argv);
-  void cleanup(void);
+// declarations for wget internal functions
+int main_wget(int argc, const char** argv);
+void cleanup(void);
 //  FILE *fopen_wget(const char *pathname, const char *mode);
 //  FILE *fopen_wgetrc(const char *pathname, const char *mode);
-  void exit_wget(int status);
+void exit_wget(int status);
 #ifdef __cplusplus
-  }
+}
 #endif
 
 #include "fuzzer.h"
 
-FILE *fopen_wget(const char *pathname, const char *mode)
-{
-	return fopen("/dev/null", mode);
+FILE* fopen_wget(const char* pathname, const char* mode) {
+  return fopen("/dev/null", mode);
 }
 
-FILE *fopen_wgetrc(const char *pathname, const char *mode)
-{
-	return NULL;
+FILE* fopen_wgetrc(const char* pathname, const char* mode) {
+  return NULL;
 }
 
 #ifdef FUZZING
-void exit_wget(int status)
-{
-}
+void exit_wget(int status) {}
 #endif
 
-static const uint8_t *g_data;
+static const uint8_t* g_data;
 static size_t g_size, g_read;
 
 struct my_context {
-	int peeklen;
-	char peekbuf[512];
+  int peeklen;
+  char peekbuf[512];
 };
 
-static int my_peek (int fd _GL_UNUSED, char *buf, int bufsize, void *arg, double d)
-{
-	(void) d;
-	if (g_read < g_size) {
-		struct my_context *ctx = (struct my_context *) arg;
-		int n = rand() % (g_size - g_read);
-		if (n > bufsize)
-			n = bufsize;
-		if (n > (int) sizeof(ctx->peekbuf))
-			n = sizeof(ctx->peekbuf);
-		memcpy(buf, g_data + g_read, n);
-		memcpy(ctx->peekbuf, g_data + g_read, n);
-		g_read += n;
-		ctx->peeklen=n;
-		return n;
-	}
-	return 0;
+static int my_peek(int fd _GL_UNUSED, char* buf, int bufsize, void* arg, double d) {
+  (void)d;
+  if (g_read < g_size) {
+    struct my_context* ctx = (struct my_context*)arg;
+    int n = rand() % (g_size - g_read);
+    if (n > bufsize)
+      n = bufsize;
+    if (n > (int)sizeof(ctx->peekbuf))
+      n = sizeof(ctx->peekbuf);
+    memcpy(buf, g_data + g_read, n);
+    memcpy(ctx->peekbuf, g_data + g_read, n);
+    g_read += n;
+    ctx->peeklen = n;
+    return n;
+  }
+  return 0;
 }
-static int my_read (int fd _GL_UNUSED, char *buf, int bufsize, void *arg, double d)
-{
-	(void) d;
-	struct my_context *ctx = (struct my_context *) arg;
+static int my_read(int fd _GL_UNUSED, char* buf, int bufsize, void* arg, double d) {
+  (void)d;
+  struct my_context* ctx = (struct my_context*)arg;
 
-	if (ctx->peeklen) {
-      /* If we have any peek data, simply return that. */
-      int copysize = MIN (bufsize, ctx->peeklen);
-      memcpy (buf, ctx->peekbuf, copysize);
-      ctx->peeklen -= copysize;
-      if (ctx->peeklen)
-        memmove (ctx->peekbuf, ctx->peekbuf + copysize, ctx->peeklen);
+  if (ctx->peeklen) {
+    /* If we have any peek data, simply return that. */
+    int copysize = MIN(bufsize, ctx->peeklen);
+    memcpy(buf, ctx->peekbuf, copysize);
+    ctx->peeklen -= copysize;
+    if (ctx->peeklen)
+      memmove(ctx->peekbuf, ctx->peekbuf + copysize, ctx->peeklen);
 
-      return copysize;
-	}
+    return copysize;
+  }
 
-	if (g_read < g_size) {
-		int n = rand() % (g_size - g_read);
-		if (n > bufsize)
-			n = bufsize;
-		memcpy(buf, g_data + g_read, n);
-		g_read += n;
-		return n;
-	}
+  if (g_read < g_size) {
+    int n = rand() % (g_size - g_read);
+    if (n > bufsize)
+      n = bufsize;
+    memcpy(buf, g_data + g_read, n);
+    g_read += n;
+    return n;
+  }
 
-	return 0;
+  return 0;
 }
-static int my_write (int fd _GL_UNUSED, char *buf _GL_UNUSED, int bufsize, void *arg _GL_UNUSED)
-{
-	return bufsize;
+static int my_write(int fd _GL_UNUSED, char* buf _GL_UNUSED, int bufsize, void* arg _GL_UNUSED) {
+  return bufsize;
 }
-static int my_poll (int fd _GL_UNUSED, double timeout _GL_UNUSED, int wait_for _GL_UNUSED, void *arg)
-{
-	struct my_context *ctx = (struct my_context *) arg;
+static int my_poll(int fd _GL_UNUSED, double timeout _GL_UNUSED, int wait_for _GL_UNUSED, void* arg) {
+  struct my_context* ctx = (struct my_context*)arg;
 
-   return ctx->peeklen || g_read < g_size;
+  return ctx->peeklen || g_read < g_size;
 }
-static const char *my_errstr (int fd _GL_UNUSED, void *arg _GL_UNUSED)
-{
-	return "Success";
+static const char* my_errstr(int fd _GL_UNUSED, void* arg _GL_UNUSED) {
+  return "Success";
 }
-static void my_close (int fd _GL_UNUSED, void *arg _GL_UNUSED)
-{
-}
+static void my_close(int fd _GL_UNUSED, void* arg _GL_UNUSED) {}
 
-static struct transport_implementation my_transport =
-{
-  my_read, my_write, my_poll,
-  my_peek, my_errstr, my_close
-};
+static struct transport_implementation my_transport = {my_read, my_write, my_poll, my_peek, my_errstr, my_close};
 
 /* copied from wget's http.c */
-static const char *
-response_head_terminator (const char *start, const char *peeked, int peeklen)
-{
+static const char* response_head_terminator(const char* start, const char* peeked, int peeklen) {
   const char *p, *end;
 
   /* If at first peek, verify whether HUNK starts with "HTTP".  If
      not, this is a HTTP/0.9 request and we must bail out without
      reading anything.  */
-  if (start == peeked && 0 != memcmp (start, "HTTP", MIN (peeklen, 4)))
+  if (start == peeked && 0 != memcmp(start, "HTTP", MIN(peeklen, 4)))
     return start;
 
   /* Look for "\n[\r]\n", and return the following position if found.
@@ -164,13 +147,12 @@ response_head_terminator (const char *start, const char *peeked, int peeklen)
 
   /* Check for \n\r\n or \n\n anywhere in [p, end-2). */
   for (; p < end - 2; p++)
-    if (*p == '\n')
-      {
-        if (p[1] == '\r' && p[2] == '\n')
-          return p + 3;
-        else if (p[1] == '\n')
-          return p + 2;
-      }
+    if (*p == '\n') {
+      if (p[1] == '\r' && p[2] == '\n')
+        return p + 3;
+      else if (p[1] == '\n')
+        return p + 2;
+    }
   /* p==end-2: check for \n\n directly preceding END. */
   if (peeklen >= 2 && p[0] == '\n' && p[1] == '\n')
     return p + 2;
@@ -178,29 +160,28 @@ response_head_terminator (const char *start, const char *peeked, int peeklen)
   return NULL;
 }
 
-int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
-{
-	char *hunk;
+int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
+  char* hunk;
 
-	if (size > 4096) // same as max_len = ... in .options file
-		return 0;
+  if (size > 4096)  // same as max_len = ... in .options file
+    return 0;
 
-//	CLOSE_STDERR
+  //	CLOSE_STDERR
 
-	g_data = data;
-	g_size = size;
-	g_read = 0;
+  g_data = data;
+  g_size = size;
+  g_read = 0;
 
-	struct my_context *ctx = (struct my_context *) calloc(1, sizeof(struct my_context));
-	fd_register_transport(99, &my_transport, ctx);
+  struct my_context* ctx = (struct my_context*)calloc(1, sizeof(struct my_context));
+  fd_register_transport(99, &my_transport, ctx);
 
-	while ((hunk = fd_read_hunk(99, response_head_terminator, 512, 65536)))
-		free(hunk);
+  while ((hunk = fd_read_hunk(99, response_head_terminator, 512, 65536)))
+    free(hunk);
 
-   connect_cleanup();
-	free(ctx);
+  connect_cleanup();
+  free(ctx);
 
-//	RESTORE_STDERR
+  //	RESTORE_STDERR
 
-	return 0;
+  return 0;
 }

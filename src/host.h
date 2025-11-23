@@ -32,17 +32,17 @@ as that of the covered work.  */
 #define HOST_H
 
 #ifdef WINDOWS
-# include <winsock2.h>
+#include <winsock2.h>
 #else
-# ifdef __VMS
-#  include "vms_ip.h"
-# else /* def __VMS */
-#  include <netdb.h>
-# endif /* def __VMS [else] */
-# include <sys/socket.h>
-# include <netinet/in.h>
+#ifdef __VMS
+#include "vms_ip.h"
+#else /* def __VMS */
+#include <netdb.h>
+#endif /* def __VMS [else] */
+#include <sys/socket.h>
+#include <netinet/in.h>
 #ifndef __BEOS__
-# include <arpa/inet.h>
+#include <arpa/inet.h>
 #endif
 #endif
 
@@ -57,9 +57,9 @@ typedef struct {
 
   /* The actual data, in the form of struct in_addr or in6_addr: */
   union {
-    struct in_addr d4;      /* IPv4 address */
+    struct in_addr d4; /* IPv4 address */
 #ifdef ENABLE_IPV6
-    struct in6_addr d6;     /* IPv6 address */
+    struct in6_addr d6; /* IPv6 address */
 #endif
   } data;
 
@@ -75,33 +75,29 @@ typedef struct {
    as a pointer to struct in_addr in IPv4 context or a pointer to
    struct in6_addr in IPv4 context.  This pointer can be passed to
    functions that work on either, such as inet_ntop.  */
-#define IP_INADDR_DATA(x) ((void *) &(x)->data)
+#define IP_INADDR_DATA(x) ((void*)&(x)->data)
 
-enum {
-  LH_SILENT  = 1,
-  LH_BIND    = 2,
-  LH_REFRESH = 4
-};
-struct address_list *lookup_host (const char *, int);
+enum { LH_SILENT = 1, LH_BIND = 2, LH_REFRESH = 4 };
+struct address_list* lookup_host(const char*, int);
 
-void address_list_get_bounds (const struct address_list *, int *, int *);
-const ip_address *address_list_address_at (const struct address_list *, int);
-bool address_list_contains (const struct address_list *, const ip_address *);
-void address_list_set_faulty (struct address_list *, int);
-void address_list_set_connected (struct address_list *);
-bool address_list_connected_p (const struct address_list *);
-void address_list_release (struct address_list *);
+void address_list_get_bounds(const struct address_list*, int*, int*);
+const ip_address* address_list_address_at(const struct address_list*, int);
+bool address_list_contains(const struct address_list*, const ip_address*);
+void address_list_set_faulty(struct address_list*, int);
+void address_list_set_connected(struct address_list*);
+bool address_list_connected_p(const struct address_list*);
+void address_list_release(struct address_list*);
 
-const char *print_address (const ip_address *);
+const char* print_address(const ip_address*);
 #ifdef ENABLE_IPV6
-bool is_valid_ipv6_address (const char *, const char *);
+bool is_valid_ipv6_address(const char*, const char*);
 #endif
 
-bool is_valid_ip_address (const char *name);
+bool is_valid_ip_address(const char* name);
 
-bool accept_domain (struct url *);
-bool sufmatch (const char **, const char *);
+bool accept_domain(struct url*);
+bool sufmatch(const char**, const char*);
 
-void host_cleanup (void);
+void host_cleanup(void);
 
 #endif /* HOST_H */

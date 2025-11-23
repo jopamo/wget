@@ -22,36 +22,27 @@
 
 #include "wget.h"
 
-struct transfer_stats
-{
+struct transfer_stats {
   wgint bytes_downloaded;
   double seconds_spent;
 };
 
-struct transfer_context
-{
-  struct options options;      /* Snapshot of the global options. */
+struct transfer_context {
+  struct options options; /* Snapshot of the global options. */
   bool has_options;
-  char *requested_uri;
-  char *local_file;
-  void *progress_handle;
+  char* requested_uri;
+  char* local_file;
+  void* progress_handle;
   struct transfer_stats stats;
 };
 
-void transfer_context_init (struct transfer_context *ctx);
-void transfer_context_prepare (struct transfer_context *ctx,
-                               const struct options *template_opts,
-                               const char *requested_uri);
-void transfer_context_free (struct transfer_context *ctx);
-void transfer_context_snapshot_options (struct transfer_context *ctx,
-                                        const struct options *template_opts);
-void transfer_context_set_requested_uri (struct transfer_context *ctx,
-                                         const char *uri);
-void transfer_context_set_local_file (struct transfer_context *ctx,
-                                      const char *path);
-void transfer_context_set_progress_handle (struct transfer_context *ctx,
-                                           void *progress);
-void transfer_context_record_stats (struct transfer_context *ctx,
-                                    wgint bytes, double seconds);
+void transfer_context_init(struct transfer_context* ctx);
+void transfer_context_prepare(struct transfer_context* ctx, const struct options* template_opts, const char* requested_uri);
+void transfer_context_free(struct transfer_context* ctx);
+void transfer_context_snapshot_options(struct transfer_context* ctx, const struct options* template_opts);
+void transfer_context_set_requested_uri(struct transfer_context* ctx, const char* uri);
+void transfer_context_set_local_file(struct transfer_context* ctx, const char* path);
+void transfer_context_set_progress_handle(struct transfer_context* ctx, void* progress);
+void transfer_context_record_stats(struct transfer_context* ctx, wgint bytes, double seconds);
 
 #endif /* TRANSFER_H */

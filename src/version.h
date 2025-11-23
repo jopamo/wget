@@ -31,11 +31,11 @@ as that of the covered work.  */
 #define WGET_VERSION_H
 
 /* Extern declarations for strings in version.c */
-extern const char *version_string;
-extern const char *compilation_string;
-extern const char *link_string;
+extern const char* version_string;
+extern const char* compilation_string;
+extern const char* link_string;
 
 /* Extern declaration for string in build_info.c */
-extern const char *compiled_features[];
+extern const char* compiled_features[];
 
 #endif /* WGET_VERSION_H */

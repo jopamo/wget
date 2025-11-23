@@ -88,7 +88,7 @@ as that of the covered work.  */
 #endif
 
 struct path_info {
-  char *path;
+  char* path;
   bool allowedp;
   bool user_agent_exact_p;
 };
@@ -96,7 +96,7 @@ struct path_info {
 struct robot_specs {
   int count;
   int size;
-  struct path_info *paths;
+  struct path_info* paths;
 };
 
 /* Parsing the robot spec. */
@@ -105,89 +105,76 @@ struct robot_specs {
    "*".  If it is either of them, *matches is set to one.  If it is
    "wget", *exact_match is set to one.  */
 
-static void
-match_user_agent (const char *agent, int length,
-                  bool *matches, bool *exact_match)
-{
-  if (length == 1 && *agent == '*')
-    {
-      *matches = true;
-      *exact_match = false;
-    }
-  else if (BOUNDED_EQUAL_NO_CASE (agent, agent + length, "wget"))
-    {
-      *matches = true;
-      *exact_match = true;
-    }
-  else
-    {
-      *matches = false;
-      *exact_match = false;
-    }
+static void match_user_agent(const char* agent, int length, bool* matches, bool* exact_match) {
+  if (length == 1 && *agent == '*') {
+    *matches = true;
+    *exact_match = false;
+  }
+  else if (BOUNDED_EQUAL_NO_CASE(agent, agent + length, "wget")) {
+    *matches = true;
+    *exact_match = true;
+  }
+  else {
+    *matches = false;
+    *exact_match = false;
+  }
 }
 
 /* Add a path specification between PATH_B and PATH_E as one of the
    paths in SPECS.  */
 
-static void
-add_path (struct robot_specs *specs, const char *path_b, const char *path_e,
-          bool allowedp, bool exactp)
-{
+static void add_path(struct robot_specs* specs, const char* path_b, const char* path_e, bool allowedp, bool exactp) {
   struct path_info pp;
   if (path_b < path_e && *path_b == '/')
     /* Our path representation doesn't use a leading slash, so remove
        one from theirs. */
     ++path_b;
-  pp.path     = strdupdelim (path_b, path_e);
+  pp.path = strdupdelim(path_b, path_e);
   pp.allowedp = allowedp;
   pp.user_agent_exact_p = exactp;
   ++specs->count;
-  if (specs->count > specs->size)
-    {
-      if (specs->size == 0)
-        specs->size = 1;
-      else
-        specs->size <<= 1;
-      specs->paths = xrealloc (specs->paths,
-                               specs->size * sizeof (struct path_info));
-    }
+  if (specs->count > specs->size) {
+    if (specs->size == 0)
+      specs->size = 1;
+    else
+      specs->size <<= 1;
+    specs->paths = xrealloc(specs->paths, specs->size * sizeof(struct path_info));
+  }
   specs->paths[specs->count - 1] = pp;
 }
 
 /* Recreate SPECS->paths with only those paths that have
    user_agent_exact_p set to true.  */
 
-static void
-prune_non_exact (struct robot_specs *specs)
-{
-  struct path_info *newpaths;
+static void prune_non_exact(struct robot_specs* specs) {
+  struct path_info* newpaths;
   int i, j, cnt;
   cnt = 0;
   for (i = 0; i < specs->count; i++)
     if (specs->paths[i].user_agent_exact_p)
       ++cnt;
-  newpaths = xnew_array (struct path_info, cnt);
+  newpaths = xnew_array(struct path_info, cnt);
   for (i = 0, j = 0; i < specs->count; i++)
     if (specs->paths[i].user_agent_exact_p)
       newpaths[j++] = specs->paths[i];
-	 else
-		 xfree (specs->paths[i].path);
-  assert (j == cnt);
-  xfree (specs->paths);
+    else
+      xfree(specs->paths[i].path);
+  assert(j == cnt);
+  xfree(specs->paths);
   specs->paths = newpaths;
   specs->count = cnt;
-  specs->size  = cnt;
+  specs->size = cnt;
 }
 
 #define EOL(p) ((p) >= lineend)
 
-#define SKIP_SPACE(p) do {              \
-  while (!EOL (p) && c_isspace (*p))      \
-    ++p;                                \
-} while (0)
+#define SKIP_SPACE(p)                \
+  do {                               \
+    while (!EOL(p) && c_isspace(*p)) \
+      ++p;                           \
+  } while (0)
 
-#define FIELD_IS(string_literal)        \
-  BOUNDED_EQUAL_NO_CASE (field_b, field_e, string_literal)
+#define FIELD_IS(string_literal) BOUNDED_EQUAL_NO_CASE(field_b, field_e, string_literal)
 
 /* Parse textual RES specs beginning with SOURCE of length LENGTH.
    Return a specs objects ready to be fed to res_match_path.
@@ -219,13 +206,11 @@ prune_non_exact (struct robot_specs *specs)
    matter.  In the case above, the "User-Agent: *" could have come
    after the other one.  */
 
-struct robot_specs *
-res_parse (const char *source, int length)
-{
+struct robot_specs* res_parse(const char* source, int length) {
   int line_count = 1;
 
-  const char *p   = source;
-  const char *end = source + length;
+  const char* p = source;
+  const char* end = source + length;
 
   /* true if last applicable user-agent field matches Wget. */
   bool user_agent_applies = false;
@@ -241,142 +226,129 @@ res_parse (const char *source, int length)
      the last `user-agent' instructions.  */
   int record_count = 0;
 
-  struct robot_specs *specs = xnew0 (struct robot_specs);
+  struct robot_specs* specs = xnew0(struct robot_specs);
 
-  while (1)
-    {
-      const char *lineend, *lineend_real;
-      const char *field_b, *field_e;
-      const char *value_b, *value_e;
+  while (1) {
+    const char *lineend, *lineend_real;
+    const char *field_b, *field_e;
+    const char *value_b, *value_e;
 
-      if (p == end)
+    if (p == end)
+      break;
+    lineend_real = memchr(p, '\n', end - p);
+    if (lineend_real)
+      ++lineend_real;
+    else
+      lineend_real = end;
+    lineend = lineend_real;
+
+    /* Before doing anything else, check whether the line is empty
+       or comment-only. */
+    SKIP_SPACE(p);
+    if (EOL(p) || *p == '#')
+      goto next;
+
+    /* Make sure the end-of-line comments are respected by setting
+       lineend to a location preceding the first comment.  Real line
+       ending remains in lineend_real.  */
+    for (lineend = p; lineend < lineend_real; lineend++)
+      if ((lineend == p || c_isspace(*(lineend - 1))) && *lineend == '#')
         break;
-      lineend_real = memchr (p, '\n', end - p);
-      if (lineend_real)
-        ++lineend_real;
-      else
-        lineend_real = end;
-      lineend = lineend_real;
 
-      /* Before doing anything else, check whether the line is empty
-         or comment-only. */
-      SKIP_SPACE (p);
-      if (EOL (p) || *p == '#')
-        goto next;
+    /* Ignore trailing whitespace in the same way. */
+    while (lineend > p && c_isspace(*(lineend - 1)))
+      --lineend;
 
-      /* Make sure the end-of-line comments are respected by setting
-         lineend to a location preceding the first comment.  Real line
-         ending remains in lineend_real.  */
-      for (lineend = p; lineend < lineend_real; lineend++)
-        if ((lineend == p || c_isspace (*(lineend - 1)))
-            && *lineend == '#')
-          break;
+    assert(!EOL(p));
 
-      /* Ignore trailing whitespace in the same way. */
-      while (lineend > p && c_isspace (*(lineend - 1)))
-        --lineend;
+    field_b = p;
+    while (!EOL(p) && (c_isalnum(*p) || *p == '-'))
+      ++p;
+    field_e = p;
 
-      assert (!EOL (p));
+    SKIP_SPACE(p);
+    if (field_b == field_e || EOL(p) || *p != ':') {
+      DEBUGP(("Ignoring malformed line %d\n", line_count));
+      goto next;
+    }
+    ++p; /* skip ':' */
+    SKIP_SPACE(p);
 
-      field_b = p;
-      while (!EOL (p) && (c_isalnum (*p) || *p == '-'))
-        ++p;
-      field_e = p;
+    value_b = p;
+    while (!EOL(p))
+      ++p;
+    value_e = p;
 
-      SKIP_SPACE (p);
-      if (field_b == field_e || EOL (p) || *p != ':')
-        {
-          DEBUGP (("Ignoring malformed line %d\n", line_count));
-          goto next;
-        }
-      ++p;                      /* skip ':' */
-      SKIP_SPACE (p);
+    /* Finally, we have a syntactically valid line. */
+    if (FIELD_IS("user-agent")) {
+      /* We have to support several cases:
 
-      value_b = p;
-      while (!EOL (p))
-        ++p;
-      value_e = p;
+         --previous records--
 
-      /* Finally, we have a syntactically valid line. */
-      if (FIELD_IS ("user-agent"))
-        {
-          /* We have to support several cases:
+         User-Agent: foo
+         User-Agent: Wget
+         User-Agent: bar
+         ... matching record ...
 
-             --previous records--
+         User-Agent: baz
+         User-Agent: qux
+         ... non-matching record ...
 
-             User-Agent: foo
-             User-Agent: Wget
-             User-Agent: bar
-             ... matching record ...
+         User-Agent: *
+         ... matching record, but will be pruned later ...
 
-             User-Agent: baz
-             User-Agent: qux
-             ... non-matching record ...
+         We have to respect `User-Agent' at the beginning of each
+         new record simply because we don't know if we're going to
+         encounter "Wget" among the agents or not.  Hence,
+         match_user_agent is called when record_count != 0.
 
-             User-Agent: *
-             ... matching record, but will be pruned later ...
-
-             We have to respect `User-Agent' at the beginning of each
-             new record simply because we don't know if we're going to
-             encounter "Wget" among the agents or not.  Hence,
-             match_user_agent is called when record_count != 0.
-
-             But if record_count is 0, we have to keep calling it
-             until it matches, and if that happens, we must not call
-             it any more, until the next record.  Hence the other part
-             of the condition.  */
-          if (record_count != 0 || user_agent_applies == false)
-            match_user_agent (value_b, value_e - value_b,
-                              &user_agent_applies, &user_agent_exact);
-          if (user_agent_exact)
-            found_exact = true;
-          record_count = 0;
-        }
-      else if (FIELD_IS ("allow"))
-        {
-          if (user_agent_applies)
-            {
-              add_path (specs, value_b, value_e, true, user_agent_exact);
-            }
-          ++record_count;
-        }
-      else if (FIELD_IS ("disallow"))
-        {
-          if (user_agent_applies)
-            {
-              bool allowed = false;
-              if (value_b == value_e)
-                /* Empty "disallow" line means everything is *allowed*!  */
-                allowed = true;
-              add_path (specs, value_b, value_e, allowed, user_agent_exact);
-            }
-          ++record_count;
-        }
-      else
-        {
-          DEBUGP (("Ignoring unknown field at line %d\n", line_count));
-          goto next;
-        }
-
-    next:
-      p = lineend_real;
-      ++line_count;
+         But if record_count is 0, we have to keep calling it
+         until it matches, and if that happens, we must not call
+         it any more, until the next record.  Hence the other part
+         of the condition.  */
+      if (record_count != 0 || user_agent_applies == false)
+        match_user_agent(value_b, value_e - value_b, &user_agent_applies, &user_agent_exact);
+      if (user_agent_exact)
+        found_exact = true;
+      record_count = 0;
+    }
+    else if (FIELD_IS("allow")) {
+      if (user_agent_applies) {
+        add_path(specs, value_b, value_e, true, user_agent_exact);
+      }
+      ++record_count;
+    }
+    else if (FIELD_IS("disallow")) {
+      if (user_agent_applies) {
+        bool allowed = false;
+        if (value_b == value_e)
+          /* Empty "disallow" line means everything is *allowed*!  */
+          allowed = true;
+        add_path(specs, value_b, value_e, allowed, user_agent_exact);
+      }
+      ++record_count;
+    }
+    else {
+      DEBUGP(("Ignoring unknown field at line %d\n", line_count));
+      goto next;
     }
 
-  if (found_exact)
-    {
-      /* We've encountered an exactly matching user-agent.  Throw out
-         all the stuff with user-agent: *.  */
-      prune_non_exact (specs);
-    }
-  else if (specs->size > specs->count)
-    {
-      /* add_path normally over-allocates specs->paths.  Reallocate it
-         to the correct size in order to conserve some memory.  */
-      specs->paths = xrealloc (specs->paths,
-                               specs->count * sizeof (struct path_info));
-      specs->size = specs->count;
-    }
+  next:
+    p = lineend_real;
+    ++line_count;
+  }
+
+  if (found_exact) {
+    /* We've encountered an exactly matching user-agent.  Throw out
+       all the stuff with user-agent: *.  */
+    prune_non_exact(specs);
+  }
+  else if (specs->size > specs->count) {
+    /* add_path normally over-allocates specs->paths.  Reallocate it
+       to the correct size in order to conserve some memory.  */
+    specs->paths = xrealloc(specs->paths, specs->count * sizeof(struct path_info));
+    specs->size = specs->count;
+  }
 
   return specs;
 }
@@ -384,30 +356,24 @@ res_parse (const char *source, int length)
 /* The same like res_parse, but first map the FILENAME into memory,
    and then parse it.  */
 
-struct robot_specs *
-res_parse_from_file (const char *filename)
-{
-  struct robot_specs *specs;
-  struct file_memory *fm = wget_read_file (filename);
-  if (!fm)
-    {
-      logprintf (LOG_NOTQUIET, _("Cannot open %s: %s\n"),
-                 filename, strerror (errno));
-      return NULL;
-    }
-  specs = res_parse (fm->content, fm->length);
-  wget_read_file_free (fm);
+struct robot_specs* res_parse_from_file(const char* filename) {
+  struct robot_specs* specs;
+  struct file_memory* fm = wget_read_file(filename);
+  if (!fm) {
+    logprintf(LOG_NOTQUIET, _("Cannot open %s: %s\n"), filename, strerror(errno));
+    return NULL;
+  }
+  specs = res_parse(fm->content, fm->length);
+  wget_read_file_free(fm);
   return specs;
 }
 
-static void
-free_specs (struct robot_specs *specs)
-{
+static void free_specs(struct robot_specs* specs) {
   int i;
   for (i = 0; i < specs->count; i++)
-    xfree (specs->paths[i].path);
-  xfree (specs->paths);
-  xfree (specs);
+    xfree(specs->paths[i].path);
+  xfree(specs->paths);
+  xfree(specs);
 }
 
 /* Matching of a path according to the specs. */
@@ -416,116 +382,101 @@ free_specs (struct robot_specs *specs)
    that number is not a numerical representation of '/', decode C and
    advance the pointer.  */
 
-#define DECODE_MAYBE(c, ptr) do {                               \
-  if (c == '%' && c_isxdigit (ptr[1]) && c_isxdigit (ptr[2]))       \
-    {                                                           \
-      unsigned char decoded = X2DIGITS_TO_NUM (ptr[1], ptr[2]);          \
-      if (decoded != '/')                                       \
-        {                                                       \
-          c = decoded;                                          \
-          ptr += 2;                                             \
-        }                                                       \
+#define DECODE_MAYBE(c, ptr)                                    \
+  do {                                                          \
+    if (c == '%' && c_isxdigit(ptr[1]) && c_isxdigit(ptr[2])) { \
+      unsigned char decoded = X2DIGITS_TO_NUM(ptr[1], ptr[2]);  \
+      if (decoded != '/') {                                     \
+        c = decoded;                                            \
+        ptr += 2;                                               \
+      }                                                         \
     }                                                           \
-} while (0)
+  } while (0)
 
 /* The inner matching engine: return true if RECORD_PATH matches
    URL_PATH.  The rules for matching are described at
    <http://www.robotstxt.org/norobots-rfc.txt>, section 3.2.2.  */
 
-static bool
-matches (const char *record_path, const char *url_path)
-{
-  const char *rp = record_path;
-  const char *up = url_path;
+static bool matches(const char* record_path, const char* url_path) {
+  const char* rp = record_path;
+  const char* up = url_path;
 
-  for (; ; ++rp, ++up)
-    {
-      char rc = *rp;
-      char uc = *up;
-      if (!rc)
-        return true;
-      if (!uc)
-        return false;
-      DECODE_MAYBE(rc, rp);
-      DECODE_MAYBE(uc, up);
-      if (rc != uc)
-        return false;
-    }
+  for (;; ++rp, ++up) {
+    char rc = *rp;
+    char uc = *up;
+    if (!rc)
+      return true;
+    if (!uc)
+      return false;
+    DECODE_MAYBE(rc, rp);
+    DECODE_MAYBE(uc, up);
+    if (rc != uc)
+      return false;
+  }
 }
 
 /* Iterate through all paths in SPECS.  For the first one that
    matches, return its allow/reject status.  If none matches,
    retrieval is by default allowed.  */
 
-bool
-res_match_path (const struct robot_specs *specs, const char *path)
-{
+bool res_match_path(const struct robot_specs* specs, const char* path) {
   int i;
   if (!specs)
     return true;
   for (i = 0; i < specs->count; i++)
-    if (matches (specs->paths[i].path, path))
-      {
-        bool allowedp = specs->paths[i].allowedp;
-        DEBUGP (("%s path %s because of rule %s.\n",
-                 allowedp ? "Allowing" : "Rejecting",
-                 path, quote (specs->paths[i].path)));
-        return allowedp;
-      }
+    if (matches(specs->paths[i].path, path)) {
+      bool allowedp = specs->paths[i].allowedp;
+      DEBUGP(("%s path %s because of rule %s.\n", allowedp ? "Allowing" : "Rejecting", path, quote(specs->paths[i].path)));
+      return allowedp;
+    }
   return true;
 }
 
 /* Registering the specs. */
 
-static struct hash_table *registered_specs;
+static struct hash_table* registered_specs;
 
 /* Register RES specs that below to server on HOST:PORT.  They will
    later be retrievable using res_get_specs.  */
 
-void
-res_register_specs (const char *host, int port, struct robot_specs *specs)
-{
-  struct robot_specs *old;
+void res_register_specs(const char* host, int port, struct robot_specs* specs) {
+  struct robot_specs* old;
   char buf[256], *hp, *hp_old;
 
-  if (((unsigned) snprintf (buf, sizeof (buf), "%s:%d", host, port)) >= sizeof (buf))
+  if (((unsigned)snprintf(buf, sizeof(buf), "%s:%d", host, port)) >= sizeof(buf))
     hp = aprintf("%s:%d", host, port);
   else
     hp = buf;
 
   if (!registered_specs)
-    registered_specs = make_nocase_string_hash_table (0);
+    registered_specs = make_nocase_string_hash_table(0);
 
-  if (hash_table_get_pair (registered_specs, hp, &hp_old, &old))
-    {
-      if (hp != buf)
-        xfree (hp);
-      if (old)
-        free_specs (old);
-      hash_table_put (registered_specs, hp_old, specs);
-    }
-  else
-    {
-      hash_table_put (registered_specs, hp == buf ? xstrdup (hp) : hp, specs);
-    }
+  if (hash_table_get_pair(registered_specs, hp, &hp_old, &old)) {
+    if (hp != buf)
+      xfree(hp);
+    if (old)
+      free_specs(old);
+    hash_table_put(registered_specs, hp_old, specs);
+  }
+  else {
+    hash_table_put(registered_specs, hp == buf ? xstrdup(hp) : hp, specs);
+  }
 }
 
 /* Get the specs that belong to HOST:PORT. */
 
-struct robot_specs *
-res_get_specs (const char *host, int port)
-{
+struct robot_specs* res_get_specs(const char* host, int port) {
   char buf[256], *hp;
 
   if (!registered_specs)
     return NULL;
 
-  if (((unsigned) snprintf (buf, sizeof (buf), "%s:%d", host, port)) >= sizeof (buf))
+  if (((unsigned)snprintf(buf, sizeof(buf), "%s:%d", host, port)) >= sizeof(buf))
     hp = aprintf("%s:%d", host, port);
   else
     hp = buf;
 
-  return hash_table_get (registered_specs, hp);
+  return hash_table_get(registered_specs, hp);
 }
 
 /* Loading the robots file.  */
@@ -538,108 +489,90 @@ res_get_specs (const char *host, int port)
 
    Return true if robots were retrieved OK, false otherwise.  */
 
-bool
-res_retrieve_file (const char *url, char **file, struct iri *iri)
-{
-  struct iri *i = iri_new ();
+bool res_retrieve_file(const char* url, char** file, struct iri* iri) {
+  struct iri* i = iri_new();
   uerr_t err;
-  char *robots_url = uri_merge (url, RES_SPECS_LOCATION);
+  char* robots_url = uri_merge(url, RES_SPECS_LOCATION);
   int saved_ts_val = opt.timestamping;
   int saved_sp_val = opt.spider, url_err;
-  struct url * url_parsed;
+  struct url* url_parsed;
 
   /* Copy server URI encoding for a possible IDNA transformation, no need to
      encode the full URI in UTF-8 because "robots.txt" is plain ASCII */
-  set_uri_encoding (i, iri->uri_encoding, false);
+  set_uri_encoding(i, iri->uri_encoding, false);
   i->utf8_encode = false;
 
-  logputs (LOG_VERBOSE, _("Loading robots.txt; please ignore errors.\n"));
+  logputs(LOG_VERBOSE, _("Loading robots.txt; please ignore errors.\n"));
   *file = NULL;
   opt.timestamping = false;
-  opt.spider       = false;
+  opt.spider = false;
 
-  url_parsed = url_parse (robots_url, &url_err, i, true);
-  if (!url_parsed)
-    {
-      logprintf (LOG_NOTQUIET, "%s: %s.\n", robots_url, url_error (url_err));
-      err = URLERROR;
-    }
-  else
-    {
-      struct transfer_context tctx;
-      transfer_context_prepare (&tctx, &opt, robots_url);
-      err = retrieve_url (url_parsed, robots_url, file, NULL, NULL, NULL,
-                          false, i, false, &tctx);
-      transfer_context_free (&tctx);
-      url_free(url_parsed);
-    }
+  url_parsed = url_parse(robots_url, &url_err, i, true);
+  if (!url_parsed) {
+    logprintf(LOG_NOTQUIET, "%s: %s.\n", robots_url, url_error(url_err));
+    err = URLERROR;
+  }
+  else {
+    struct transfer_context tctx;
+    transfer_context_prepare(&tctx, &opt, robots_url);
+    err = retrieve_url(url_parsed, robots_url, file, NULL, NULL, NULL, false, i, false, &tctx);
+    transfer_context_free(&tctx);
+    url_free(url_parsed);
+  }
 
   opt.timestamping = saved_ts_val;
-  opt.spider       = saved_sp_val;
-  xfree (robots_url);
-  iri_free (i);
+  opt.spider = saved_sp_val;
+  xfree(robots_url);
+  iri_free(i);
 
-  if (err != RETROK && *file != NULL)
-    {
-      /* If the file is not retrieved correctly, but retrieve_url
-         allocated the file name, deallocate is here so that the
-         caller doesn't have to worry about it.  */
-      xfree (*file);
-    }
+  if (err != RETROK && *file != NULL) {
+    /* If the file is not retrieved correctly, but retrieve_url
+       allocated the file name, deallocate is here so that the
+       caller doesn't have to worry about it.  */
+    xfree(*file);
+  }
   return err == RETROK;
 }
 
-bool
-is_robots_txt_url (const char *url)
-{
-  char *robots_url = uri_merge (url, RES_SPECS_LOCATION);
-  bool ret = are_urls_equal (url, robots_url);
+bool is_robots_txt_url(const char* url) {
+  char* robots_url = uri_merge(url, RES_SPECS_LOCATION);
+  bool ret = are_urls_equal(url, robots_url);
 
-  xfree (robots_url);
+  xfree(robots_url);
 
   return ret;
 }
 
 #if defined DEBUG_MALLOC || defined TESTING
-void
-res_cleanup (void)
-{
-  if (registered_specs)
-    {
-      hash_table_iterator iter;
-      for (hash_table_iterate (registered_specs, &iter);
-           hash_table_iter_next (&iter);
-           )
-        {
-          xfree (iter.key);
-          free_specs (iter.value);
-        }
-      hash_table_destroy (registered_specs);
-      registered_specs = NULL;
+void res_cleanup(void) {
+  if (registered_specs) {
+    hash_table_iterator iter;
+    for (hash_table_iterate(registered_specs, &iter); hash_table_iter_next(&iter);) {
+      xfree(iter.key);
+      free_specs(iter.value);
     }
+    hash_table_destroy(registered_specs);
+    registered_specs = NULL;
+  }
 }
 #endif
 
 #ifdef TESTING
 
-const char *
-test_is_robots_txt_url(void)
-{
+const char* test_is_robots_txt_url(void) {
   unsigned i;
   static const struct {
-    const char *url;
+    const char* url;
     bool expected_result;
   } test_array[] = {
-    { "http://www.yoyodyne.com/robots.txt", true },
-    { "http://www.yoyodyne.com/somepath/", false },
-    { "http://www.yoyodyne.com/somepath/robots.txt", false },
+      {"http://www.yoyodyne.com/robots.txt", true},
+      {"http://www.yoyodyne.com/somepath/", false},
+      {"http://www.yoyodyne.com/somepath/robots.txt", false},
   };
 
-  for (i = 0; i < countof(test_array); ++i)
-    {
-      mu_assert ("test_is_robots_txt_url: wrong result",
-                 is_robots_txt_url (test_array[i].url) == test_array[i].expected_result);
-    }
+  for (i = 0; i < countof(test_array); ++i) {
+    mu_assert("test_is_robots_txt_url: wrong result", is_robots_txt_url(test_array[i].url) == test_array[i].expected_result);
+  }
 
   return NULL;
 }

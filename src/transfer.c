@@ -21,50 +21,37 @@
 
 #include "wget.h"
 
-static void
-replace_string (char **dst, const char *src)
-{
+static void replace_string(char** dst, const char* src) {
   if (!dst)
     return;
 
-  xfree (*dst);
-  *dst = src ? xstrdup (src) : NULL;
+  xfree(*dst);
+  *dst = src ? xstrdup(src) : NULL;
 }
 
-void
-transfer_context_init (struct transfer_context *ctx)
-{
+void transfer_context_init(struct transfer_context* ctx) {
   if (!ctx)
     return;
 
-  memset (ctx, 0, sizeof (*ctx));
+  memset(ctx, 0, sizeof(*ctx));
 }
 
-void
-transfer_context_prepare (struct transfer_context *ctx,
-                          const struct options *template_opts,
-                          const char *requested_uri)
-{
-  transfer_context_init (ctx);
-  transfer_context_snapshot_options (ctx, template_opts);
-  transfer_context_set_requested_uri (ctx, requested_uri);
+void transfer_context_prepare(struct transfer_context* ctx, const struct options* template_opts, const char* requested_uri) {
+  transfer_context_init(ctx);
+  transfer_context_snapshot_options(ctx, template_opts);
+  transfer_context_set_requested_uri(ctx, requested_uri);
 }
 
-void
-transfer_context_free (struct transfer_context *ctx)
-{
+void transfer_context_free(struct transfer_context* ctx) {
   if (!ctx)
     return;
 
-  replace_string (&ctx->requested_uri, NULL);
-  replace_string (&ctx->local_file, NULL);
+  replace_string(&ctx->requested_uri, NULL);
+  replace_string(&ctx->local_file, NULL);
   ctx->progress_handle = NULL;
 }
 
-void
-transfer_context_snapshot_options (struct transfer_context *ctx,
-                                   const struct options *template_opts)
-{
+void transfer_context_snapshot_options(struct transfer_context* ctx, const struct options* template_opts) {
   if (!ctx || !template_opts)
     return;
 
@@ -72,38 +59,26 @@ transfer_context_snapshot_options (struct transfer_context *ctx,
   ctx->has_options = true;
 }
 
-void
-transfer_context_set_requested_uri (struct transfer_context *ctx,
-                                    const char *uri)
-{
+void transfer_context_set_requested_uri(struct transfer_context* ctx, const char* uri) {
   if (!ctx)
     return;
-  replace_string (&ctx->requested_uri, uri);
+  replace_string(&ctx->requested_uri, uri);
 }
 
-void
-transfer_context_set_local_file (struct transfer_context *ctx,
-                                 const char *path)
-{
+void transfer_context_set_local_file(struct transfer_context* ctx, const char* path) {
   if (!ctx)
     return;
-  replace_string (&ctx->local_file, path);
+  replace_string(&ctx->local_file, path);
 }
 
-void
-transfer_context_set_progress_handle (struct transfer_context *ctx,
-                                      void *progress)
-{
+void transfer_context_set_progress_handle(struct transfer_context* ctx, void* progress) {
   if (!ctx)
     return;
 
   ctx->progress_handle = progress;
 }
 
-void
-transfer_context_record_stats (struct transfer_context *ctx,
-                               wgint bytes, double seconds)
-{
+void transfer_context_record_stats(struct transfer_context* ctx, wgint bytes, double seconds) {
   if (!ctx)
     return;
 

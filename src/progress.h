@@ -31,15 +31,15 @@ as that of the covered work.  */
 #ifndef PROGRESS_H
 #define PROGRESS_H
 
-bool valid_progress_implementation_p (const char *);
-void set_progress_implementation (const char *);
-void progress_schedule_redirect (void);
+bool valid_progress_implementation_p(const char*);
+void set_progress_implementation(const char*);
+void progress_schedule_redirect(void);
 
-void *progress_create (const char *, wgint, wgint);
-bool progress_interactive_p (void *);
-void progress_update (void *, wgint, double);
-void progress_finish (void *, double);
+void* progress_create(const char*, wgint, wgint);
+bool progress_interactive_p(void*);
+void progress_update(void*, wgint, double);
+void progress_finish(void*, double);
 
-void progress_handle_sigwinch (int);
+void progress_handle_sigwinch(int);
 
 #endif /* PROGRESS_H */

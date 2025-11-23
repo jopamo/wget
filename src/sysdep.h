@@ -48,7 +48,7 @@ as that of the covered work.  */
    well as to pick up Windows-specific includes and constants.  To be
    able to test for such features, the file must be included as early
    as possible.  */
-# include "mswindows.h"
+#include "mswindows.h"
 #endif
 
 #include <stdbool.h>

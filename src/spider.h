@@ -31,9 +31,9 @@ as that of the covered work.  */
 #ifndef SPIDER_H
 #define SPIDER_H
 
-#define visited_url(a,b)
-void nonexisting_url (const char *);
-void print_broken_links (void);
-void spider_cleanup (void);
+#define visited_url(a, b)
+void nonexisting_url(const char*);
+void print_broken_links(void);
+void spider_cleanup(void);
 
 #endif /* SPIDER_H */

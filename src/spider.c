@@ -40,60 +40,48 @@ as that of the covered work.  */
 #include "hash.h"
 #include "res.h"
 
-
-static struct hash_table *nonexisting_urls_set;
+static struct hash_table* nonexisting_urls_set;
 
 /* Cleanup the data structures associated with this file.  */
 
 #if defined DEBUG_MALLOC || defined TESTING
-void
-spider_cleanup (void)
-{
+void spider_cleanup(void) {
   if (nonexisting_urls_set)
-    string_set_free (nonexisting_urls_set);
+    string_set_free(nonexisting_urls_set);
 }
 #endif
 
 /* Remembers broken links.  */
-void
-nonexisting_url (const char *url)
-{
+void nonexisting_url(const char* url) {
   /* Ignore robots.txt URLs */
-  if (is_robots_txt_url (url))
+  if (is_robots_txt_url(url))
     return;
   if (!nonexisting_urls_set)
-    nonexisting_urls_set = make_string_hash_table (0);
-  string_set_add (nonexisting_urls_set, url);
+    nonexisting_urls_set = make_string_hash_table(0);
+  string_set_add(nonexisting_urls_set, url);
 }
 
-void
-print_broken_links (void)
-{
+void print_broken_links(void) {
   hash_table_iterator iter;
   int num_elems;
 
-  if (!nonexisting_urls_set)
-    {
-      logprintf (LOG_NOTQUIET, _("Found no broken links.\n\n"));
-      return;
-    }
+  if (!nonexisting_urls_set) {
+    logprintf(LOG_NOTQUIET, _("Found no broken links.\n\n"));
+    return;
+  }
 
-  num_elems = hash_table_count (nonexisting_urls_set);
-  assert (num_elems > 0);
+  num_elems = hash_table_count(nonexisting_urls_set);
+  assert(num_elems > 0);
 
-  logprintf (LOG_NOTQUIET, ngettext("Found %d broken link.\n\n",
-                                    "Found %d broken links.\n\n", num_elems),
-             num_elems);
+  logprintf(LOG_NOTQUIET, ngettext("Found %d broken link.\n\n", "Found %d broken links.\n\n", num_elems), num_elems);
 
-  for (hash_table_iterate (nonexisting_urls_set, &iter);
-       hash_table_iter_next (&iter); )
-    {
-      /* Struct url_list *list; */
-      const char *url = (const char *) iter.key;
+  for (hash_table_iterate(nonexisting_urls_set, &iter); hash_table_iter_next(&iter);) {
+    /* Struct url_list *list; */
+    const char* url = (const char*)iter.key;
 
-      logprintf (LOG_NOTQUIET, _("%s\n"), url);
-    }
-  logputs (LOG_NOTQUIET, "\n");
+    logprintf(LOG_NOTQUIET, _("%s\n"), url);
+  }
+  logputs(LOG_NOTQUIET, "\n");
 }
 
 /*

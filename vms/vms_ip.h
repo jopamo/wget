@@ -13,7 +13,7 @@
 #include <netdb.h>
 
 #if __CRTL_VER < 70000000
-#define h_errno errno  /* Quiets the compiler, but probably ineffective. */
-#endif /* __CRTL_VER < 70000000 */
+#define h_errno errno /* Quiets the compiler, but probably ineffective. */
+#endif                /* __CRTL_VER < 70000000 */
 
 #endif /* MULTINET */

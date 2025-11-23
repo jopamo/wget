@@ -34,20 +34,19 @@
 
 /* The "utimbuf" structure is used by "utime()". */
 struct utimbuf {
-        time_t actime;          /* access time */
-        time_t modtime;         /* modification time */
+  time_t actime;  /* access time */
+  time_t modtime; /* modification time */
 };
 
 /* Function prototypes for utime(), */
 
-int utime( const char *path, const struct utimbuf *times);
+int utime(const char* path, const struct utimbuf* times);
 
 #else /* __CRTL_VER < 70300000 */
 
 #include <utime.h>
 
 #endif /* __CRTL_VER < 70300000 */
-
 
 /* Global storage. */
 
@@ -58,20 +57,19 @@ int utime( const char *path, const struct utimbuf *times);
 
 extern int ods5_dest;
 
-
 /* Function prototypes. */
 
 extern int acc_cb();
 
-char *ods_conform( char *path);
+char* ods_conform(char* path);
 
-int set_ods5_dest( char *path);
+int set_ods5_dest(char* path);
 
-char *vms_arch( void);
+char* vms_arch(void);
 
-char *vms_basename( char *file_spec);
+char* vms_basename(char* file_spec);
 
-char *vms_vers( void);
+char* vms_vers(void);
 
 /* Emergency replacement for <pwd.h> (for VMS CRTL before V7.0). */
 
@@ -80,20 +78,20 @@ char *vms_vers( void);
 #ifndef HAVE_PWD_H
 
 struct passwd {
-        char    *pw_name;
-        char    *pw_passwd;
-        int     pw_uid;
-        int     pw_gid;
-        short   pw_salt;
-        int     pw_encrypt;
-        char    *pw_age;
-        char    *pw_comment;
-        char    *pw_gecos;
-        char    *pw_dir;
-        char    *pw_shell;
+  char* pw_name;
+  char* pw_passwd;
+  int pw_uid;
+  int pw_gid;
+  short pw_salt;
+  int pw_encrypt;
+  char* pw_age;
+  char* pw_comment;
+  char* pw_gecos;
+  char* pw_dir;
+  char* pw_shell;
 };
 
-struct passwd *getpwuid();
+struct passwd* getpwuid();
 
 #endif /* HAVE_PWD_H */
 

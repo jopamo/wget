@@ -20,78 +20,73 @@
 #include <config.h>
 
 #include <sys/types.h>
-#include <dirent.h> // opendir, readdir
-#include <stdint.h> // uint8_t
-#include <stdio.h>  // fmemopen
+#include <dirent.h>  // opendir, readdir
+#include <stdint.h>  // uint8_t
+#include <stdio.h>   // fmemopen
 #include <string.h>  // strncmp
 #include <stdlib.h>  // free
-#include <fcntl.h>  // open flags
+#include <fcntl.h>   // open flags
 #include <unistd.h>  // close
-#include <setjmp.h> // longjmp, setjmp
+#include <setjmp.h>  // longjmp, setjmp
 
 #include "wget.h"
 #undef fopen_wgetrc
 
 #ifdef __cplusplus
-  extern "C" {
+extern "C" {
 #endif
-  #include "utils.h"
-  #include "html-url.h"
-  #include "css-url.h"
+#include "utils.h"
+#include "html-url.h"
+#include "css-url.h"
 
-  // declarations for wget internal functions
-  int main_wget(int argc, const char **argv);
-  void cleanup(void);
-  FILE *fopen_wget(const char *pathname, const char *mode);
-  FILE *fopen_wgetrc(const char *pathname, const char *mode);
-  void exit_wget(int status);
+// declarations for wget internal functions
+int main_wget(int argc, const char** argv);
+void cleanup(void);
+FILE* fopen_wget(const char* pathname, const char* mode);
+FILE* fopen_wgetrc(const char* pathname, const char* mode);
+void exit_wget(int status);
 #ifdef __cplusplus
-  }
+}
 #endif
 
 #include "fuzzer.h"
 
-static const uint8_t *g_data;
+static const uint8_t* g_data;
 static size_t g_size;
 
-FILE *fopen_wget(const char *pathname, const char *mode)
-{
-	return fopen("/dev/null", mode);
+FILE* fopen_wget(const char* pathname, const char* mode) {
+  return fopen("/dev/null", mode);
 }
 
-FILE *fopen_wgetrc(const char *pathname, const char *mode)
-{
+FILE* fopen_wgetrc(const char* pathname, const char* mode) {
 #ifdef HAVE_FMEMOPEN
-	return fmemopen((void *) g_data, g_size, mode);
+  return fmemopen((void*)g_data, g_size, mode);
 #else
-	return NULL;
+  return NULL;
 #endif
 }
 
 #ifdef FUZZING
-void exit_wget(int status)
-{
-}
+void exit_wget(int status) {}
 #endif
 
-int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
-{
-   struct urlpos *urls;
-   struct file_memory fm;
+int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
+  struct urlpos* urls;
+  struct file_memory fm;
 
-   if (size > 4096) // same as max_len = ... in .options file
-		return 0;
+  if (size > 4096)  // same as max_len = ... in .options file
+    return 0;
 
-	CLOSE_STDERR
+  CLOSE_STDERR
 
-   fm.content = (char *) data;
-   fm.length = size;
-   fm.mmap_p = 0;
+  fm.content = (char*)data;
+  fm.length = size;
+  fm.mmap_p = 0;
 
-   urls = get_urls_html_fm("xxx", &fm, "https://x.y", NULL, NULL);
-	free_urlpos(urls);
+  urls = get_urls_html_fm("xxx", &fm, "https://x.y", NULL, NULL);
+  free_urlpos(urls);
 
-	RESTORE_STDERR
+  RESTORE_STDERR
 
-	return 0;
+  return 0;
 }

@@ -17,26 +17,26 @@
  * along with Wget.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include <stddef.h> // size_t
-#include <stdint.h> // uint8_t
+#include <stddef.h>  // size_t
+#include <stdint.h>  // uint8_t
 
 #if defined __clang__ || __GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 5)
-	#pragma GCC diagnostic ignored "-Wunused"
-	#pragma GCC diagnostic ignored "-Wunused-parameter"
-	#pragma GCC diagnostic ignored "-Wpedantic"
+#pragma GCC diagnostic ignored "-Wunused"
+#pragma GCC diagnostic ignored "-Wunused-parameter"
+#pragma GCC diagnostic ignored "-Wpedantic"
 #endif
 
-#define CLOSE_STDERR \
-	int bak = dup(STDERR_FILENO); \
-	int fd = open("/dev/null", O_WRONLY); \
-	dup2(fd, STDERR_FILENO); \
-	close(fd);
+#define CLOSE_STDERR                    \
+  int bak = dup(STDERR_FILENO);         \
+  int fd = open("/dev/null", O_WRONLY); \
+  dup2(fd, STDERR_FILENO);              \
+  close(fd);
 
-#define RESTORE_STDERR \
-	dup2(bak, STDERR_FILENO); \
-	close(bak);
+#define RESTORE_STDERR      \
+  dup2(bak, STDERR_FILENO); \
+  close(bak);
 
 #ifdef __cplusplus
 extern "C"
 #endif
-int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size);
+    int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size);

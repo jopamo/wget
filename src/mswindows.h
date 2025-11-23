@@ -32,12 +32,12 @@ as that of the covered work.  */
 #define MSWINDOWS_H
 
 #ifndef WGET_H
-# error This file should not be included directly.
+#error This file should not be included directly.
 #endif
 
 /* Prevent inclusion of <winsock*.h> in <windows.h>.  */
 #ifndef WIN32_LEAN_AND_MEAN
-# define WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
 #endif
 
 #include <windows.h>
@@ -46,7 +46,7 @@ as that of the covered work.  */
 #include <ws2tcpip.h>
 
 #ifndef EAI_SYSTEM
-# define EAI_SYSTEM -1   /* value doesn't matter */
+#define EAI_SYSTEM -1 /* value doesn't matter */
 #endif
 
 /* Declares file access functions, such as open, create, access, and
@@ -68,12 +68,12 @@ as that of the covered work.  */
 
 /* Public functions.  */
 
-void ws_startup (void);
-void ws_changetitle (const char *);
-void ws_percenttitle (double);
-char *ws_mypath (void);
-void windows_main (char **);
-void set_windows_fd_as_blocking_socket (int);
+void ws_startup(void);
+void ws_changetitle(const char*);
+void ws_percenttitle(double);
+char* ws_mypath(void);
+void windows_main(char**);
+void set_windows_fd_as_blocking_socket(int);
 void set_fd_nonblocking(const int);
 
 #endif /* MSWINDOWS_H */

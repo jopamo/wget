@@ -40,12 +40,12 @@ extern int numurls;
    functions! */
 extern wgint total_downloaded_bytes;
 extern double total_download_time;
-extern FILE *output_stream;
+extern FILE* output_stream;
 extern bool output_stream_regular;
 
 /* Flags for fd_read_body. */
 enum {
-  rb_read_exactly  = 1,
+  rb_read_exactly = 1,
   rb_skip_startpos = 2,
 
   /* Used by HTTP/HTTPS*/
@@ -54,30 +54,28 @@ enum {
   rb_compressed_gzip = 8
 };
 
-int fd_read_body (const char *, int, FILE *, wgint, wgint, wgint *, wgint *, double *, int, FILE *);
+int fd_read_body(const char*, int, FILE*, wgint, wgint, wgint*, wgint*, double*, int, FILE*);
 
-typedef const char *(*hunk_terminator_t) (const char *, const char *, int);
+typedef const char* (*hunk_terminator_t)(const char*, const char*, int);
 
-char *fd_read_hunk (int, hunk_terminator_t, long, long);
-char *fd_read_line (int);
+char* fd_read_hunk(int, hunk_terminator_t, long, long);
+char* fd_read_line(int);
 
-uerr_t retrieve_url (struct url *, const char *, char **, char **,
-                     const char *, int *, bool, struct iri *, bool,
-                     struct transfer_context *);
-uerr_t retrieve_from_file (const char *, bool, int *);
+uerr_t retrieve_url(struct url*, const char*, char**, char**, const char*, int*, bool, struct iri*, bool, struct transfer_context*);
+uerr_t retrieve_from_file(const char*, bool, int*);
 
-const char *retr_rate (wgint, double);
-double calc_rate (wgint, double, int *);
-void printwhat (int, int);
+const char* retr_rate(wgint, double);
+double calc_rate(wgint, double, int*);
+void printwhat(int, int);
 
-void sleep_between_retrievals (int);
+void sleep_between_retrievals(int);
 
-void rotate_backups (const char *);
+void rotate_backups(const char*);
 
-bool url_uses_proxy (struct url *);
+bool url_uses_proxy(struct url*);
 
-void set_local_file (const char **, const char *);
+void set_local_file(const char**, const char*);
 
-bool input_file_url (const char *);
+bool input_file_url(const char*);
 
 #endif /* RETR_H */

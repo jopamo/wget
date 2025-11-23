@@ -54,12 +54,12 @@ as that of the covered work.  */
 #include "xstrndup.h"
 
 /* from lex.yy.c */
-extern char *yytext;
+extern char* yytext;
 extern int yyleng;
-typedef struct yy_buffer_state *YY_BUFFER_STATE;
-extern YY_BUFFER_STATE yy_scan_bytes (const char *bytes,int len  );
-extern void yy_delete_buffer (YY_BUFFER_STATE  b);
-extern int yylex (void);
+typedef struct yy_buffer_state* YY_BUFFER_STATE;
+extern YY_BUFFER_STATE yy_scan_bytes(const char* bytes, int len);
+extern void yy_delete_buffer(YY_BUFFER_STATE b);
+extern int yylex(void);
 extern void yylex_destroy(void);
 
 /*
@@ -71,156 +71,136 @@ extern void yylex_destroy(void);
   whitespace after the opening parenthesis and before the closing
   parenthesis.
 */
-static char *
-get_uri_string (const char *at, int *pos, int *length)
-{
+static char* get_uri_string(const char* at, int* pos, int* length) {
   if (*length < 4)
     return NULL;
 
-  if (0 != strncasecmp (at + *pos, "url(", 4))
+  if (0 != strncasecmp(at + *pos, "url(", 4))
     return NULL;
 
   *pos += 4;
   *length -= 5; /* url() */
 
   /* skip leading space */
-  while (*length > 0 && isspace (at[*pos]))
-    {
-      (*pos)++;
-      if (--(*length) == 0)
-        return NULL;
-    }
+  while (*length > 0 && isspace(at[*pos])) {
+    (*pos)++;
+    if (--(*length) == 0)
+      return NULL;
+  }
 
   /* skip trailing space */
-  while (*length > 0 && isspace (at[*pos + *length - 1]))
-    {
-      (*length)--;
-    }
+  while (*length > 0 && isspace(at[*pos + *length - 1])) {
+    (*length)--;
+  }
 
   /* trim off quotes */
-  if (*length >= 2 && (at[*pos] == '\'' || at[*pos] == '"'))
-    {
-      (*pos)++;
-      *length -= 2;
-    }
+  if (*length >= 2 && (at[*pos] == '\'' || at[*pos] == '"')) {
+    (*pos)++;
+    *length -= 2;
+  }
 
   if (*length <= 0)
     return NULL;
 
-  return xstrndup (at + *pos, *length);
+  return xstrndup(at + *pos, *length);
 }
 
-void
-get_urls_css (struct map_context *ctx, int offset, int buf_length)
-{
+void get_urls_css(struct map_context* ctx, int offset, int buf_length) {
   int token;
   /*char tmp[2048];*/
   int buffer_pos = 0;
   int pos, length;
-  char *uri;
+  char* uri;
   YY_BUFFER_STATE b;
 
   /* tell flex to scan from this buffer */
-  b = yy_scan_bytes (ctx->text + offset, buf_length);
+  b = yy_scan_bytes(ctx->text + offset, buf_length);
 
-  while((token = yylex()) != CSSEOF)
-    {
+  while ((token = yylex()) != CSSEOF) {
+    /*DEBUGP (("%s ", token_names[token]));*/
+    /* @import "foo.css"
+       or @import url(foo.css)
+    */
+    if (token == IMPORT_SYM) {
+      do {
+        buffer_pos += yyleng;
+      } while ((token = yylex()) == S);
+
       /*DEBUGP (("%s ", token_names[token]));*/
-      /* @import "foo.css"
-         or @import url(foo.css)
-      */
-      if(token == IMPORT_SYM)
-        {
-          do {
-            buffer_pos += yyleng;
-          } while((token = yylex()) == S);
 
-          /*DEBUGP (("%s ", token_names[token]));*/
+      if (token == STRING || token == URI) {
+        /*DEBUGP (("Got URI "));*/
+        pos = buffer_pos + offset;
+        length = yyleng;
 
-          if (token == STRING || token == URI)
-            {
-              /*DEBUGP (("Got URI "));*/
-              pos = buffer_pos + offset;
-              length = yyleng;
-
-              if (token == URI)
-                {
-                  uri = get_uri_string (ctx->text, &pos, &length);
-                }
-              else if (length >= 2)
-                {
-                  /* cut out quote characters */
-                  pos++;
-                  length -= 2;
-                  uri = xmalloc (length + 1);
-                  memcpy (uri, yytext + 1, length);
-                  uri[length] = '\0';
-                }
-              else
-                uri = NULL;
-
-              if (uri)
-                {
-                  struct urlpos *up = append_url (uri, pos, length, ctx);
-                  DEBUGP (("Found @import: [%s] at %d [%s]\n", yytext, buffer_pos, uri));
-
-                  if (up)
-                    {
-                      up->link_inline_p = 1;
-                      up->link_css_p = 1;
-                      up->link_expect_css = 1;
-                    }
-
-                  xfree(uri);
-                }
-            }
+        if (token == URI) {
+          uri = get_uri_string(ctx->text, &pos, &length);
         }
-      /* background-image: url(foo.png)
-         note that we don't care what
-         property this is actually on.
-      */
-      else if(token == URI)
-        {
-          pos = buffer_pos + offset;
-          length = yyleng;
-          uri = get_uri_string (ctx->text, &pos, &length);
-
-          if (uri)
-            {
-              struct urlpos *up = append_url (uri, pos, length, ctx);
-              DEBUGP (("Found URI: [%s] at %d [%s]\n", yytext, buffer_pos, uri));
-              if (up)
-                {
-                  up->link_inline_p = 1;
-                  up->link_css_p = 1;
-                }
-
-              xfree (uri);
-            }
+        else if (length >= 2) {
+          /* cut out quote characters */
+          pos++;
+          length -= 2;
+          uri = xmalloc(length + 1);
+          memcpy(uri, yytext + 1, length);
+          uri[length] = '\0';
         }
-      buffer_pos += yyleng;
+        else
+          uri = NULL;
+
+        if (uri) {
+          struct urlpos* up = append_url(uri, pos, length, ctx);
+          DEBUGP(("Found @import: [%s] at %d [%s]\n", yytext, buffer_pos, uri));
+
+          if (up) {
+            up->link_inline_p = 1;
+            up->link_css_p = 1;
+            up->link_expect_css = 1;
+          }
+
+          xfree(uri);
+        }
+      }
     }
+    /* background-image: url(foo.png)
+       note that we don't care what
+       property this is actually on.
+    */
+    else if (token == URI) {
+      pos = buffer_pos + offset;
+      length = yyleng;
+      uri = get_uri_string(ctx->text, &pos, &length);
+
+      if (uri) {
+        struct urlpos* up = append_url(uri, pos, length, ctx);
+        DEBUGP(("Found URI: [%s] at %d [%s]\n", yytext, buffer_pos, uri));
+        if (up) {
+          up->link_inline_p = 1;
+          up->link_css_p = 1;
+        }
+
+        xfree(uri);
+      }
+    }
+    buffer_pos += yyleng;
+  }
 
   yy_delete_buffer(b);
   yylex_destroy();
 
-  DEBUGP (("\n"));
+  DEBUGP(("\n"));
 }
 
-struct urlpos *
-get_urls_css_file (const char *file, const char *url)
-{
-  struct file_memory *fm;
+struct urlpos* get_urls_css_file(const char* file, const char* url) {
+  struct file_memory* fm;
   struct map_context ctx;
 
   /* Load the file. */
-  fm = wget_read_file (file);
-  if (!fm)
-    {
-      logprintf (LOG_NOTQUIET, "%s: %s\n", file, strerror (errno));
-      return NULL;
-    }
-  DEBUGP (("Loaded %s (size %s).\n", file, number_to_static_string (fm->length)));
+  fm = wget_read_file(file);
+  if (!fm) {
+    logprintf(LOG_NOTQUIET, "%s: %s\n", file, strerror(errno));
+    return NULL;
+  }
+  DEBUGP(("Loaded %s (size %s).\n", file, number_to_static_string(fm->length)));
 
   ctx.text = fm->content;
   ctx.head = NULL;
@@ -229,7 +209,7 @@ get_urls_css_file (const char *file, const char *url)
   ctx.document_file = file;
   ctx.nofollow = 0;
 
-  get_urls_css (&ctx, 0, fm->length);
-  wget_read_file_free (fm);
+  get_urls_css(&ctx, 0, fm->length);
+  wget_read_file_free(fm);
   return ctx.head;
 }

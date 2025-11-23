@@ -31,17 +31,17 @@ as that of the covered work.  */
 #ifndef INIT_H
 #define INIT_H
 
-char *ajoin_dir_file (const char *, const char *);
-char *wgetrc_env_file_name (void);
-char *wgetrc_user_file_name (void);
-char *wgetrc_file_name (void);
-int initialize (void);
-void run_command (const char *);
-void setoptval (const char *, const char *, const char *);
-char *home_dir (void);
-void cleanup (void);
-void defaults (void);
-bool run_wgetrc (const char *file, file_stats_t *);
+char* ajoin_dir_file(const char*, const char*);
+char* wgetrc_env_file_name(void);
+char* wgetrc_user_file_name(void);
+char* wgetrc_file_name(void);
+int initialize(void);
+void run_command(const char*);
+void setoptval(const char*, const char*, const char*);
+char* home_dir(void);
+void cleanup(void);
+void defaults(void);
+bool run_wgetrc(const char* file, file_stats_t*);
 
 #define MAX_LONGOPTION 26
 

@@ -40,15 +40,15 @@ as that of the covered work.  */
 #include <sys/select.h>
 
 #ifndef WINDOWS
-# ifdef __VMS
-#  include "vms_ip.h"
-# else /* def __VMS */
-#  include <netdb.h>
-# endif /* def __VMS [else] */
-# include <netinet/in.h>
-# ifndef __BEOS__
-#  include <arpa/inet.h>
-# endif
+#ifdef __VMS
+#include "vms_ip.h"
+#else /* def __VMS */
+#include <netdb.h>
+#endif /* def __VMS [else] */
+#include <netinet/in.h>
+#ifndef __BEOS__
+#include <arpa/inet.h>
+#endif
 #endif /* not WINDOWS */
 
 #include <errno.h>
@@ -66,108 +66,93 @@ as that of the covered work.  */
    hosts).  */
 
 #ifndef ENABLE_IPV6
-# ifndef HAVE_STRUCT_SOCKADDR_STORAGE
-#  define sockaddr_storage sockaddr_in
-# endif
+#ifndef HAVE_STRUCT_SOCKADDR_STORAGE
+#define sockaddr_storage sockaddr_in
+#endif
 #endif /* ENABLE_IPV6 */
 
 /* Fill SA as per the data in IP and PORT.  SA should point to struct
    sockaddr_storage if ENABLE_IPV6 is defined, to struct sockaddr_in
    otherwise.  */
 
-static void
-sockaddr_set_data (struct sockaddr *sa, const ip_address *ip, int port)
-{
-  switch (ip->family)
-    {
-    case AF_INET:
-      {
-        struct sockaddr_in *sin = (struct sockaddr_in *)sa;
-        xzero (*sin);
-        sin->sin_family = AF_INET;
-        sin->sin_port = htons (port);
-        sin->sin_addr = ip->data.d4;
-        break;
-      }
+static void sockaddr_set_data(struct sockaddr* sa, const ip_address* ip, int port) {
+  switch (ip->family) {
+    case AF_INET: {
+      struct sockaddr_in* sin = (struct sockaddr_in*)sa;
+      xzero(*sin);
+      sin->sin_family = AF_INET;
+      sin->sin_port = htons(port);
+      sin->sin_addr = ip->data.d4;
+      break;
+    }
 #ifdef ENABLE_IPV6
-    case AF_INET6:
-      {
-        struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)sa;
-        xzero (*sin6);
-        sin6->sin6_family = AF_INET6;
-        sin6->sin6_port = htons (port);
-        sin6->sin6_addr = ip->data.d6;
+    case AF_INET6: {
+      struct sockaddr_in6* sin6 = (struct sockaddr_in6*)sa;
+      xzero(*sin6);
+      sin6->sin6_family = AF_INET6;
+      sin6->sin6_port = htons(port);
+      sin6->sin6_addr = ip->data.d6;
 #ifdef HAVE_SOCKADDR_IN6_SCOPE_ID
-        sin6->sin6_scope_id = ip->ipv6_scope;
+      sin6->sin6_scope_id = ip->ipv6_scope;
 #endif
-        break;
-      }
+      break;
+    }
 #endif /* ENABLE_IPV6 */
     default:
-      abort ();
-    }
+      abort();
+  }
 }
 
 /* Get the data of SA, specifically the IP address and the port.  If
    you're not interested in one or the other information, pass NULL as
    the pointer.  */
 
-static void
-sockaddr_get_data (const struct sockaddr *sa, ip_address *ip, int *port)
-{
-  switch (sa->sa_family)
-    {
-    case AF_INET:
-      {
-        struct sockaddr_in *sin = (struct sockaddr_in *)sa;
-        if (ip)
-          {
-            ip->family = AF_INET;
-            ip->data.d4 = sin->sin_addr;
-          }
-        if (port)
-          *port = ntohs (sin->sin_port);
-        break;
+static void sockaddr_get_data(const struct sockaddr* sa, ip_address* ip, int* port) {
+  switch (sa->sa_family) {
+    case AF_INET: {
+      struct sockaddr_in* sin = (struct sockaddr_in*)sa;
+      if (ip) {
+        ip->family = AF_INET;
+        ip->data.d4 = sin->sin_addr;
       }
+      if (port)
+        *port = ntohs(sin->sin_port);
+      break;
+    }
 #ifdef ENABLE_IPV6
-    case AF_INET6:
-      {
-        struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)sa;
-        if (ip)
-          {
-            ip->family = AF_INET6;
-            ip->data.d6 = sin6->sin6_addr;
+    case AF_INET6: {
+      struct sockaddr_in6* sin6 = (struct sockaddr_in6*)sa;
+      if (ip) {
+        ip->family = AF_INET6;
+        ip->data.d6 = sin6->sin6_addr;
 #ifdef HAVE_SOCKADDR_IN6_SCOPE_ID
-            ip->ipv6_scope = sin6->sin6_scope_id;
+        ip->ipv6_scope = sin6->sin6_scope_id;
 #endif
-          }
-        if (port)
-          *port = ntohs (sin6->sin6_port);
-        break;
       }
+      if (port)
+        *port = ntohs(sin6->sin6_port);
+      break;
+    }
 #endif
     default:
-      abort ();
-    }
+      abort();
+  }
 }
 
 /* Return the size of the sockaddr structure depending on its
    family.  */
 
-static socklen_t
-sockaddr_size (const struct sockaddr *sa)
-{
-  switch (sa->sa_family)
-    {
+static socklen_t sockaddr_size(const struct sockaddr* sa) {
+  switch (sa->sa_family) {
     case AF_INET:
-      return sizeof (struct sockaddr_in);
+      return sizeof(struct sockaddr_in);
 #ifdef ENABLE_IPV6
     case AF_INET6:
-      return sizeof (struct sockaddr_in6);
+      return sizeof(struct sockaddr_in6);
 #endif
     default:
-      abort ();
-    }
+      abort();
+  }
 }
 
 /* Resolve the bind address specified via --bind-address and store it
@@ -176,77 +161,65 @@ sockaddr_size (const struct sockaddr *sa)
 
    Returns true on success, false on failure.  */
 
-static bool
-resolve_bind_address (struct sockaddr *sa)
-{
-  struct address_list *al;
+static bool resolve_bind_address(struct sockaddr* sa) {
+  struct address_list* al;
 
   /* Make sure this is called only once.  opt.bind_address doesn't
      change during a Wget run.  */
   static bool called, should_bind;
   static ip_address ip;
-  if (called)
-    {
-      if (should_bind)
-        sockaddr_set_data (sa, &ip, 0);
-      return should_bind;
-    }
+  if (called) {
+    if (should_bind)
+      sockaddr_set_data(sa, &ip, 0);
+    return should_bind;
+  }
   called = true;
 
-  al = lookup_host (opt.bind_address, LH_BIND | LH_SILENT);
-  if (!al)
-    {
-      /* #### We should be able to print the error message here. */
-      logprintf (LOG_NOTQUIET,
-                 _("%s: unable to resolve bind address %s; disabling bind.\n"),
-                 exec_name, quote (opt.bind_address));
-      should_bind = false;
-      return false;
-    }
+  al = lookup_host(opt.bind_address, LH_BIND | LH_SILENT);
+  if (!al) {
+    /* #### We should be able to print the error message here. */
+    logprintf(LOG_NOTQUIET, _("%s: unable to resolve bind address %s; disabling bind.\n"), exec_name, quote(opt.bind_address));
+    should_bind = false;
+    return false;
+  }
 
   /* Pick the first address in the list and use it as bind address.
      Perhaps we should try multiple addresses in succession, but I
      don't think that's necessary in practice.  */
-  ip = *address_list_address_at (al, 0);
-  address_list_release (al);
+  ip = *address_list_address_at(al, 0);
+  address_list_release(al);
 
-  sockaddr_set_data (sa, &ip, 0);
+  sockaddr_set_data(sa, &ip, 0);
   should_bind = true;
   return true;
 }
 
 struct cwt_context {
   int fd;
-  const struct sockaddr *addr;
+  const struct sockaddr* addr;
   socklen_t addrlen;
   int result;
 };
 
-static void
-connect_with_timeout_callback (void *arg)
-{
-  struct cwt_context *ctx = (struct cwt_context *)arg;
-  ctx->result = connect (ctx->fd, ctx->addr, ctx->addrlen);
+static void connect_with_timeout_callback(void* arg) {
+  struct cwt_context* ctx = (struct cwt_context*)arg;
+  ctx->result = connect(ctx->fd, ctx->addr, ctx->addrlen);
 }
 
 /* Like connect, but specifies a timeout.  If connecting takes longer
    than TIMEOUT seconds, -1 is returned and errno is set to
    ETIMEDOUT.  */
 
-static int
-connect_with_timeout (int fd, const struct sockaddr *addr, socklen_t addrlen,
-                      double timeout)
-{
+static int connect_with_timeout(int fd, const struct sockaddr* addr, socklen_t addrlen, double timeout) {
   struct cwt_context ctx;
   ctx.fd = fd;
   ctx.addr = addr;
   ctx.addrlen = addrlen;
 
-  if (run_with_timeout (timeout, connect_with_timeout_callback, &ctx))
-    {
-      errno = ETIMEDOUT;
-      return -1;
-    }
+  if (run_with_timeout(timeout, connect_with_timeout_callback, &ctx)) {
+    errno = ETIMEDOUT;
+    return -1;
+  }
   if (ctx.result == -1 && errno == EINTR)
     errno = ETIMEDOUT;
   return ctx.result;
@@ -257,49 +230,42 @@ connect_with_timeout (int fd, const struct sockaddr *addr, socklen_t addrlen,
    If PRINT is non-NULL, it is the host name to print that we're
    connecting to.  */
 
-int
-connect_to_ip (const ip_address *ip, int port, const char *print)
-{
+int connect_to_ip(const ip_address* ip, int port, const char* print) {
   struct sockaddr_storage ss;
-  struct sockaddr *sa = (struct sockaddr *)&ss;
+  struct sockaddr* sa = (struct sockaddr*)&ss;
   int sock;
 
   /* If PRINT is non-NULL, print the "Connecting to..." line, with
      PRINT being the host name we're connecting to.  */
-  if (print)
-    {
-      const char *txt_addr = print_address (ip);
-      if (0 != strcmp (print, txt_addr))
-        {
-          char *str = NULL, *name;
+  if (print) {
+    const char* txt_addr = print_address(ip);
+    if (0 != strcmp(print, txt_addr)) {
+      char *str = NULL, *name;
 
-          if (opt.enable_iri && (name = idn_decode ((char *) print)) != NULL)
-            {
-              str = aprintf ("%s (%s)", name, print);
-              xfree (name);
-            }
+      if (opt.enable_iri && (name = idn_decode((char*)print)) != NULL) {
+        str = aprintf("%s (%s)", name, print);
+        xfree(name);
+      }
 
-          logprintf (LOG_VERBOSE, _("Connecting to %s|%s|:%d... "),
-                     str ? str : escnonprint_uri (print), txt_addr, port);
+      logprintf(LOG_VERBOSE, _("Connecting to %s|%s|:%d... "), str ? str : escnonprint_uri(print), txt_addr, port);
 
-          xfree (str);
-        }
-      else
-        {
-           if (ip->family == AF_INET)
-               logprintf (LOG_VERBOSE, _("Connecting to %s:%d... "), txt_addr, port);
-#ifdef ENABLE_IPV6
-           else if (ip->family == AF_INET6)
-               logprintf (LOG_VERBOSE, _("Connecting to [%s]:%d... "), txt_addr, port);
-#endif
-        }
+      xfree(str);
     }
+    else {
+      if (ip->family == AF_INET)
+        logprintf(LOG_VERBOSE, _("Connecting to %s:%d... "), txt_addr, port);
+#ifdef ENABLE_IPV6
+      else if (ip->family == AF_INET6)
+        logprintf(LOG_VERBOSE, _("Connecting to [%s]:%d... "), txt_addr, port);
+#endif
+    }
+  }
 
   /* Store the sockaddr info to SA.  */
-  sockaddr_set_data (sa, ip, port);
+  sockaddr_set_data(sa, ip, port);
 
   /* Create the socket of the family appropriate for the address.  */
-  sock = socket (sa->sa_family, SOCK_STREAM, 0);
+  sock = socket(sa->sa_family, SOCK_STREAM, 0);
   if (sock < 0)
     goto err;
 
@@ -307,10 +273,10 @@ connect_to_ip (const ip_address *ip, int port, const char *print)
   if (opt.ipv6_only) {
     int on = 1;
     /* In case of error, we will go on anyway... */
-    int err = setsockopt (sock, IPPROTO_IPV6, IPV6_V6ONLY, &on, sizeof (on));
+    int err = setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, &on, sizeof(on));
     IF_DEBUG
-      if (err < 0)
-        DEBUGP (("Failed setting IPV6_V6ONLY: %s", strerror (errno)));
+    if (err < 0)
+      DEBUGP(("Failed setting IPV6_V6ONLY: %s", strerror(errno)));
   }
 #endif
 
@@ -318,65 +284,57 @@ connect_to_ip (const ip_address *ip, int port, const char *print)
      hopefully, the kernel's TCP window size) to the per-second limit.
      That way we should never have to sleep for more than 1s between
      network reads.  */
-  if (opt.limit_rate && opt.limit_rate < 8192)
-    {
-      int bufsize = opt.limit_rate;
-      if (bufsize < 512)
-        bufsize = 512;          /* avoid pathologically small values */
+  if (opt.limit_rate && opt.limit_rate < 8192) {
+    int bufsize = opt.limit_rate;
+    if (bufsize < 512)
+      bufsize = 512; /* avoid pathologically small values */
 #ifdef SO_RCVBUF
-      if (setsockopt (sock, SOL_SOCKET, SO_RCVBUF,
-                  (void *) &bufsize, (socklen_t) sizeof (bufsize)))
-        logprintf (LOG_NOTQUIET, _("setsockopt SO_RCVBUF failed: %s\n"),
-                   strerror (errno));
+    if (setsockopt(sock, SOL_SOCKET, SO_RCVBUF, (void*)&bufsize, (socklen_t)sizeof(bufsize)))
+      logprintf(LOG_NOTQUIET, _("setsockopt SO_RCVBUF failed: %s\n"), strerror(errno));
 #endif
-      /* When we add limit_rate support for writing, which is useful
-         for POST, we should also set SO_SNDBUF here.  */
-    }
+    /* When we add limit_rate support for writing, which is useful
+       for POST, we should also set SO_SNDBUF here.  */
+  }
 
-  if (opt.bind_address)
-    {
-      /* Bind the client side of the socket to the requested
-         address.  */
-      struct sockaddr_storage bind_ss;
-      struct sockaddr *bind_sa = (struct sockaddr *)&bind_ss;
-      if (resolve_bind_address (bind_sa))
-        {
-          if (bind (sock, bind_sa, sockaddr_size (bind_sa)) < 0)
-            goto err;
-        }
+  if (opt.bind_address) {
+    /* Bind the client side of the socket to the requested
+       address.  */
+    struct sockaddr_storage bind_ss;
+    struct sockaddr* bind_sa = (struct sockaddr*)&bind_ss;
+    if (resolve_bind_address(bind_sa)) {
+      if (bind(sock, bind_sa, sockaddr_size(bind_sa)) < 0)
+        goto err;
     }
+  }
 
   /* Connect the socket to the remote endpoint.  */
-  if (connect_with_timeout (sock, sa, sockaddr_size (sa),
-                            opt.connect_timeout) < 0)
+  if (connect_with_timeout(sock, sa, sockaddr_size(sa), opt.connect_timeout) < 0)
     goto err;
 
   /* Success. */
-  assert (sock >= 0);
+  assert(sock >= 0);
   if (print)
-    logprintf (LOG_VERBOSE, _("connected.\n"));
-  DEBUGP (("Created socket %d.\n", sock));
+    logprintf(LOG_VERBOSE, _("connected.\n"));
+  DEBUGP(("Created socket %d.\n", sock));
   return sock;
 
- err:
-  {
-    /* Protect errno from possible modifications by close and
-       logprintf.  */
-    int save_errno = errno;
-    if (sock >= 0)
-      {
+err: {
+  /* Protect errno from possible modifications by close and
+     logprintf.  */
+  int save_errno = errno;
+  if (sock >= 0) {
 #ifdef WIN32
-	/* If the connection timed out, fd_close will hang in Gnulib's
-	   close_fd_maybe_socket, inside the call to WSAEnumNetworkEvents.  */
-	if (errno != ETIMEDOUT)
+    /* If the connection timed out, fd_close will hang in Gnulib's
+       close_fd_maybe_socket, inside the call to WSAEnumNetworkEvents.  */
+    if (errno != ETIMEDOUT)
 #endif
-	  fd_close (sock);
-      }
-    if (print)
-      logprintf (LOG_NOTQUIET, _("failed: %s.\n"), strerror (errno));
-    errno = save_errno;
-    return -1;
+      fd_close(sock);
   }
+  if (print)
+    logprintf(LOG_NOTQUIET, _("failed: %s.\n"), strerror(errno));
+  errno = save_errno;
+  return -1;
+}
 }
 
 /* Connect via TCP to a remote host on the specified port.
@@ -385,53 +343,45 @@ connect_to_ip (const ip_address *ip, int port, const char *print)
    more than one IP address, they are tried in the order returned by
    DNS until connecting to one of them succeeds.  */
 
-int
-connect_to_host (const char *host, int port)
-{
+int connect_to_host(const char* host, int port) {
   int i, start, end;
   int sock;
 
-  struct address_list *al = lookup_host (host, 0);
+  struct address_list* al = lookup_host(host, 0);
 
- retry:
-  if (!al)
-    {
-      logprintf (LOG_NOTQUIET,
-                 _("%s: unable to resolve host address %s\n"),
-                 exec_name, quote (host));
-      return E_HOST;
+retry:
+  if (!al) {
+    logprintf(LOG_NOTQUIET, _("%s: unable to resolve host address %s\n"), exec_name, quote(host));
+    return E_HOST;
+  }
+
+  address_list_get_bounds(al, &start, &end);
+  for (i = start; i < end; i++) {
+    const ip_address* ip = address_list_address_at(al, i);
+    sock = connect_to_ip(ip, port, host);
+    if (sock >= 0) {
+      /* Success. */
+      address_list_set_connected(al);
+      address_list_release(al);
+      return sock;
     }
 
-  address_list_get_bounds (al, &start, &end);
-  for (i = start; i < end; i++)
-    {
-      const ip_address *ip = address_list_address_at (al, i);
-      sock = connect_to_ip (ip, port, host);
-      if (sock >= 0)
-        {
-          /* Success. */
-          address_list_set_connected (al);
-          address_list_release (al);
-          return sock;
-        }
+    /* The attempt to connect has failed.  Continue with the loop
+       and try next address. */
 
-      /* The attempt to connect has failed.  Continue with the loop
-         and try next address. */
-
-      address_list_set_faulty (al, i);
-    }
+    address_list_set_faulty(al, i);
+  }
 
   /* Failed to connect to any of the addresses in AL. */
 
-  if (address_list_connected_p (al))
-    {
-      /* We connected to AL before, but cannot do so now.  That might
-         indicate that our DNS cache entry for HOST has expired.  */
-      address_list_release (al);
-      al = lookup_host (host, LH_REFRESH);
-      goto retry;
-    }
-  address_list_release (al);
+  if (address_list_connected_p(al)) {
+    /* We connected to AL before, but cannot do so now.  That might
+       indicate that our DNS cache entry for HOST has expired.  */
+    address_list_release(al);
+    al = lookup_host(host, LH_REFRESH);
+    goto retry;
+  }
+  address_list_release(al);
 
   return -1;
 }
@@ -449,59 +399,51 @@ connect_to_host (const char *host, int port)
    Calling accept() on such a socket waits for and accepts incoming
    TCP connections.  */
 
-int
-bind_local (const ip_address *bind_address, int *port)
-{
+int bind_local(const ip_address* bind_address, int* port) {
   int sock;
   struct sockaddr_storage ss;
-  struct sockaddr *sa = (struct sockaddr *)&ss;
+  struct sockaddr* sa = (struct sockaddr*)&ss;
 
   /* For setting options with setsockopt. */
   int setopt_val = 1;
-  void *setopt_ptr = (void *)&setopt_val;
-  socklen_t setopt_size = sizeof (setopt_val);
+  void* setopt_ptr = (void*)&setopt_val;
+  socklen_t setopt_size = sizeof(setopt_val);
 
-  sock = socket (bind_address->family, SOCK_STREAM, 0);
+  sock = socket(bind_address->family, SOCK_STREAM, 0);
   if (sock < 0)
     return -1;
 
 #ifdef SO_REUSEADDR
-  if (setsockopt (sock, SOL_SOCKET, SO_REUSEADDR, setopt_ptr, setopt_size))
-    logprintf (LOG_NOTQUIET, _("setsockopt SO_REUSEADDR failed: %s\n"),
-               strerror (errno));
+  if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, setopt_ptr, setopt_size))
+    logprintf(LOG_NOTQUIET, _("setsockopt SO_REUSEADDR failed: %s\n"), strerror(errno));
 #endif
 
-  xzero (ss);
-  sockaddr_set_data (sa, bind_address, *port);
-  if (bind (sock, sa, sockaddr_size (sa)) < 0)
-    {
-      fd_close (sock);
-      return -1;
-    }
-  DEBUGP (("Local socket fd %d bound.\n", sock));
+  xzero(ss);
+  sockaddr_set_data(sa, bind_address, *port);
+  if (bind(sock, sa, sockaddr_size(sa)) < 0) {
+    fd_close(sock);
+    return -1;
+  }
+  DEBUGP(("Local socket fd %d bound.\n", sock));
 
   /* If *PORT is 0, find out which port we've bound to.  */
-  if (*port == 0)
-    {
-      socklen_t addrlen = sockaddr_size (sa);
-      if (getsockname (sock, sa, &addrlen) < 0)
-        {
-          /* If we can't find out the socket's local address ("name"),
-             something is seriously wrong with the socket, and it's
-             unusable for us anyway because we must know the chosen
-             port.  */
-          fd_close (sock);
-          return -1;
-        }
-      sockaddr_get_data (sa, NULL, port);
-      DEBUGP (("binding to address %s using port %i.\n",
-               print_address (bind_address), *port));
-    }
-  if (listen (sock, 1) < 0)
-    {
-      fd_close (sock);
+  if (*port == 0) {
+    socklen_t addrlen = sockaddr_size(sa);
+    if (getsockname(sock, sa, &addrlen) < 0) {
+      /* If we can't find out the socket's local address ("name"),
+         something is seriously wrong with the socket, and it's
+         unusable for us anyway because we must know the chosen
+         port.  */
+      fd_close(sock);
       return -1;
     }
+    sockaddr_get_data(sa, NULL, port);
+    DEBUGP(("binding to address %s using port %i.\n", print_address(bind_address), *port));
+  }
+  if (listen(sock, 1) < 0) {
+    fd_close(sock);
+    return -1;
+  }
   return sock;
 }
 
@@ -515,27 +457,24 @@ bind_local (const ip_address *bind_address, int *port)
    connection is established for opt.connect_timeout seconds, the
    function exits with an error status.  */
 
-int
-accept_connection (int local_sock)
-{
+int accept_connection(int local_sock) {
   int sock;
 
   /* We don't need the values provided by accept, but accept
      apparently requires them to be present.  */
   struct sockaddr_storage ss;
-  struct sockaddr *sa = (struct sockaddr *)&ss;
-  socklen_t addrlen = sizeof (ss);
+  struct sockaddr* sa = (struct sockaddr*)&ss;
+  socklen_t addrlen = sizeof(ss);
 
-  if (opt.connect_timeout)
-    {
-      int test = select_fd (local_sock, opt.connect_timeout, WAIT_FOR_READ);
-      if (test == 0)
-        errno = ETIMEDOUT;
-      if (test <= 0)
-        return -1;
-    }
-  sock = accept (local_sock, sa, &addrlen);
-  DEBUGP (("Accepted client at socket %d.\n", sock));
+  if (opt.connect_timeout) {
+    int test = select_fd(local_sock, opt.connect_timeout, WAIT_FOR_READ);
+    if (test == 0)
+      errno = ETIMEDOUT;
+    if (test <= 0)
+      return -1;
+  }
+  sock = accept(local_sock, sa, &addrlen);
+  DEBUGP(("Accepted client at socket %d.\n", sock));
   return sock;
 }
 
@@ -546,50 +485,45 @@ accept_connection (int local_sock)
    (client) side of the socket.  Else if ENDPOINT is ENDPOINT_PEER, it
    returns the address of the remote (peer's) side of the socket.  */
 
-bool
-socket_ip_address (int sock, ip_address *ip, int endpoint)
-{
+bool socket_ip_address(int sock, ip_address* ip, int endpoint) {
   struct sockaddr_storage storage;
-  struct sockaddr *sockaddr = (struct sockaddr *) &storage;
-  socklen_t addrlen = sizeof (storage);
+  struct sockaddr* sockaddr = (struct sockaddr*)&storage;
+  socklen_t addrlen = sizeof(storage);
   int ret;
 
-  memset (sockaddr, 0, addrlen);
+  memset(sockaddr, 0, addrlen);
   if (endpoint == ENDPOINT_LOCAL)
-    ret = getsockname (sock, sockaddr, &addrlen);
+    ret = getsockname(sock, sockaddr, &addrlen);
   else if (endpoint == ENDPOINT_PEER)
-    ret = getpeername (sock, sockaddr, &addrlen);
+    ret = getpeername(sock, sockaddr, &addrlen);
   else
-    abort ();
+    abort();
   if (ret < 0)
     return false;
 
   memset(ip, 0, sizeof(ip_address));
   ip->family = sockaddr->sa_family;
-  switch (sockaddr->sa_family)
-    {
+  switch (sockaddr->sa_family) {
 #ifdef ENABLE_IPV6
-    case AF_INET6:
-      {
-        struct sockaddr_in6 *sa6 = (struct sockaddr_in6 *)&storage;
-        ip->data.d6 = sa6->sin6_addr;
+    case AF_INET6: {
+      struct sockaddr_in6* sa6 = (struct sockaddr_in6*)&storage;
+      ip->data.d6 = sa6->sin6_addr;
 #ifdef HAVE_SOCKADDR_IN6_SCOPE_ID
-        ip->ipv6_scope = sa6->sin6_scope_id;
+      ip->ipv6_scope = sa6->sin6_scope_id;
 #endif
-        DEBUGP (("conaddr is: %s\n", print_address (ip)));
-        return true;
-      }
-#endif
-    case AF_INET:
-      {
-        struct sockaddr_in *sa = (struct sockaddr_in *)&storage;
-        ip->data.d4 = sa->sin_addr;
-        DEBUGP (("conaddr is: %s\n", print_address (ip)));
-        return true;
-      }
-    default:
-      abort ();
+      DEBUGP(("conaddr is: %s\n", print_address(ip)));
+      return true;
     }
+#endif
+    case AF_INET: {
+      struct sockaddr_in* sa = (struct sockaddr_in*)&storage;
+      ip->data.d4 = sa->sin_addr;
+      DEBUGP(("conaddr is: %s\n", print_address(ip)));
+      return true;
+    }
+    default:
+      abort();
+  }
 }
 
 /* Get the socket family of connection on FD and store
@@ -599,22 +533,20 @@ socket_ip_address (int sock, ip_address *ip, int endpoint)
    (client) side of the socket.  Else if ENDPOINT is ENDPOINT_PEER, it
    returns the sock family of the remote (peer's) side of the socket.  */
 
-int
-socket_family (int sock, int endpoint)
-{
+int socket_family(int sock, int endpoint) {
   struct sockaddr_storage storage;
-  struct sockaddr *sockaddr = (struct sockaddr *) &storage;
-  socklen_t addrlen = sizeof (storage);
+  struct sockaddr* sockaddr = (struct sockaddr*)&storage;
+  socklen_t addrlen = sizeof(storage);
   int ret;
 
-  memset (sockaddr, 0, addrlen);
+  memset(sockaddr, 0, addrlen);
 
   if (endpoint == ENDPOINT_LOCAL)
-    ret = getsockname (sock, sockaddr, &addrlen);
+    ret = getsockname(sock, sockaddr, &addrlen);
   else if (endpoint == ENDPOINT_PEER)
-    ret = getpeername (sock, sockaddr, &addrlen);
+    ret = getpeername(sock, sockaddr, &addrlen);
   else
-    abort ();
+    abort();
 
   if (ret < 0)
     return -1;
@@ -627,9 +559,7 @@ socket_family (int sock, int endpoint)
    are the "unsupported protocol" type errors (possible on IPv4/IPv6
    dual family systems) and "connection refused".  */
 
-bool
-retryable_socket_connect_error (int err)
-{
+bool retryable_socket_connect_error(int err) {
   /* Have to guard against some of these values not being defined.
      Cannot use a switch statement because some of the values might be
      equal.  */
@@ -640,7 +570,7 @@ retryable_socket_connect_error (int err)
 #ifdef EPFNOSUPPORT
       || err == EPFNOSUPPORT
 #endif
-#ifdef ESOCKTNOSUPPORT          /* no, "sockt" is not a typo! */
+#ifdef ESOCKTNOSUPPORT /* no, "sockt" is not a typo! */
       || err == ESOCKTNOSUPPORT
 #endif
 #ifdef EPROTONOSUPPORT
@@ -651,19 +581,18 @@ retryable_socket_connect_error (int err)
 #endif
       /* Apparently, older versions of Linux and BSD used EINVAL
          instead of EAFNOSUPPORT and such.  */
-      || err == EINVAL
-      )
+      || err == EINVAL)
     return false;
 
   if (!opt.retry_connrefused)
     if (err == ECONNREFUSED
 #ifdef ENETUNREACH
-        || err == ENETUNREACH   /* network is unreachable */
+        || err == ENETUNREACH /* network is unreachable */
 #endif
 #ifdef EHOSTUNREACH
-        || err == EHOSTUNREACH  /* host is unreachable */
+        || err == EHOSTUNREACH /* host is unreachable */
 #endif
-        )
+    )
       return false;
 
   return true;
@@ -678,9 +607,7 @@ retryable_socket_connect_error (int err)
    should be taken as such (for example, it doesn't implement Wget's
    0-timeout-means-no-timeout semantics.)  */
 
-static int
-select_fd_internal (int fd, double maxtime, int wait_for, bool convert_back _GL_UNUSED)
-{
+static int select_fd_internal(int fd, double maxtime, int wait_for, bool convert_back _GL_UNUSED) {
   fd_set fdset;
   fd_set *rd = NULL, *wr = NULL;
   struct timeval tmout;
@@ -689,47 +616,40 @@ select_fd_internal (int fd, double maxtime, int wait_for, bool convert_back _GL_
   if (fd < 0)
     return -1;
 
-  if (fd >= FD_SETSIZE)
-    {
-      logprintf (LOG_NOTQUIET, _("Too many fds open.  Cannot use select on a fd >= %d\n"), FD_SETSIZE);
-      exit (WGET_EXIT_GENERIC_ERROR);
-    }
-  FD_ZERO (&fdset);
-  FD_SET (fd, &fdset);
+  if (fd >= FD_SETSIZE) {
+    logprintf(LOG_NOTQUIET, _("Too many fds open.  Cannot use select on a fd >= %d\n"), FD_SETSIZE);
+    exit(WGET_EXIT_GENERIC_ERROR);
+  }
+  FD_ZERO(&fdset);
+  FD_SET(fd, &fdset);
   if (wait_for & WAIT_FOR_READ)
     rd = &fdset;
   if (wait_for & WAIT_FOR_WRITE)
     wr = &fdset;
 
-  tmout.tv_sec = (long) maxtime;
-  tmout.tv_usec = 1000000 * (maxtime - (long) maxtime);
+  tmout.tv_sec = (long)maxtime;
+  tmout.tv_usec = 1000000 * (maxtime - (long)maxtime);
 
-  do
-  {
-    result = select (fd + 1, rd, wr, NULL, &tmout);
+  do {
+    result = select(fd + 1, rd, wr, NULL, &tmout);
 #ifdef WINDOWS
     /* gnulib select() converts blocking sockets to nonblocking in windows.
        wget uses blocking sockets so we must convert them back to blocking.  */
     if (convert_back)
-      set_windows_fd_as_blocking_socket (fd);
+      set_windows_fd_as_blocking_socket(fd);
 #endif
-  }
-  while (result < 0 && errno == EINTR);
+  } while (result < 0 && errno == EINTR);
 
   return result;
 }
 
-int
-select_fd (int fd, double maxtime, int wait_for)
-{
-  return select_fd_internal (fd, maxtime, wait_for, true);
+int select_fd(int fd, double maxtime, int wait_for) {
+  return select_fd_internal(fd, maxtime, wait_for, true);
 }
 
 #ifdef WINDOWS
-int
-select_fd_nb (int fd, double maxtime, int wait_for)
-{
-  return select_fd_internal (fd, maxtime, wait_for, false);
+int select_fd_nb(int fd, double maxtime, int wait_for) {
+  return select_fd_internal(fd, maxtime, wait_for, false);
 }
 #endif
 
@@ -744,37 +664,34 @@ select_fd_nb (int fd, double maxtime, int wait_for)
    this function, where such pending data can only be unwanted
    leftover from a previous request.  */
 
-bool
-test_socket_open (int sock)
-{
+bool test_socket_open(int sock) {
   fd_set check_set;
   struct timeval to;
   int ret = 0;
 
-  if (sock >= FD_SETSIZE)
-    {
-      logprintf (LOG_NOTQUIET, _("Too many fds open.  Cannot use select on a fd >= %d\n"), FD_SETSIZE);
-      exit (WGET_EXIT_GENERIC_ERROR);
-    }
+  if (sock >= FD_SETSIZE) {
+    logprintf(LOG_NOTQUIET, _("Too many fds open.  Cannot use select on a fd >= %d\n"), FD_SETSIZE);
+    exit(WGET_EXIT_GENERIC_ERROR);
+  }
   /* Check if we still have a valid (non-EOF) connection.  From Andrew
    * Maholski's code in the Unix Socket FAQ.  */
 
-  FD_ZERO (&check_set);
-  FD_SET (sock, &check_set);
+  FD_ZERO(&check_set);
+  FD_SET(sock, &check_set);
 
   /* Wait one microsecond */
   to.tv_sec = 0;
   to.tv_usec = 1;
 
-  ret = select (sock + 1, &check_set, NULL, NULL, &to);
+  ret = select(sock + 1, &check_set, NULL, NULL, &to);
 #ifdef WINDOWS
-/* gnulib select() converts blocking sockets to nonblocking in windows.
-wget uses blocking sockets so we must convert them back to blocking
-*/
-  set_windows_fd_as_blocking_socket ( sock );
+  /* gnulib select() converts blocking sockets to nonblocking in windows.
+  wget uses blocking sockets so we must convert them back to blocking
+  */
+  set_windows_fd_as_blocking_socket(sock);
 #endif
 
-  if ( !ret )
+  if (!ret)
     /* We got a timeout, it means we're still connected. */
     return true;
   else
@@ -785,47 +702,37 @@ wget uses blocking sockets so we must convert them back to blocking
 
 /* Basic socket operations, mostly EINTR wrappers.  */
 
-static int
-sock_read (int fd, char *buf, int bufsize)
-{
+static int sock_read(int fd, char* buf, int bufsize) {
   int res;
   do
-    res = read (fd, buf, bufsize);
+    res = read(fd, buf, bufsize);
   while (res == -1 && errno == EINTR);
   return res;
 }
 
-static int
-sock_write (int fd, char *buf, int bufsize)
-{
+static int sock_write(int fd, char* buf, int bufsize) {
   int res;
   do
-    res = write (fd, buf, bufsize);
+    res = write(fd, buf, bufsize);
   while (res == -1 && errno == EINTR);
   return res;
 }
 
-static int
-sock_poll (int fd, double timeout, int wait_for)
-{
-  return select_fd (fd, timeout, wait_for);
+static int sock_poll(int fd, double timeout, int wait_for) {
+  return select_fd(fd, timeout, wait_for);
 }
 
-static int
-sock_peek (int fd, char *buf, int bufsize)
-{
+static int sock_peek(int fd, char* buf, int bufsize) {
   int res;
   do
-    res = recv (fd, buf, bufsize, MSG_PEEK);
+    res = recv(fd, buf, bufsize, MSG_PEEK);
   while (res == -1 && errno == EINTR);
   return res;
 }
 
-static void
-sock_close (int fd)
-{
-  close (fd);
-  DEBUGP (("Closed fd %d\n", fd));
+static void sock_close(int fd) {
+  close(fd);
+  DEBUGP(("Closed fd %d\n", fd));
 }
 #undef read
 #undef write
@@ -839,12 +746,12 @@ sock_close (int fd)
    That way the user code can call fd_read(fd, ...) and we'll run read
    or SSL_read or whatever is necessary.  */
 
-static struct hash_table *transport_map;
+static struct hash_table* transport_map;
 static unsigned int transport_map_modified_tick;
 
 struct transport_info {
-  struct transport_implementation *imp;
-  void *ctx;
+  struct transport_implementation* imp;
+  void* ctx;
 };
 
 /* Register the transport layer operations that will be used when
@@ -854,22 +761,20 @@ struct transport_info {
    sockets.  FD should otherwise be a real socket, on which you can
    call getpeername, etc.  */
 
-void
-fd_register_transport (int fd, struct transport_implementation *imp, void *ctx)
-{
-  struct transport_info *info;
+void fd_register_transport(int fd, struct transport_implementation* imp, void* ctx) {
+  struct transport_info* info;
 
   /* The file descriptor must be non-negative to be registered.
      Negative values are ignored by fd_close(), and -1 cannot be used as
      hash key.  */
-  assert (fd >= 0);
+  assert(fd >= 0);
 
-  info = xnew (struct transport_info);
+  info = xnew(struct transport_info);
   info->imp = imp;
   info->ctx = ctx;
   if (!transport_map)
-    transport_map = hash_table_new (0, NULL, NULL);
-  hash_table_put (transport_map, (void *)(intptr_t) fd, info);
+    transport_map = hash_table_new(0, NULL, NULL);
+  hash_table_put(transport_map, (void*)(intptr_t)fd, info);
   ++transport_map_modified_tick;
 }
 
@@ -877,10 +782,8 @@ fd_register_transport (int fd, struct transport_implementation *imp, void *ctx)
    fd_register_transport.  This assumes fd_register_transport was
    previously called on FD.  */
 
-void *
-fd_transport_context (int fd)
-{
-  struct transport_info *info = hash_table_get (transport_map, (void *)(intptr_t) fd);
+void* fd_transport_context(int fd) {
+  struct transport_info* info = hash_table_get(transport_map, (void*)(intptr_t)fd);
   return info ? info->ctx : NULL;
 }
 
@@ -893,40 +796,37 @@ fd_transport_context (int fd)
    This is a macro because we want the static storage variables to be
    per-function.  */
 
-#define LAZY_RETRIEVE_INFO(info) do {                                   \
-  static struct transport_info *last_info;                              \
-  static int last_fd = -1;                                              \
-  static unsigned int last_tick;                                        \
-  if (!transport_map)                                                   \
-    info = NULL;                                                        \
-  else if (last_fd == fd && last_tick == transport_map_modified_tick)   \
-    info = last_info;                                                   \
-  else                                                                  \
-    {                                                                   \
-      info = hash_table_get (transport_map, (void *)(intptr_t) fd);     \
+#define LAZY_RETRIEVE_INFO(info)                                        \
+  do {                                                                  \
+    static struct transport_info* last_info;                            \
+    static int last_fd = -1;                                            \
+    static unsigned int last_tick;                                      \
+    if (!transport_map)                                                 \
+      info = NULL;                                                      \
+    else if (last_fd == fd && last_tick == transport_map_modified_tick) \
+      info = last_info;                                                 \
+    else {                                                              \
+      info = hash_table_get(transport_map, (void*)(intptr_t)fd);        \
       last_fd = fd;                                                     \
       last_info = info;                                                 \
       last_tick = transport_map_modified_tick;                          \
     }                                                                   \
-} while (0)
+  } while (0)
 
-static bool
-poll_internal (int fd, struct transport_info *info, int wf, double timeout)
-{
+static bool poll_internal(int fd, struct transport_info* info, int wf, double timeout) {
   if (timeout == -1)
     timeout = opt.read_timeout;
-  if (timeout)
-    {
-      int test;
-      if (info && info->imp->poller)
-        test = info->imp->poller (fd, timeout, wf, info->ctx);
-      else
-        test = sock_poll (fd, timeout, wf);
-      if (test == 0)
-        errno = ETIMEDOUT;
-      if (test <= 0)
-        return false;
-    }
+  if (timeout) {
+    int test;
+    if (info && info->imp->poller)
+      test = info->imp->poller(fd, timeout, wf, info->ctx);
+    else
+      test = sock_poll(fd, timeout, wf);
+    if (test == 0)
+      errno = ETIMEDOUT;
+    if (test <= 0)
+      return false;
+  }
   return true;
 }
 
@@ -935,20 +835,18 @@ poll_internal (int fd, struct transport_info *info, int wf, double timeout)
    received after that many seconds.  If TIMEOUT is -1, the value of
    opt.timeout is used for TIMEOUT.  */
 
-int
-fd_read (int fd, char *buf, int bufsize, double timeout)
-{
-  struct transport_info *info;
-  LAZY_RETRIEVE_INFO (info);
+int fd_read(int fd, char* buf, int bufsize, double timeout) {
+  struct transport_info* info;
+  LAZY_RETRIEVE_INFO(info);
 
   /* let imp->reader take care about timeout.
      (or in worst case timeout can be 2*timeout) */
   if (info && info->imp->reader)
-    return info->imp->reader (fd, buf, bufsize, info->ctx, timeout);
+    return info->imp->reader(fd, buf, bufsize, info->ctx, timeout);
 
-  if (!poll_internal (fd, info, WAIT_FOR_READ, timeout))
+  if (!poll_internal(fd, info, WAIT_FOR_READ, timeout))
     return -1;
-  return sock_read (fd, buf, bufsize);
+  return sock_read(fd, buf, bufsize);
 }
 
 /* Like fd_read, except it provides a "preview" of the data that will
@@ -963,18 +861,16 @@ fd_read (int fd, char *buf, int bufsize, double timeout)
    circumstances.  However, barring an error, it can be expected that
    all the peeked data will eventually be read by fd_read.  */
 
-int
-fd_peek (int fd, char *buf, int bufsize, double timeout)
-{
-  struct transport_info *info;
-  LAZY_RETRIEVE_INFO (info);
+int fd_peek(int fd, char* buf, int bufsize, double timeout) {
+  struct transport_info* info;
+  LAZY_RETRIEVE_INFO(info);
 
   if (info && info->imp->peeker)
-    return info->imp->peeker (fd, buf, bufsize, info->ctx, timeout);
+    return info->imp->peeker(fd, buf, bufsize, info->ctx, timeout);
 
-  if (!poll_internal (fd, info, WAIT_FOR_READ, timeout))
+  if (!poll_internal(fd, info, WAIT_FOR_READ, timeout))
     return -1;
-  return sock_peek (fd, buf, bufsize);
+  return sock_peek(fd, buf, bufsize);
 }
 
 /* Write the entire contents of BUF to FD.  If TIMEOUT is non-zero,
@@ -982,29 +878,26 @@ fd_peek (int fd, char *buf, int bufsize, double timeout)
    seconds.  If TIMEOUT is -1, the value of opt.timeout is used for
    TIMEOUT.  */
 
-int
-fd_write (int fd, char *buf, int bufsize, double timeout)
-{
+int fd_write(int fd, char* buf, int bufsize, double timeout) {
   int res;
-  struct transport_info *info;
-  LAZY_RETRIEVE_INFO (info);
+  struct transport_info* info;
+  LAZY_RETRIEVE_INFO(info);
 
   /* `write' may write less than LEN bytes, thus the loop keeps trying
      it until all was written, or an error occurred.  */
   res = 0;
-  while (bufsize > 0)
-    {
-      if (!poll_internal (fd, info, WAIT_FOR_WRITE, timeout))
-        return -1;
-      if (info && info->imp->writer)
-        res = info->imp->writer (fd, buf, bufsize, info->ctx);
-      else
-        res = sock_write (fd, buf, bufsize);
-      if (res <= 0)
-        break;
-      buf += res;
-      bufsize -= res;
-    }
+  while (bufsize > 0) {
+    if (!poll_internal(fd, info, WAIT_FOR_WRITE, timeout))
+      return -1;
+    if (info && info->imp->writer)
+      res = info->imp->writer(fd, buf, bufsize, info->ctx);
+    else
+      res = sock_write(fd, buf, bufsize);
+    if (res <= 0)
+      break;
+    buf += res;
+    bufsize -= res;
+  }
   return res;
 }
 
@@ -1018,32 +911,27 @@ fd_write (int fd, char *buf, int bufsize, double timeout)
    one, strerror(errno) is returned.  The returned error message
    should not be used after fd_close has been called.  */
 
-const char *
-fd_errstr (int fd)
-{
+const char* fd_errstr(int fd) {
   /* Don't bother with LAZY_RETRIEVE_INFO, as this will only be called
      in case of error, never in a tight loop.  */
-  struct transport_info *info = NULL;
+  struct transport_info* info = NULL;
 
   if (transport_map)
-    info = hash_table_get (transport_map, (void *)(intptr_t) fd);
+    info = hash_table_get(transport_map, (void*)(intptr_t)fd);
 
-  if (info && info->imp->errstr)
-    {
-      const char *err = info->imp->errstr (fd, info->ctx);
-      if (err)
-        return err;
-      /* else, fall through and print the system error. */
-    }
-  return strerror (errno);
+  if (info && info->imp->errstr) {
+    const char* err = info->imp->errstr(fd, info->ctx);
+    if (err)
+      return err;
+    /* else, fall through and print the system error. */
+  }
+  return strerror(errno);
 }
 
 /* Close the file descriptor FD.  */
 
-void
-fd_close (int fd)
-{
-  struct transport_info *info;
+void fd_close(int fd) {
+  struct transport_info* info;
   if (fd < 0)
     return;
 
@@ -1051,34 +939,29 @@ fd_close (int fd)
      per socket, so that particular optimization wouldn't work.  */
   info = NULL;
   if (transport_map)
-    info = hash_table_get (transport_map, (void *)(intptr_t) fd);
+    info = hash_table_get(transport_map, (void*)(intptr_t)fd);
 
   if (info && info->imp->closer)
-    info->imp->closer (fd, info->ctx);
+    info->imp->closer(fd, info->ctx);
   else
-    sock_close (fd);
+    sock_close(fd);
 
-  if (info)
-    {
-      hash_table_remove (transport_map, (void *)(intptr_t) fd);
-      xfree (info);
-      ++transport_map_modified_tick;
-    }
+  if (info) {
+    hash_table_remove(transport_map, (void*)(intptr_t)fd);
+    xfree(info);
+    ++transport_map_modified_tick;
+  }
 }
 
 #if defined DEBUG_MALLOC || defined TESTING
-void
-connect_cleanup(void)
-{
-  if (transport_map)
-    {
-      hash_table_iterator iter;
-      for (hash_table_iterate (transport_map, &iter); hash_table_iter_next (&iter); )
-        {
-          xfree (iter.value);
-        }
-      hash_table_destroy (transport_map);
-      transport_map = NULL;
+void connect_cleanup(void) {
+  if (transport_map) {
+    hash_table_iterator iter;
+    for (hash_table_iterate(transport_map, &iter); hash_table_iter_next(&iter);) {
+      xfree(iter.value);
     }
+    hash_table_destroy(transport_map);
+    transport_map = NULL;
+  }
 }
 #endif

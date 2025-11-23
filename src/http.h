@@ -36,17 +36,15 @@ as that of the covered work.  */
 
 struct url;
 
-uerr_t http_loop (const struct url *, struct url *, char **, char **, const char *,
-                  int *, struct url *, struct iri *, struct transfer_context *);
-void save_cookies (void);
-void http_cleanup (void);
-time_t http_atotm (const char *);
+uerr_t http_loop(const struct url*, struct url*, char**, char**, const char*, int*, struct url*, struct iri*, struct transfer_context*);
+void save_cookies(void);
+void http_cleanup(void);
+time_t http_atotm(const char*);
 
 typedef struct {
   /* A token consists of characters in the [b, e) range. */
   const char *b, *e;
 } param_token;
-bool extract_param (const char **, param_token *, param_token *, char, bool *);
-
+bool extract_param(const char**, param_token*, param_token*, char, bool*);
 
 #endif /* HTTP_H */

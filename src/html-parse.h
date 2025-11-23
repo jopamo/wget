@@ -32,12 +32,12 @@ as that of the covered work.  */
 #define HTML_PARSE_H
 
 struct attr_pair {
-  char *name;           /* attribute name */
-  char *value;          /* attribute value */
+  char* name;  /* attribute name */
+  char* value; /* attribute value */
 
   /* Needed for URL conversion; the places where the value begins and
      ends, including the quotes and everything. */
-  const char *value_raw_beginning;
+  const char* value_raw_beginning;
   int value_raw_size;
 
   /* Used internally by map_html_tags. */
@@ -45,27 +45,26 @@ struct attr_pair {
 };
 
 struct taginfo {
-  char *name;                   /* tag name */
-  int end_tag_p;                /* whether this is an end-tag */
-  int nattrs;                   /* number of attributes */
-  struct attr_pair *attrs;      /* attributes */
+  char* name;              /* tag name */
+  int end_tag_p;           /* whether this is an end-tag */
+  int nattrs;              /* number of attributes */
+  struct attr_pair* attrs; /* attributes */
 
-  const char *start_position;   /* start position of tag */
-  const char *end_position;     /* end position of tag */
+  const char* start_position; /* start position of tag */
+  const char* end_position;   /* end position of tag */
 
-  const char *contents_begin;   /* delimiters of tag contents */
-  const char *contents_end;     /* only valid if end_tag_p */
+  const char* contents_begin; /* delimiters of tag contents */
+  const char* contents_end;   /* only valid if end_tag_p */
 };
 
-struct hash_table;              /* forward declaration */
+struct hash_table; /* forward declaration */
 
 /* Flags for map_html_tags: */
-#define MHT_STRICT_COMMENTS  1  /* use strict comment interpretation */
-#define MHT_TRIM_VALUES      2  /* trim attribute values, e.g. interpret
-                                   <a href=" foo "> as "foo" */
+#define MHT_STRICT_COMMENTS 1 /* use strict comment interpretation */
+#define MHT_TRIM_VALUES                      \
+  2 /* trim attribute values, e.g. interpret \
+       <a href=" foo "> as "foo" */
 
-void map_html_tags (const char *, int,
-                    void (*) (struct taginfo *, void *), void *, int,
-                    const struct hash_table *, const struct hash_table *);
+void map_html_tags(const char*, int, void (*)(struct taginfo*, void*), void*, int, const struct hash_table*, const struct hash_table*);
 
 #endif /* HTML_PARSE_H */

@@ -36,18 +36,16 @@ as that of the covered work.  */
 #include "wget.h"
 #include "url.h"
 
-typedef struct hsts_store *hsts_store_t;
+typedef struct hsts_store* hsts_store_t;
 
-hsts_store_t hsts_store_open (const char *);
+hsts_store_t hsts_store_open(const char*);
 
-void hsts_store_save (hsts_store_t, const char *);
-void hsts_store_close (hsts_store_t);
-bool hsts_store_has_changed (hsts_store_t);
+void hsts_store_save(hsts_store_t, const char*);
+void hsts_store_close(hsts_store_t);
+bool hsts_store_has_changed(hsts_store_t);
 
-bool hsts_store_entry (hsts_store_t,
-                       enum url_scheme, const char *, int,
-                       int64_t, bool);
-bool hsts_match (hsts_store_t, struct url *);
+bool hsts_store_entry(hsts_store_t, enum url_scheme, const char*, int, int64_t, bool);
+bool hsts_match(hsts_store_t, struct url*);
 
 #endif /* HAVE_HSTS */
 #endif /* WGET_HSTS_H */

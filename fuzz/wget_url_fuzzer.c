@@ -20,86 +20,81 @@
 #include <config.h>
 
 #include <sys/types.h>
-#include <stdint.h> // uint8_t
-#include <stdio.h>  // fmemopen
+#include <stdint.h>  // uint8_t
+#include <stdio.h>   // fmemopen
 #include <string.h>  // strncmp
 #include <stdlib.h>  // free
 #include <unistd.h>  // close
-#include <fcntl.h>  // open flags
+#include <fcntl.h>   // open flags
 #include <unistd.h>  // close
 
 #include "wget.h"
 #undef fopen_wgetrc
 
 #ifdef __cplusplus
-  extern "C" {
+extern "C" {
 #endif
-  #include "url.h"
+#include "url.h"
 
-  // declarations for wget internal functions
-  int main_wget(int argc, const char **argv);
-  void cleanup(void);
-  FILE *fopen_wget(const char *pathname, const char *mode);
-  FILE *fopen_wgetrc(const char *pathname, const char *mode);
-  void exit_wget(int status);
+// declarations for wget internal functions
+int main_wget(int argc, const char** argv);
+void cleanup(void);
+FILE* fopen_wget(const char* pathname, const char* mode);
+FILE* fopen_wgetrc(const char* pathname, const char* mode);
+void exit_wget(int status);
 #ifdef __cplusplus
-  }
+}
 #endif
 
 #include "fuzzer.h"
 
-FILE *fopen_wget(const char *pathname, const char *mode)
-{
-	return fopen("/dev/null", mode);
+FILE* fopen_wget(const char* pathname, const char* mode) {
+  return fopen("/dev/null", mode);
 }
 
-FILE *fopen_wgetrc(const char *pathname, const char *mode)
-{
-	return NULL;
+FILE* fopen_wgetrc(const char* pathname, const char* mode) {
+  return NULL;
 }
 
 #ifdef FUZZING
-void exit_wget(int status)
-{
-}
+void exit_wget(int status) {}
 #endif
 
-int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
-{
-	struct url *url;
-	struct iri iri;
-	char *in;
+int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
+  struct url* url;
+  struct iri iri;
+  char* in;
 
-	if (size > 4096) // same as max_len = ... in .options file
-		return 0;
+  if (size > 4096)  // same as max_len = ... in .options file
+    return 0;
 
-	CLOSE_STDERR
+  CLOSE_STDERR
 
-	in = (char *) malloc(size + 1);
-	memcpy(in, data, size);
-	in[size] = 0;
+  in = (char*)malloc(size + 1);
+  memcpy(in, data, size);
+  in[size] = 0;
 
-	iri.uri_encoding = (char *) "iso-8859-1";
-	iri.orig_url = NULL;
+  iri.uri_encoding = (char*)"iso-8859-1";
+  iri.orig_url = NULL;
 
-	iri.utf8_encode = 0;
-	url = url_parse(in, NULL, &iri, 0);
-	url_free(url);
+  iri.utf8_encode = 0;
+  url = url_parse(in, NULL, &iri, 0);
+  url_free(url);
 
-	url = url_parse(in, NULL, &iri, 1);
-	url_free(url);
+  url = url_parse(in, NULL, &iri, 1);
+  url_free(url);
 
-	iri.utf8_encode = 1;
-	url = url_parse(in, NULL, &iri, 0);
-	url_free(url);
+  iri.utf8_encode = 1;
+  url = url_parse(in, NULL, &iri, 0);
+  url_free(url);
 
-	url = url_parse(in, NULL, &iri, 1);
-	url_free(url);
+  url = url_parse(in, NULL, &iri, 1);
+  url_free(url);
 
-	free(iri.orig_url);
-	free(in);
+  free(iri.orig_url);
+  free(in);
 
-	RESTORE_STDERR
+  RESTORE_STDERR
 
-	return 0;
+  return 0;
 }

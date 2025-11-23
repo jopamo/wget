@@ -38,13 +38,12 @@
 
 #include <glob.h>
 
-int main(int argc, char **argv)
-{
-static unsigned char data[] = "1e";
+int main(int argc, char** argv) {
+  static unsigned char data[] = "1e";
 
-	glob_t pglob;
-	if (glob(data, GLOB_TILDE|GLOB_ONLYDIR|GLOB_NOCHECK, NULL, &pglob) == 0)
-		globfree(&pglob);
+  glob_t pglob;
+  if (glob(data, GLOB_TILDE | GLOB_ONLYDIR | GLOB_NOCHECK, NULL, &pglob) == 0)
+    globfree(&pglob);
 
-	return 0;
+  return 0;
 }

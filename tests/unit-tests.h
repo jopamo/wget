@@ -32,38 +32,42 @@ as that of the covered work.  */
 #define TEST_H
 
 /* from MinUnit */
-#define mu_assert(message, test) do { if (!(test)) return message; } while (0)
-#define mu_run_test(test) \
-do { \
-  const char *message; \
-  puts("RUNNING TEST " #test "..."); \
-  message = test(); \
-  tests_run++; \
-  if (message) return message; \
-  puts("PASSED\n"); \
-} while (0)
+#define mu_assert(message, test) \
+  do {                           \
+    if (!(test))                 \
+      return message;            \
+  } while (0)
+#define mu_run_test(test)              \
+  do {                                 \
+    const char* message;               \
+    puts("RUNNING TEST " #test "..."); \
+    message = test();                  \
+    tests_run++;                       \
+    if (message)                       \
+      return message;                  \
+    puts("PASSED\n");                  \
+  } while (0)
 
-
-const char *test_has_key (void);
-const char *test_find_key_value (void);
-const char *test_find_key_values (void);
-const char *test_parse_content_disposition(void);
-const char *test_parse_range_header(void);
-const char *test_commands_sorted(void);
-const char *test_cmd_spec_restrict_file_names(void);
-const char *test_is_robots_txt_url(void);
-const char *test_path_simplify (void);
-const char *test_append_uri_pathel(void);
-const char *test_are_urls_equal(void);
-const char *test_uri_merge(void);
-const char *test_subdir_p(void);
-const char *test_dir_matches_p(void);
-const char *test_hsts_new_entry(void);
-const char *test_hsts_url_rewrite_superdomain(void);
-const char *test_hsts_url_rewrite_congruent(void);
-const char *test_hsts_read_database(void);
-const char *test_parse_netrc(void);
-const char *test_retr_rate(void);
+const char* test_has_key(void);
+const char* test_find_key_value(void);
+const char* test_find_key_values(void);
+const char* test_parse_content_disposition(void);
+const char* test_parse_range_header(void);
+const char* test_commands_sorted(void);
+const char* test_cmd_spec_restrict_file_names(void);
+const char* test_is_robots_txt_url(void);
+const char* test_path_simplify(void);
+const char* test_append_uri_pathel(void);
+const char* test_are_urls_equal(void);
+const char* test_uri_merge(void);
+const char* test_subdir_p(void);
+const char* test_dir_matches_p(void);
+const char* test_hsts_new_entry(void);
+const char* test_hsts_url_rewrite_superdomain(void);
+const char* test_hsts_url_rewrite_congruent(void);
+const char* test_hsts_read_database(void);
+const char* test_parse_netrc(void);
+const char* test_retr_rate(void);
 
 #endif /* TEST_H */
 

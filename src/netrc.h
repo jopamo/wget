@@ -33,7 +33,7 @@ as that of the covered work.  */
 
 #include <stdio.h>
 
-void search_netrc (const char *, const char **, const char **, int, FILE *);
+void search_netrc(const char*, const char**, const char**, int, FILE*);
 void netrc_cleanup(void);
 
 #endif /* NETRC_H */

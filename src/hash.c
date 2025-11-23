@@ -32,9 +32,9 @@ as that of the covered work.  */
    tree.  To test, also use -DTEST.  */
 
 #ifndef STANDALONE
-# include "wget.h"
+#include "wget.h"
 #else
-# include "config.h"
+#include "config.h"
 #endif
 
 #include <stdio.h>
@@ -45,20 +45,24 @@ as that of the covered work.  */
 
 #ifndef STANDALONE
 /* Get Wget's utility headers. */
-# include "utils.h"
+#include "utils.h"
 #else
 /* Make do without them. */
-# define xnew(type) (xmalloc (sizeof (type)))
-# define xnew0(type) (xcalloc (1, sizeof (type)))
-# define xnew_array(type, len) (xmalloc ((len) * sizeof (type)))
-# define xfree(p) do { free ((void *) (p)); p = NULL; } while (0)
+#define xnew(type) (xmalloc(sizeof(type)))
+#define xnew0(type) (xcalloc(1, sizeof(type)))
+#define xnew_array(type, len) (xmalloc((len) * sizeof(type)))
+#define xfree(p)      \
+  do {                \
+    free((void*)(p)); \
+    p = NULL;         \
+  } while (0)
 
-# ifndef countof
-#  define countof(x) (sizeof (x) / sizeof ((x)[0]))
-# endif
-# include <ctype.h>
-# define c_tolower(x) tolower ((unsigned char) (x))
-# include <stdint.h>
+#ifndef countof
+#define countof(x) (sizeof(x) / sizeof((x)[0]))
+#endif
+#include <ctype.h>
+#define c_tolower(x) tolower((unsigned char)(x))
+#include <stdint.h>
 #endif
 
 #include "hash.h"
@@ -145,25 +149,25 @@ as that of the covered work.  */
 #define HASH_RESIZE_FACTOR 2
 
 struct cell {
-  void *key;
-  void *value;
+  void* key;
+  void* value;
 };
 
-typedef unsigned long (*hashfun_t) (const void *);
-typedef int (*testfun_t) (const void *, const void *);
+typedef unsigned long (*hashfun_t)(const void*);
+typedef int (*testfun_t)(const void*, const void*);
 
 struct hash_table {
   hashfun_t hash_function;
   testfun_t test_function;
 
-  struct cell *cells;           /* contiguous array of cells. */
-  int size;                     /* size of the array. */
+  struct cell* cells; /* contiguous array of cells. */
+  int size;           /* size of the array. */
 
-  int count;                    /* number of occupied entries. */
-  int resize_threshold;         /* after size exceeds this number of
-                                   entries, resize the table.  */
-  int prime_offset;             /* the offset of the current prime in
-                                   the prime table. */
+  int count;            /* number of occupied entries. */
+  int resize_threshold; /* after size exceeds this number of
+                           entries, resize the table.  */
+  int prime_offset;     /* the offset of the current prime in
+                           the prime table. */
 };
 
 /* We use the all-bits-set constant (INVALID_PTR) marker to mean that
@@ -177,9 +181,9 @@ struct hash_table {
    -1.  This is acceptable because it still allows the use of
    nonnegative integer keys.  */
 
-#define INVALID_PTR ((void *) ~(uintptr_t) 0)
+#define INVALID_PTR ((void*)~(uintptr_t)0)
 #ifndef UCHAR_MAX
-# define UCHAR_MAX 0xff
+#define UCHAR_MAX 0xff
 #endif
 #define INVALID_PTR_CHAR UCHAR_MAX
 
@@ -195,12 +199,11 @@ struct hash_table {
 
 /* Loop over occupied cells starting at C, terminating the loop when
    an empty cell is encountered.  */
-#define FOREACH_OCCUPIED_ADJACENT(c, cells, size)                               \
-  for (; CELL_OCCUPIED (c); c = NEXT_CELL (c, cells, size))
+#define FOREACH_OCCUPIED_ADJACENT(c, cells, size) for (; CELL_OCCUPIED(c); c = NEXT_CELL(c, cells, size))
 
 /* Return the position of KEY in hash table SIZE large, hash function
    being HASHFUN.  */
-#define HASH_POSITION(key, hashfun, size) ((hashfun) (key) % size)
+#define HASH_POSITION(key, hashfun, size) ((hashfun)(key) % size)
 
 /* Find a prime near, but greater than or equal to SIZE.  The primes
    are looked up from a table with a selection of primes convenient
@@ -211,38 +214,29 @@ struct hash_table {
    stored in the same variable.  That way the list of primes does not
    have to be scanned from the beginning each time around.  */
 
-static int
-prime_size (int size, int *prime_offset)
-{
-  static const int primes[] = {
-    13, 19, 29, 41, 59, 79, 107, 149, 197, 263, 347, 457, 599, 787, 1031,
-    1361, 1777, 2333, 3037, 3967, 5167, 6719, 8737, 11369, 14783,
-    19219, 24989, 32491, 42257, 54941, 71429, 92861, 120721, 156941,
-    204047, 265271, 344857, 448321, 582821, 757693, 985003, 1280519,
-    1664681, 2164111, 2813353, 3657361, 4754591, 6180989, 8035301,
-    10445899, 13579681, 17653589, 22949669, 29834603, 38784989,
-    50420551, 65546729, 85210757, 110774011, 144006217, 187208107,
-    243370577, 316381771, 411296309, 534685237, 695090819, 903618083,
-    1174703521, 1527114613, 1837299131, 2147483647
-  };
+static int prime_size(int size, int* prime_offset) {
+  static const int primes[] = {13,        19,        29,        41,        59,        79,        107,       149,        197,        263,        347,       457,      599,      787,       1031,
+                               1361,      1777,      2333,      3037,      3967,      5167,      6719,      8737,       11369,      14783,      19219,     24989,    32491,    42257,     54941,
+                               71429,     92861,     120721,    156941,    204047,    265271,    344857,    448321,     582821,     757693,     985003,    1280519,  1664681,  2164111,   2813353,
+                               3657361,   4754591,   6180989,   8035301,   10445899,  13579681,  17653589,  22949669,   29834603,   38784989,   50420551,  65546729, 85210757, 110774011, 144006217,
+                               187208107, 243370577, 316381771, 411296309, 534685237, 695090819, 903618083, 1174703521, 1527114613, 1837299131, 2147483647};
   size_t i;
 
-  for (i = *prime_offset; i < countof (primes); i++)
-    if (primes[i] >= size)
-      {
-        /* Set the offset to the next prime.  That is safe because,
-           next time we are called, it will be with a larger SIZE,
-           which means we could never return the same prime anyway.
-           (If that is not the case, the caller can simply reset
-           *prime_offset.)  */
-        *prime_offset = i + 1;
-        return primes[i];
-      }
+  for (i = *prime_offset; i < countof(primes); i++)
+    if (primes[i] >= size) {
+      /* Set the offset to the next prime.  That is safe because,
+         next time we are called, it will be with a larger SIZE,
+         which means we could never return the same prime anyway.
+         (If that is not the case, the caller can simply reset
+         *prime_offset.)  */
+      *prime_offset = i + 1;
+      return primes[i];
+    }
 
-  abort ();
+  abort();
 }
 
-static int cmp_pointer (const void *, const void *);
+static int cmp_pointer(const void*, const void*);
 
 /* Create a hash table with hash function HASH_FUNCTION and test
    function TEST_FUNCTION.  The table is empty (its count is 0), but
@@ -268,13 +262,9 @@ static int cmp_pointer (const void *, const void *);
    keys, you can use the convenience functions make_string_hash_table
    and make_nocase_string_hash_table.  */
 
-struct hash_table *
-hash_table_new (int items,
-                unsigned long (*hash_function) (const void *),
-                int (*test_function) (const void *, const void *))
-{
+struct hash_table* hash_table_new(int items, unsigned long (*hash_function)(const void*), int (*test_function)(const void*, const void*)) {
   int size;
-  struct hash_table *ht = xnew (struct hash_table);
+  struct hash_table* ht = xnew(struct hash_table);
 
   ht->hash_function = hash_function ? hash_function : hash_pointer;
   ht->test_function = test_function ? test_function : cmp_pointer;
@@ -285,17 +275,17 @@ hash_table_new (int items,
 
   /* Calculate the size that ensures that the table will store at
      least ITEMS keys without the need to resize.  */
-  size = (int) (1 + items / HASH_MAX_FULLNESS);
-  size = prime_size (size, &ht->prime_offset);
+  size = (int)(1 + items / HASH_MAX_FULLNESS);
+  size = prime_size(size, &ht->prime_offset);
   ht->size = size;
-  ht->resize_threshold = (int) (size * HASH_MAX_FULLNESS);
+  ht->resize_threshold = (int)(size * HASH_MAX_FULLNESS);
   /*assert (ht->resize_threshold >= items);*/
 
-  ht->cells = xnew_array (struct cell, ht->size);
+  ht->cells = xnew_array(struct cell, ht->size);
 
   /* Mark cells as empty.  We use 0xff rather than 0 to mark empty
      keys because it allows us to use NULL/0 as keys.  */
-  memset (ht->cells, INVALID_PTR_CHAR, size * sizeof (struct cell));
+  memset(ht->cells, INVALID_PTR_CHAR, size * sizeof(struct cell));
 
   ht->count = 0;
 
@@ -304,28 +294,24 @@ hash_table_new (int items,
 
 /* Free the data associated with hash table HT. */
 
-void
-hash_table_destroy (struct hash_table *ht)
-{
-  xfree (ht->cells);
-  xfree (ht);
+void hash_table_destroy(struct hash_table* ht) {
+  xfree(ht->cells);
+  xfree(ht);
 }
 
 /* The heart of most functions in this file -- find the cell whose
    KEY is equal to key, using linear probing.  Returns the cell
    that matches KEY, or the first empty cell if none matches.  */
 
-static inline struct cell *
-find_cell (const struct hash_table *ht, const void *key)
-{
-  struct cell *cells = ht->cells;
+static inline struct cell* find_cell(const struct hash_table* ht, const void* key) {
+  struct cell* cells = ht->cells;
   int size = ht->size;
-  struct cell *c = cells + HASH_POSITION (key, ht->hash_function, size);
+  struct cell* c = cells + HASH_POSITION(key, ht->hash_function, size);
   testfun_t equals = ht->test_function;
 
-  FOREACH_OCCUPIED_ADJACENT (c, cells, size)
-    if (equals (key, c->key))
-      break;
+  FOREACH_OCCUPIED_ADJACENT(c, cells, size)
+  if (equals(key, c->key))
+    break;
   return c;
 }
 
@@ -336,11 +322,9 @@ find_cell (const struct hash_table *ht, const void *key)
    in the table.  Or, you can use hash_table_get_pair instead of this
    function.  */
 
-void *
-hash_table_get (const struct hash_table *ht, const void *key)
-{
-  struct cell *c = find_cell (ht, key);
-  if (CELL_OCCUPIED (c))
+void* hash_table_get(const struct hash_table* ht, const void* key) {
+  struct cell* c = find_cell(ht, key);
+  if (CELL_OCCUPIED(c))
     return c->value;
   else
     return NULL;
@@ -349,45 +333,37 @@ hash_table_get (const struct hash_table *ht, const void *key)
 /* Like hash_table_get, but writes out the pointers to both key and
    value.  Returns non-zero on success.  */
 
-int
-hash_table_get_pair (const struct hash_table *ht, const void *lookup_key,
-                     void *orig_key, void *value)
-{
-  struct cell *c = find_cell (ht, lookup_key);
-  if (CELL_OCCUPIED (c))
-    {
-      if (orig_key)
-        *(void **)orig_key = c->key;
-      if (value)
-        *(void **)value = c->value;
-      return 1;
-    }
+int hash_table_get_pair(const struct hash_table* ht, const void* lookup_key, void* orig_key, void* value) {
+  struct cell* c = find_cell(ht, lookup_key);
+  if (CELL_OCCUPIED(c)) {
+    if (orig_key)
+      *(void**)orig_key = c->key;
+    if (value)
+      *(void**)value = c->value;
+    return 1;
+  }
   else
     return 0;
 }
 
 /* Return 1 if HT contains KEY, 0 otherwise. */
 
-int
-hash_table_contains (const struct hash_table *ht, const void *key)
-{
-  struct cell *c = find_cell (ht, key);
-  return CELL_OCCUPIED (c);
+int hash_table_contains(const struct hash_table* ht, const void* key) {
+  struct cell* c = find_cell(ht, key);
+  return CELL_OCCUPIED(c);
 }
 
 /* Grow hash table HT as necessary, and rehash all the key-value
    mappings.  */
 
-static void
-grow_hash_table (struct hash_table *ht)
-{
+static void grow_hash_table(struct hash_table* ht) {
   hashfun_t hasher = ht->hash_function;
-  struct cell *old_cells = ht->cells;
-  struct cell *old_end   = ht->cells + ht->size;
+  struct cell* old_cells = ht->cells;
+  struct cell* old_end = ht->cells + ht->size;
   struct cell *c, *cells;
   int newsize;
 
-  newsize = prime_size (ht->size * HASH_RESIZE_FACTOR, &ht->prime_offset);
+  newsize = prime_size(ht->size * HASH_RESIZE_FACTOR, &ht->prime_offset);
 #if 0
   printf ("growing from %d to %d; fullness %.2f%% to %.2f%%\n",
           ht->size, newsize,
@@ -396,112 +372,99 @@ grow_hash_table (struct hash_table *ht)
 #endif
 
   ht->size = newsize;
-  ht->resize_threshold = (int) (newsize * HASH_MAX_FULLNESS);
+  ht->resize_threshold = (int)(newsize * HASH_MAX_FULLNESS);
 
-  cells = xnew_array (struct cell, newsize);
-  memset (cells, INVALID_PTR_CHAR, newsize * sizeof (struct cell));
+  cells = xnew_array(struct cell, newsize);
+  memset(cells, INVALID_PTR_CHAR, newsize * sizeof(struct cell));
   ht->cells = cells;
 
   for (c = old_cells; c < old_end; c++)
-    if (CELL_OCCUPIED (c))
-      {
-        struct cell *new_c;
-        /* We don't need to test for uniqueness of keys because they
-           come from the hash table and are therefore known to be
-           unique.  */
-        new_c = cells + HASH_POSITION (c->key, hasher, newsize);
-        FOREACH_OCCUPIED_ADJACENT (new_c, cells, newsize)
-          ;
-        *new_c = *c;
-      }
+    if (CELL_OCCUPIED(c)) {
+      struct cell* new_c;
+      /* We don't need to test for uniqueness of keys because they
+         come from the hash table and are therefore known to be
+         unique.  */
+      new_c = cells + HASH_POSITION(c->key, hasher, newsize);
+      FOREACH_OCCUPIED_ADJACENT(new_c, cells, newsize);
+      *new_c = *c;
+    }
 
-  xfree (old_cells);
+  xfree(old_cells);
 }
 
 /* Put VALUE in the hash table HT under the key KEY.  This regrows the
    table if necessary.  */
 
-void
-hash_table_put (struct hash_table *ht, const void *key, const void *value)
-{
-  struct cell *c = find_cell (ht, key);
-  if (CELL_OCCUPIED (c))
-    {
-      /* update existing item */
-      c->key   = (void *)key; /* const? */
-      c->value = (void *)value;
-      return;
-    }
+void hash_table_put(struct hash_table* ht, const void* key, const void* value) {
+  struct cell* c = find_cell(ht, key);
+  if (CELL_OCCUPIED(c)) {
+    /* update existing item */
+    c->key = (void*)key; /* const? */
+    c->value = (void*)value;
+    return;
+  }
 
   /* If adding the item would make the table exceed max. fullness,
      grow the table first.  */
-  if (ht->count >= ht->resize_threshold)
-    {
-      grow_hash_table (ht);
-      c = find_cell (ht, key);
-    }
+  if (ht->count >= ht->resize_threshold) {
+    grow_hash_table(ht);
+    c = find_cell(ht, key);
+  }
 
   /* add new item */
   ++ht->count;
-  c->key   = (void *)key;       /* const? */
-  c->value = (void *)value;
+  c->key = (void*)key; /* const? */
+  c->value = (void*)value;
 }
 
 /* Remove KEY->value mapping from HT.  Return 0 if there was no such
    entry; return 1 if an entry was removed.  */
 
-int
-hash_table_remove (struct hash_table *ht, const void *key)
-{
-  struct cell *c = find_cell (ht, key);
-  if (!CELL_OCCUPIED (c))
+int hash_table_remove(struct hash_table* ht, const void* key) {
+  struct cell* c = find_cell(ht, key);
+  if (!CELL_OCCUPIED(c))
     return 0;
-  else
-    {
-      int size = ht->size;
-      struct cell *cells = ht->cells;
-      hashfun_t hasher = ht->hash_function;
+  else {
+    int size = ht->size;
+    struct cell* cells = ht->cells;
+    hashfun_t hasher = ht->hash_function;
 
-      CLEAR_CELL (c);
-      --ht->count;
+    CLEAR_CELL(c);
+    --ht->count;
 
-      /* Rehash all the entries following C.  The alternative
-         approach is to mark the entry as deleted, i.e. create a
-         "tombstone".  That speeds up removal, but leaves a lot of
-         garbage and slows down hash_table_get and hash_table_put.  */
+    /* Rehash all the entries following C.  The alternative
+       approach is to mark the entry as deleted, i.e. create a
+       "tombstone".  That speeds up removal, but leaves a lot of
+       garbage and slows down hash_table_get and hash_table_put.  */
 
-      c = NEXT_CELL (c, cells, size);
-      FOREACH_OCCUPIED_ADJACENT (c, cells, size)
-        {
-          const void *key2 = c->key;
-          struct cell *c_new;
+    c = NEXT_CELL(c, cells, size);
+    FOREACH_OCCUPIED_ADJACENT(c, cells, size) {
+      const void* key2 = c->key;
+      struct cell* c_new;
 
-          /* Find the new location for the key. */
-          c_new = cells + HASH_POSITION (key2, hasher, size);
-          FOREACH_OCCUPIED_ADJACENT (c_new, cells, size)
-            if (key2 == c_new->key)
-              /* The cell C (key2) is already where we want it (in
-                 C_NEW's "chain" of keys.)  */
-              goto next_rehash;
+      /* Find the new location for the key. */
+      c_new = cells + HASH_POSITION(key2, hasher, size);
+      FOREACH_OCCUPIED_ADJACENT(c_new, cells, size)
+      if (key2 == c_new->key)
+        /* The cell C (key2) is already where we want it (in
+           C_NEW's "chain" of keys.)  */
+        goto next_rehash;
 
-          *c_new = *c;
-          CLEAR_CELL (c);
+      *c_new = *c;
+      CLEAR_CELL(c);
 
-        next_rehash:
-          ;
-        }
-      return 1;
+    next_rehash:;
     }
+    return 1;
+  }
 }
 
 /* Clear HT of all entries.  After calling this function, the count
    and the fullness of the hash table will be zero.  The size will
    remain unchanged.  */
 
-void
-hash_table_clear (struct hash_table *ht)
-{
-  memset (ht->cells, INVALID_PTR_CHAR, ht->size * sizeof (struct cell));
+void hash_table_clear(struct hash_table* ht) {
+  memset(ht->cells, INVALID_PTR_CHAR, ht->size * sizeof(struct cell));
   ht->count = 0;
 }
 
@@ -516,25 +479,21 @@ hash_table_clear (struct hash_table *ht)
    also the reason why this function cannot be implemented in terms of
    hash_table_iterate.  */
 
-void
-hash_table_for_each (struct hash_table *ht,
-                     int (*fn) (void *, void *, void *), void *arg)
-{
-  struct cell *c = ht->cells;
-  struct cell *end = ht->cells + ht->size;
+void hash_table_for_each(struct hash_table* ht, int (*fn)(void*, void*, void*), void* arg) {
+  struct cell* c = ht->cells;
+  struct cell* end = ht->cells + ht->size;
 
   for (; c < end; c++)
-    if (CELL_OCCUPIED (c))
-      {
-        void *key;
-      repeat:
-        key = c->key;
-        if (fn (key, c->value, arg))
-          return;
-        /* hash_table_remove might have moved the adjacent cells. */
-        if (c->key != key && CELL_OCCUPIED (c))
-          goto repeat;
-      }
+    if (CELL_OCCUPIED(c)) {
+      void* key;
+    repeat:
+      key = c->key;
+      if (fn(key, c->value, arg))
+        return;
+      /* hash_table_remove might have moved the adjacent cells. */
+      if (c->key != key && CELL_OCCUPIED(c))
+        goto repeat;
+    }
 }
 
 /* Initiate iteration over HT.  Entries are obtained with
@@ -547,9 +506,7 @@ hash_table_for_each (struct hash_table *ht,
    The iterator does not need to be deallocated after use.  The hash
    table must not be modified while being iterated over.  */
 
-void
-hash_table_iterate (struct hash_table *ht, hash_table_iterator *iter)
-{
+void hash_table_iterate(struct hash_table* ht, hash_table_iterator* iter) {
   iter->pos = ht->cells;
   iter->end = ht->cells + ht->size;
 }
@@ -563,19 +520,16 @@ hash_table_iterate (struct hash_table *ht, hash_table_iterator *iter)
    If the hash table is modified between calls to this function, the
    result is undefined.  */
 
-int
-hash_table_iter_next (hash_table_iterator *iter)
-{
-  struct cell *c = iter->pos;
-  struct cell *end = iter->end;
+int hash_table_iter_next(hash_table_iterator* iter) {
+  struct cell* c = iter->pos;
+  struct cell* end = iter->end;
   for (; c < end; c++)
-    if (CELL_OCCUPIED (c))
-      {
-        iter->key = c->key;
-        iter->value = c->value;
-        iter->pos = c + 1;
-        return 1;
-      }
+    if (CELL_OCCUPIED(c)) {
+      iter->key = c->key;
+      iter->value = c->value;
+      iter->pos = c + 1;
+      return 1;
+    }
   return 0;
 }
 
@@ -583,9 +537,7 @@ hash_table_iter_next (hash_table_iterator *iter)
    same as the physical size of the hash table, which is always
    greater than the number of elements.  */
 
-int
-hash_table_count (const struct hash_table *ht)
-{
+int hash_table_count(const struct hash_table* ht) {
   return ht->count;
 }
 
@@ -640,10 +592,8 @@ hash_table_count (const struct hash_table *ht)
 #ifdef __clang__
 __attribute__((no_sanitize("integer")))
 #endif
-static unsigned long
-hash_string (const void *key)
-{
-  const char *p = key;
+static unsigned long hash_string(const void* key) {
+  const char* p = key;
   unsigned int h = *p;
 
   if (h)
@@ -655,19 +605,15 @@ hash_string (const void *key)
 
 /* Frontend for strcmp usable for hash tables. */
 
-static int
-cmp_string (const void *s1, const void *s2)
-{
-  return !strcmp ((const char *)s1, (const char *)s2);
+static int cmp_string(const void* s1, const void* s2) {
+  return !strcmp((const char*)s1, (const char*)s2);
 }
 
 /* Return a hash table of preallocated to store at least ITEMS items
    suitable to use strings as keys.  */
 
-struct hash_table *
-make_string_hash_table (int items)
-{
-  return hash_table_new (items, hash_string, cmp_string);
+struct hash_table* make_string_hash_table(int items) {
+  return hash_table_new(items, hash_string, cmp_string);
 }
 
 /*
@@ -681,34 +627,28 @@ make_string_hash_table (int items)
 #ifdef __clang__
 __attribute__((no_sanitize("integer")))
 #endif
-static unsigned long
-hash_string_nocase (const void *key)
-{
-  const char *p = key;
-  unsigned int h = c_tolower (*p);
+static unsigned long hash_string_nocase(const void* key) {
+  const char* p = key;
+  unsigned int h = c_tolower(*p);
 
   if (h)
     for (p += 1; *p != '\0'; p++)
-      h = (h << 5) - h + c_tolower (*p);
+      h = (h << 5) - h + c_tolower(*p);
 
   return h;
 }
 
 /* Like string_cmp, but doing case-insensitive comparison. */
 
-static int
-string_cmp_nocase (const void *s1, const void *s2)
-{
-  return !strcasecmp ((const char *)s1, (const char *)s2);
+static int string_cmp_nocase(const void* s1, const void* s2) {
+  return !strcasecmp((const char*)s1, (const char*)s2);
 }
 
 /* Like make_string_hash_table, but uses string_hash_nocase and
    string_cmp_nocase.  */
 
-struct hash_table *
-make_nocase_string_hash_table (int items)
-{
-  return hash_table_new (items, hash_string_nocase, string_cmp_nocase);
+struct hash_table* make_nocase_string_hash_table(int items) {
+  return hash_table_new(items, hash_string_nocase, string_cmp_nocase);
 }
 
 /* Hashing of numeric values, such as pointers and integers.
@@ -722,10 +662,8 @@ make_nocase_string_hash_table (int items)
 #ifdef __clang__
 __attribute__((no_sanitize("integer")))
 #endif
-unsigned long
-hash_pointer (const void *ptr)
-{
-  uintptr_t key = (uintptr_t) ptr;
+unsigned long hash_pointer(const void* ptr) {
+  uintptr_t key = (uintptr_t)ptr;
   key += (key << 12);
   key ^= (key >> 22);
   key += (key << 4);
@@ -744,12 +682,10 @@ hash_pointer (const void *ptr)
   key += (key << 39);
   key ^= (key >> 44);
 #endif
-  return (unsigned long) key;
+  return (unsigned long)key;
 }
 
-static int
-cmp_pointer (const void *ptr1, const void *ptr2)
-{
+static int cmp_pointer(const void* ptr1, const void* ptr2) {
   return ptr1 == ptr2;
 }
 
@@ -758,57 +694,49 @@ cmp_pointer (const void *ptr1, const void *ptr2)
 #include <stdio.h>
 #include <string.h>
 
-void
-print_hash (struct hash_table *sht)
-{
+void print_hash(struct hash_table* sht) {
   hash_table_iterator iter;
   int count = 0;
 
-  for (hash_table_iterate (sht, &iter); hash_table_iter_next (&iter);
-       ++count)
-    printf ("%s: %s\n", iter.key, iter.value);
-  assert (count == sht->count);
+  for (hash_table_iterate(sht, &iter); hash_table_iter_next(&iter); ++count)
+    printf("%s: %s\n", iter.key, iter.value);
+  assert(count == sht->count);
 }
 
-int
-main (void)
-{
-  struct hash_table *ht = make_string_hash_table (0);
+int main(void) {
+  struct hash_table* ht = make_string_hash_table(0);
   char line[80];
 
 #ifdef ENABLE_NLS
   /* Set the current locale.  */
-  setlocale (LC_ALL, "");
+  setlocale(LC_ALL, "");
   /* Set the text message domain.  */
-  bindtextdomain ("wget", LOCALEDIR);
-  textdomain ("wget");
+  bindtextdomain("wget", LOCALEDIR);
+  textdomain("wget");
 #endif /* ENABLE_NLS */
 
-  while ((fgets (line, sizeof (line), stdin)))
-    {
-      int len = strlen (line);
-      if (len <= 1)
-        continue;
-      line[--len] = '\0';
-      if (!hash_table_contains (ht, line))
-        hash_table_put (ht, strdup (line), "here I am!");
+  while ((fgets(line, sizeof(line), stdin))) {
+    int len = strlen(line);
+    if (len <= 1)
+      continue;
+    line[--len] = '\0';
+    if (!hash_table_contains(ht, line))
+      hash_table_put(ht, strdup(line), "here I am!");
 #if 1
-      if (len % 5 == 0)
-        {
-          char *line_copy;
-          if (hash_table_get_pair (ht, line, &line_copy, NULL))
-            {
-              hash_table_remove (ht, line);
-              xfree (line_copy);
-            }
-        }
-#endif
+    if (len % 5 == 0) {
+      char* line_copy;
+      if (hash_table_get_pair(ht, line, &line_copy, NULL)) {
+        hash_table_remove(ht, line);
+        xfree(line_copy);
+      }
     }
+#endif
+  }
 #if 0
   print_hash (ht);
 #endif
 #if 1
-  printf ("%d %d\n", ht->count, ht->size);
+  printf("%d %d\n", ht->count, ht->size);
 #endif
   return 0;
 }

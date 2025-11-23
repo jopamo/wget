@@ -46,134 +46,137 @@ as that of the covered work.  */
    necessary in standard C, but Wget performs them anyway for the sake
    of pre-standard environments and possibly C++.  */
 
-#define xnew(type) (xmalloc (sizeof (type)))
-#define xnew0(type) (xcalloc (1, sizeof (type)))
-#define xnew_array(type, len) (xmalloc ((len) * sizeof (type)))
-#define xnew0_array(type, len) (xcalloc ((len), sizeof (type)))
+#define xnew(type) (xmalloc(sizeof(type)))
+#define xnew0(type) (xcalloc(1, sizeof(type)))
+#define xnew_array(type, len) (xmalloc((len) * sizeof(type)))
+#define xnew0_array(type, len) (xcalloc((len), sizeof(type)))
 
-#define xfree(p) do { free ((void *) (p)); p = NULL; } while (0)
+#define xfree(p)      \
+  do {                \
+    free((void*)(p)); \
+    p = NULL;         \
+  } while (0)
 
 struct hash_table;
 
 struct file_memory {
-  char *content;
+  char* content;
   long length;
   int mmap_p;
 };
 
 #define HYPHENP(x) (*(x) == '-' && !*((x) + 1))
 
-char *time_str (time_t);
-char *datetime_str (time_t);
+char* time_str(time_t);
+char* datetime_str(time_t);
 
-char *xstrdup_lower (const char *);
+char* xstrdup_lower(const char*);
 
-char *strdupdelim (const char *, const char *);
-char **sepstring (const char *);
-bool subdir_p (const char *, const char *);
-bool fork_to_background (void);
+char* strdupdelim(const char*, const char*);
+char** sepstring(const char*);
+bool subdir_p(const char*, const char*);
+bool fork_to_background(void);
 
-char *aprintf (const char *, ...) GCC_FORMAT_ATTR (1, 2);
-char *concat_strings (const char *, ...);
+char* aprintf(const char*, ...) GCC_FORMAT_ATTR(1, 2);
+char* concat_strings(const char*, ...);
 
 typedef struct file_stat_s {
-  int access_err;               /* Error in accecssing file : Not present vs permission */
-  ino_t st_ino;                 /* st_ino from stats() on the file before open() */
-  dev_t st_dev;                 /* st_dev from stats() on the file before open() */
+  int access_err; /* Error in accecssing file : Not present vs permission */
+  ino_t st_ino;   /* st_ino from stats() on the file before open() */
+  dev_t st_dev;   /* st_dev from stats() on the file before open() */
 } file_stats_t;
 
-void touch (const char *, time_t);
-int remove_link (const char *);
-bool file_exists_p (const char *, file_stats_t *);
-bool file_non_directory_p (const char *);
-wgint file_size (const char *);
-int make_directory (const char *);
-char *unique_name_passthrough (const char *);
-char *unique_name (const char *);
-FILE *unique_create (const char *, bool, char **);
-FILE *fopen_excl (const char *, int);
-FILE *fopen_stat (const char *, const char *, file_stats_t *);
-int   open_stat  (const char *, int, mode_t, file_stats_t *);
-char *file_merge (const char *, const char *);
+void touch(const char*, time_t);
+int remove_link(const char*);
+bool file_exists_p(const char*, file_stats_t*);
+bool file_non_directory_p(const char*);
+wgint file_size(const char*);
+int make_directory(const char*);
+char* unique_name_passthrough(const char*);
+char* unique_name(const char*);
+FILE* unique_create(const char*, bool, char**);
+FILE* fopen_excl(const char*, int);
+FILE* fopen_stat(const char*, const char*, file_stats_t*);
+int open_stat(const char*, int, mode_t, file_stats_t*);
+char* file_merge(const char*, const char*);
 
-int fnmatch_nocase (const char *, const char *, int);
-bool acceptable (const char *);
-bool accept_url (const char *);
-bool accdir (const char *s);
-char *suffix (const char *s);
-bool match_tail (const char *, const char *, bool);
-bool has_wildcards_p (const char *);
+int fnmatch_nocase(const char*, const char*, int);
+bool acceptable(const char*);
+bool accept_url(const char*);
+bool accdir(const char* s);
+char* suffix(const char* s);
+bool match_tail(const char*, const char*, bool);
+bool has_wildcards_p(const char*);
 
-bool has_html_suffix_p (const char *);
+bool has_html_suffix_p(const char*);
 
-struct file_memory *wget_read_from_file (const char *, bool *);
-struct file_memory *wget_read_file (const char *);
-void wget_read_file_free (struct file_memory *);
+struct file_memory* wget_read_from_file(const char*, bool*);
+struct file_memory* wget_read_file(const char*);
+void wget_read_file_free(struct file_memory*);
 
-void free_vec (char **);
-char **merge_vecs (char **, char **);
-char **vec_append (char **, const char *);
+void free_vec(char**);
+char** merge_vecs(char**, char**);
+char** vec_append(char**, const char*);
 
-void string_set_add (struct hash_table *, const char *);
-int string_set_contains (struct hash_table *, const char *);
-void string_set_to_array (struct hash_table *, char **);
-void string_set_free (struct hash_table *);
-void free_keys_and_values (struct hash_table *);
+void string_set_add(struct hash_table*, const char*);
+int string_set_contains(struct hash_table*, const char*);
+void string_set_to_array(struct hash_table*, char**);
+void string_set_free(struct hash_table*);
+void free_keys_and_values(struct hash_table*);
 
-const char *with_thousand_seps (wgint);
+const char* with_thousand_seps(wgint);
 
 /* human_readable must be able to accept wgint arguments. */
-char *human_readable (wgint, const int, const int);
+char* human_readable(wgint, const int, const int);
 
+int numdigit(wgint);
+char* number_to_string(char*, wgint);
+char* number_to_static_string(wgint);
+wgint convert_to_bits(wgint);
 
-int numdigit (wgint);
-char *number_to_string (char *, wgint);
-char *number_to_static_string (wgint);
-wgint convert_to_bits (wgint);
+int determine_screen_width(void);
+int random_number(int);
+double random_float(void);
 
-int determine_screen_width (void);
-int random_number (int);
-double random_float (void);
-
-bool run_with_timeout (double, void (*) (void *), void *);
-void xsleep (double);
+bool run_with_timeout(double, void (*)(void*), void*);
+void xsleep(double);
 
 /* How many bytes it will take to store LEN bytes in base64.  */
 #define BASE64_LENGTH(len) (4 * (((len) + 2) / 3))
 
-size_t wget_base64_encode (const void *, size_t, char *);
-ssize_t wget_base64_decode (const char *, void *, size_t);
+size_t wget_base64_encode(const void*, size_t, char*);
+ssize_t wget_base64_decode(const char*, void*, size_t);
 
 #ifdef HAVE_LIBPCRE2
-void *compile_pcre2_regex (const char *);
-bool match_pcre2_regex (const void *, const char *);
+void* compile_pcre2_regex(const char*);
+bool match_pcre2_regex(const void*, const char*);
 #endif
 
 #ifdef HAVE_LIBPCRE
-void *compile_pcre_regex (const char *);
-bool match_pcre_regex (const void *, const char *);
+void* compile_pcre_regex(const char*);
+bool match_pcre_regex(const void*, const char*);
 #endif
 
-void *compile_posix_regex (const char *);
-bool match_posix_regex (const void *, const char *);
+void* compile_posix_regex(const char*);
+bool match_posix_regex(const void*, const char*);
 
-void stable_sort (void *, size_t, size_t, int (*) (const void *, const void *));
+void stable_sort(void*, size_t, size_t, int (*)(const void*, const void*));
 
-const char *print_decimal (double);
+const char* print_decimal(double);
 
-long get_max_length (const char *path, int length, int name);
+long get_max_length(const char* path, int length, int name);
 
 #ifndef HAVE_STRLCPY
-size_t strlcpy (char * restrict dst, const char *  restrict src, size_t size);
+size_t strlcpy(char* restrict dst, const char* restrict src, size_t size);
 #endif
 
-void wg_hex_to_string (char *str_buffer, const char *hex_buffer, size_t hex_len);
+void wg_hex_to_string(char* str_buffer, const char* hex_buffer, size_t hex_len);
 
 extern unsigned char char_prop[];
 
 #ifdef HAVE_SSL
 /* Check pinned public key. */
-bool wg_pin_peer_pubkey (const char *pinnedpubkey, const char *pubkey, size_t pubkeylen);
+bool wg_pin_peer_pubkey(const char* pinnedpubkey, const char* pubkey, size_t pubkeylen);
 #endif
 
 #endif /* UTILS_H */

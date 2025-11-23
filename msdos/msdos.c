@@ -43,65 +43,53 @@ int __dj_mb_cur_max = 1;
 #ifndef __WATCOMC__
 /* These is just a dummy function to make Wget link. These are never called
    because 'unibyte_locale == 1' in ../lib/quotearg.c. */
-int mbsinit (void)
-{
+int mbsinit(void) {
   return 0;
 }
 
-int mbrtowc (void)
-{
+int mbrtowc(void) {
   return 0;
 }
 
-int iswprint (void)
-{
+int iswprint(void) {
   return 0;
 }
-#endif   /* __WATCOMC__ */
-
+#endif /* __WATCOMC__ */
 
 #define PASS_MAX 512
 
 /* Get a user string with echo off. Handy for entering passwords. The prompt
    optional. */
-char *
-getpass (const char *prompt)
-{
+char* getpass(const char* prompt) {
   char getpassbuf[PASS_MAX + 1];
   size_t i = 0;
   int c;
 
-  if (prompt)
-    {
-      fputs (prompt, stderr);
-      fflush (stderr);
+  if (prompt) {
+    fputs(prompt, stderr);
+    fflush(stderr);
+  }
+
+  for (;;) {
+    c = getch();
+    if (c == '\r') {
+      getpassbuf[i] = '\0';
+      break;
+    }
+    else if (i < PASS_MAX) {
+      getpassbuf[i++] = c;
     }
 
-  for (;;)
-    {
-      c = getch ();
-      if (c == '\r')
-	{
-	  getpassbuf[i] = '\0';
-	  break;
-	}
-      else if (i < PASS_MAX)
-	{
-	  getpassbuf[i++] = c;
-	}
-
-      if (i >= PASS_MAX)
-	{
-	  getpassbuf[i] = '\0';
-	  break;
-	}
+    if (i >= PASS_MAX) {
+      getpassbuf[i] = '\0';
+      break;
     }
+  }
 
-  if (prompt)
-    {
-      fputs ("\r\n", stderr);
-      fflush (stderr);
-    }
+  if (prompt) {
+    fputs("\r\n", stderr);
+    fflush(stderr);
+  }
 
-  return strdup (getpassbuf);
+  return strdup(getpassbuf);
 }

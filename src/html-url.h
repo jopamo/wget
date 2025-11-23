@@ -37,22 +37,22 @@ as that of the covered work.  */
 #include "iri.h"
 
 struct map_context {
-  char *text;                   /* HTML text. */
-  char *base;                   /* Base URI of the document, possibly
-                                   changed through <base href=...>. */
-  const char *parent_base;      /* Base of the current document. */
-  const char *document_file;    /* File name of this document. */
-  bool nofollow;                /* whether NOFOLLOW was specified in a
-                                   <meta name=robots> tag. */
+  char* text;                /* HTML text. */
+  char* base;                /* Base URI of the document, possibly
+                                changed through <base href=...>. */
+  const char* parent_base;   /* Base of the current document. */
+  const char* document_file; /* File name of this document. */
+  bool nofollow;             /* whether NOFOLLOW was specified in a
+                                <meta name=robots> tag. */
 
-  struct urlpos *head;          /* List of URLs that is being built. */
+  struct urlpos* head; /* List of URLs that is being built. */
 };
 
-struct urlpos *get_urls_file (const char *, bool *);
-struct urlpos *get_urls_html (const char *, const char *, bool *, struct iri *);
-struct urlpos *get_urls_html_fm (const char *, const struct file_memory *, const char *, bool *, struct iri *);
-struct urlpos *append_url (const char *, int, int, struct map_context *);
-void free_urlpos (struct urlpos *);
-void cleanup_html_url (void);
+struct urlpos* get_urls_file(const char*, bool*);
+struct urlpos* get_urls_html(const char*, const char*, bool*, struct iri*);
+struct urlpos* get_urls_html_fm(const char*, const struct file_memory*, const char*, bool*, struct iri*);
+struct urlpos* append_url(const char*, int, int, struct map_context*);
+void free_urlpos(struct urlpos*);
+void cleanup_html_url(void);
 
 #endif /* HTML_URL_H */

@@ -53,14 +53,13 @@ as that of the covered work.  */
 #include <errno.h>
 #include <time.h>
 #ifdef HAVE_LIBPSL
-# include <libpsl.h>
+#include <libpsl.h>
 #endif
 #include "utils.h"
 #include "hash.h"
 #include "cookies.h"
-#include "http.h"               /* for http_atotm */
+#include "http.h" /* for http_atotm */
 #include "c-strcase.h"
-
 
 /* Declarations of `struct cookie' and the most basic functions. */
 
@@ -78,59 +77,55 @@ as that of the covered work.  */
 
 struct cookie_jar {
   /* Cookie chains indexed by domain.  */
-  struct hash_table *chains;
+  struct hash_table* chains;
 
-  int cookie_count;             /* number of cookies in the jar. */
+  int cookie_count; /* number of cookies in the jar. */
 };
 
 /* Value set by entry point functions, so that the low-level
    routines don't need to call time() all the time.  */
 static time_t cookies_now;
 
-struct cookie_jar *
-cookie_jar_new (void)
-{
-  struct cookie_jar *jar = xnew (struct cookie_jar);
-  jar->chains = make_nocase_string_hash_table (0);
+struct cookie_jar* cookie_jar_new(void) {
+  struct cookie_jar* jar = xnew(struct cookie_jar);
+  jar->chains = make_nocase_string_hash_table(0);
   jar->cookie_count = 0;
   return jar;
 }
 
 struct cookie {
-  char *domain;                 /* domain of the cookie */
-  int port;                     /* port number */
-  char *path;                   /* path prefix of the cookie */
+  char* domain; /* domain of the cookie */
+  int port;     /* port number */
+  char* path;   /* path prefix of the cookie */
 
-  unsigned discard_requested :1;/* whether cookie was created to
-                                   request discarding another
-                                   cookie. */
+  unsigned discard_requested : 1; /* whether cookie was created to
+                                     request discarding another
+                                     cookie. */
 
-  unsigned secure :1;           /* whether cookie should be
-                                   transmitted over non-https
-                                   connections. */
-  unsigned domain_exact :1;     /* whether DOMAIN must match as a
-                                   whole. */
+  unsigned secure : 1;       /* whether cookie should be
+                                transmitted over non-https
+                                connections. */
+  unsigned domain_exact : 1; /* whether DOMAIN must match as a
+                                whole. */
 
-  unsigned permanent :1;        /* whether the cookie should outlive
-                                   the session. */
-  time_t expiry_time;           /* time when the cookie expires, 0
-                                   means undetermined. */
+  unsigned permanent : 1; /* whether the cookie should outlive
+                             the session. */
+  time_t expiry_time;     /* time when the cookie expires, 0
+                             means undetermined. */
 
-  char *attr;                   /* cookie attribute name */
-  char *value;                  /* cookie attribute value */
+  char* attr;  /* cookie attribute name */
+  char* value; /* cookie attribute value */
 
-  struct cookie *next;          /* used for chaining of cookies in the
-                                   same domain. */
+  struct cookie* next; /* used for chaining of cookies in the
+                          same domain. */
 };
 
 #define PORT_ANY (-1)
 
 /* Allocate and return a new, empty cookie structure. */
 
-static struct cookie *
-cookie_new (void)
-{
-  struct cookie *cookie = xnew0 (struct cookie);
+static struct cookie* cookie_new(void) {
+  struct cookie* cookie = xnew0(struct cookie);
 
   /* Both cookie->permanent and cookie->expiry_time are now 0.  This
      means that the cookie doesn't expire, but is only valid for this
@@ -143,22 +138,18 @@ cookie_new (void)
 /* Non-zero if the cookie has expired.  Assumes cookies_now has been
    set by one of the entry point functions.  */
 
-static bool
-cookie_expired_p (const struct cookie *c)
-{
+static bool cookie_expired_p(const struct cookie* c) {
   return c->expiry_time != 0 && c->expiry_time < cookies_now;
 }
 
 /* Deallocate COOKIE and its components. */
 
-static void
-delete_cookie (struct cookie *cookie)
-{
-  xfree (cookie->domain);
-  xfree (cookie->path);
-  xfree (cookie->attr);
-  xfree (cookie->value);
-  xfree (cookie);
+static void delete_cookie(struct cookie* cookie) {
+  xfree(cookie->domain);
+  xfree(cookie->path);
+  xfree(cookie->attr);
+  xfree(cookie->value);
+  xfree(cookie);
 }
 
 /* Functions for storing cookies.
@@ -175,27 +166,21 @@ delete_cookie (struct cookie *cookie)
 
    If no matching cookie is found, return NULL. */
 
-static struct cookie *
-find_matching_cookie (struct cookie_jar *jar, struct cookie *cookie,
-                      struct cookie **prevptr)
-{
+static struct cookie* find_matching_cookie(struct cookie_jar* jar, struct cookie* cookie, struct cookie** prevptr) {
   struct cookie *chain, *prev;
 
-  chain = hash_table_get (jar->chains, cookie->domain);
+  chain = hash_table_get(jar->chains, cookie->domain);
   if (!chain)
     goto nomatch;
 
   prev = NULL;
   for (; chain; prev = chain, chain = chain->next)
-    if (0 == strcmp (cookie->path, chain->path)
-        && 0 == strcmp (cookie->attr, chain->attr)
-        && cookie->port == chain->port)
-      {
-        *prevptr = prev;
-        return chain;
-      }
+    if (0 == strcmp(cookie->path, chain->path) && 0 == strcmp(cookie->attr, chain->attr) && cookie->port == chain->port) {
+      *prevptr = prev;
+      return chain;
+    }
 
- nomatch:
+nomatch:
   *prevptr = NULL;
   return NULL;
 }
@@ -209,70 +194,55 @@ find_matching_cookie (struct cookie_jar *jar, struct cookie *cookie,
    The key of each chain's hash table entry is allocated only the
    first time; next hash_table_put's reuse the same key.  */
 
-static void
-store_cookie (struct cookie_jar *jar, struct cookie *cookie)
-{
-  struct cookie *chain_head;
-  char *chain_key;
+static void store_cookie(struct cookie_jar* jar, struct cookie* cookie) {
+  struct cookie* chain_head;
+  char* chain_key;
 
-  if (hash_table_get_pair (jar->chains, cookie->domain,
-                           &chain_key, &chain_head))
-    {
-      /* A chain of cookies in this domain already exists.  Check for
-         duplicates -- if an extant cookie exactly matches our domain,
-         port, path, and name, replace it.  */
-      struct cookie *prev;
-      struct cookie *victim = find_matching_cookie (jar, cookie, &prev);
+  if (hash_table_get_pair(jar->chains, cookie->domain, &chain_key, &chain_head)) {
+    /* A chain of cookies in this domain already exists.  Check for
+       duplicates -- if an extant cookie exactly matches our domain,
+       port, path, and name, replace it.  */
+    struct cookie* prev;
+    struct cookie* victim = find_matching_cookie(jar, cookie, &prev);
 
-      if (victim)
-        {
-          /* Remove VICTIM from the chain.  COOKIE will be placed at
-             the head. */
-          if (prev)
-            {
-              prev->next = victim->next;
-              cookie->next = chain_head;
-            }
-          else
-            {
-              /* prev is NULL; apparently VICTIM was at the head of
-                 the chain.  This place will be taken by COOKIE, so
-                 all we need to do is:  */
-              cookie->next = victim->next;
-            }
-          delete_cookie (victim);
-          --jar->cookie_count;
-          DEBUGP (("Deleted old cookie (to be replaced.)\n"));
-        }
-      else
+    if (victim) {
+      /* Remove VICTIM from the chain.  COOKIE will be placed at
+         the head. */
+      if (prev) {
+        prev->next = victim->next;
         cookie->next = chain_head;
+      }
+      else {
+        /* prev is NULL; apparently VICTIM was at the head of
+           the chain.  This place will be taken by COOKIE, so
+           all we need to do is:  */
+        cookie->next = victim->next;
+      }
+      delete_cookie(victim);
+      --jar->cookie_count;
+      DEBUGP(("Deleted old cookie (to be replaced.)\n"));
     }
-  else
-    {
-      /* We are now creating the chain.  Use a copy of cookie->domain
-         as the key for the life-time of the chain.  Using
-         cookie->domain would be unsafe because the life-time of the
-         chain may exceed the life-time of the cookie.  (Cookies may
-         be deleted from the chain by this very function.)  */
-      cookie->next = NULL;
-      chain_key = xstrdup (cookie->domain);
-    }
+    else
+      cookie->next = chain_head;
+  }
+  else {
+    /* We are now creating the chain.  Use a copy of cookie->domain
+       as the key for the life-time of the chain.  Using
+       cookie->domain would be unsafe because the life-time of the
+       chain may exceed the life-time of the cookie.  (Cookies may
+       be deleted from the chain by this very function.)  */
+    cookie->next = NULL;
+    chain_key = xstrdup(cookie->domain);
+  }
 
-  hash_table_put (jar->chains, chain_key, cookie);
+  hash_table_put(jar->chains, chain_key, cookie);
   ++jar->cookie_count;
 
-  IF_DEBUG
-    {
-      time_t exptime = cookie->expiry_time;
-      DEBUGP (("\nStored cookie %s %d%s %s <%s> <%s> [expiry %s] %s %s\n",
-               cookie->domain, cookie->port,
-               cookie->port == PORT_ANY ? " (ANY)" : "",
-               cookie->path,
-               cookie->permanent ? "permanent" : "session",
-               cookie->secure ? "secure" : "insecure",
-               cookie->expiry_time ? datetime_str (exptime) : "none",
-               cookie->attr, cookie->value));
-    }
+  IF_DEBUG {
+    time_t exptime = cookie->expiry_time;
+    DEBUGP(("\nStored cookie %s %d%s %s <%s> <%s> [expiry %s] %s %s\n", cookie->domain, cookie->port, cookie->port == PORT_ANY ? " (ANY)" : "", cookie->path,
+            cookie->permanent ? "permanent" : "session", cookie->secure ? "secure" : "insecure", cookie->expiry_time ? datetime_str(exptime) : "none", cookie->attr, cookie->value));
+  }
 }
 
 /* Discard a cookie matching COOKIE's domain, port, path, and
@@ -281,56 +251,47 @@ store_cookie (struct cookie_jar *jar, struct cookie *cookie)
    former corresponds to netscape cookie spec, while the latter is
    specified by rfc2109.  */
 
-static void
-discard_matching_cookie (struct cookie_jar *jar, struct cookie *cookie)
-{
+static void discard_matching_cookie(struct cookie_jar* jar, struct cookie* cookie) {
   struct cookie *prev, *victim;
 
-  if (!hash_table_count (jar->chains))
+  if (!hash_table_count(jar->chains))
     /* No elements == nothing to discard. */
     return;
 
-  victim = find_matching_cookie (jar, cookie, &prev);
-  if (victim)
-    {
-      if (prev)
-        /* Simply unchain the victim. */
-        prev->next = victim->next;
+  victim = find_matching_cookie(jar, cookie, &prev);
+  if (victim) {
+    if (prev)
+      /* Simply unchain the victim. */
+      prev->next = victim->next;
+    else {
+      /* VICTIM was head of its chain.  We need to place a new
+         cookie at the head.  */
+      char* chain_key = NULL;
+      int res;
+
+      res = hash_table_get_pair(jar->chains, victim->domain, &chain_key, NULL);
+
+      if (res == 0) {
+        logprintf(LOG_VERBOSE, _("Unable to get cookie for %s\n"), victim->domain);
+      }
+      if (!victim->next) {
+        /* VICTIM was the only cookie in the chain.  Destroy the
+           chain and deallocate the chain key.  */
+        hash_table_remove(jar->chains, victim->domain);
+        xfree(chain_key);
+      }
       else
-        {
-          /* VICTIM was head of its chain.  We need to place a new
-             cookie at the head.  */
-          char *chain_key = NULL;
-          int res;
-
-          res = hash_table_get_pair (jar->chains, victim->domain,
-                                     &chain_key, NULL);
-
-          if (res == 0)
-            {
-              logprintf (LOG_VERBOSE, _("Unable to get cookie for %s\n"),
-                         victim->domain);
-            }
-          if (!victim->next)
-            {
-              /* VICTIM was the only cookie in the chain.  Destroy the
-                 chain and deallocate the chain key.  */
-              hash_table_remove (jar->chains, victim->domain);
-              xfree (chain_key);
-            }
-          else
-            hash_table_put (jar->chains, chain_key, victim->next);
-        }
-      delete_cookie (victim);
-      DEBUGP (("Discarded old cookie.\n"));
+        hash_table_put(jar->chains, chain_key, victim->next);
     }
+    delete_cookie(victim);
+    DEBUGP(("Discarded old cookie.\n"));
+  }
 }
 
 /* Functions for parsing the `Set-Cookie' header, and creating new
    cookies from the wire.  */
 
-#define TOKEN_IS(token, string_literal)                         \
-  BOUNDED_EQUAL_NO_CASE (token.b, token.e, string_literal)
+#define TOKEN_IS(token, string_literal) BOUNDED_EQUAL_NO_CASE(token.b, token.e, string_literal)
 
 #define TOKEN_NON_EMPTY(token) (token.b != NULL && token.b != token.e)
 
@@ -350,14 +311,12 @@ discard_matching_cookie (struct cookie_jar *jar, struct cookie *cookie)
    fields will be parsed and the corresponding members of COOKIE
    filled.  */
 
-static struct cookie *
-parse_set_cookie (const char *set_cookie, bool silent)
-{
-  const char *ptr = set_cookie;
-  struct cookie *cookie = cookie_new ();
+static struct cookie* parse_set_cookie(const char* set_cookie, bool silent) {
+  const char* ptr = set_cookie;
+  struct cookie* cookie = cookie_new();
   param_token name, value;
 
-  if (!extract_param (&ptr, &name, &value, ';', NULL))
+  if (!extract_param(&ptr, &name, &value, ';', NULL))
     goto error;
   if (!value.b)
     goto error;
@@ -368,89 +327,82 @@ parse_set_cookie (const char *set_cookie, bool silent)
   if (*value.e == '"')
     value.e++;
 
-  cookie->attr = strdupdelim (name.b, name.e);
-  cookie->value = strdupdelim (value.b, value.e);
+  cookie->attr = strdupdelim(name.b, name.e);
+  cookie->value = strdupdelim(value.b, value.e);
 
-  while (extract_param (&ptr, &name, &value, ';', NULL))
-    {
-      if (TOKEN_IS (name, "domain"))
-        {
-          if (!TOKEN_NON_EMPTY (value))
-            goto error;
-          xfree (cookie->domain);
-          /* Strictly speaking, we should set cookie->domain_exact if the
-             domain doesn't begin with a dot.  But many sites set the
-             domain to "foo.com" and expect "subhost.foo.com" to get the
-             cookie, and it apparently works in browsers.  */
-          if (*value.b == '.')
-            ++value.b;
-          cookie->domain = strdupdelim (value.b, value.e);
-        }
-      else if (TOKEN_IS (name, "path"))
-        {
-          if (!TOKEN_NON_EMPTY (value))
-            goto error;
-          xfree (cookie->path);
-          cookie->path = strdupdelim (value.b, value.e);
-        }
-      else if (TOKEN_IS (name, "expires"))
-        {
-          char value_copy[128];
-          size_t value_len = value.e - value.b;
-          time_t expires;
-
-          if (!TOKEN_NON_EMPTY (value) || value_len >= sizeof (value_copy))
-            goto error;
-
-          memcpy (value_copy, value.b, value_len);
-          value_copy[value_len] = 0;
-
-          /* Check if expiration spec is valid.
-             If not, assume default (cookie doesn't expire, but valid only for
-             this session.) */
-          expires = http_atotm (value_copy);
-          if (expires != (time_t) -1)
-            {
-              cookie->permanent = 1;
-              cookie->expiry_time = expires;
-              /* According to netscape's specification, expiry time in
-                 the past means that discarding of a matching cookie
-                 is requested.  */
-              if (cookie->expiry_time < cookies_now)
-                cookie->discard_requested = 1;
-            }
-        }
-      else if (TOKEN_IS (name, "max-age"))
-        {
-          double maxage = -1;
-          char value_copy[32];
-          size_t value_len = value.e - value.b;
-
-          if (!TOKEN_NON_EMPTY (value) || value_len >= sizeof (value_copy))
-            goto error;
-
-          memcpy (value_copy, value.b, value_len);
-          value_copy[value_len] = 0;
-
-          sscanf (value_copy, "%lf", &maxage);
-          if (maxage == -1)
-            /* something went wrong. */
-            goto error;
-          cookie->permanent = 1;
-          cookie->expiry_time = cookies_now + (time_t) maxage;
-
-          /* According to rfc2109, a cookie with max-age of 0 means that
-             discarding of a matching cookie is requested.  */
-          if (maxage == 0)
-            cookie->discard_requested = 1;
-        }
-      else if (TOKEN_IS (name, "secure"))
-        {
-          /* ignore value completely */
-          cookie->secure = 1;
-        }
-      /* else: Ignore unrecognized attribute. */
+  while (extract_param(&ptr, &name, &value, ';', NULL)) {
+    if (TOKEN_IS(name, "domain")) {
+      if (!TOKEN_NON_EMPTY(value))
+        goto error;
+      xfree(cookie->domain);
+      /* Strictly speaking, we should set cookie->domain_exact if the
+         domain doesn't begin with a dot.  But many sites set the
+         domain to "foo.com" and expect "subhost.foo.com" to get the
+         cookie, and it apparently works in browsers.  */
+      if (*value.b == '.')
+        ++value.b;
+      cookie->domain = strdupdelim(value.b, value.e);
     }
+    else if (TOKEN_IS(name, "path")) {
+      if (!TOKEN_NON_EMPTY(value))
+        goto error;
+      xfree(cookie->path);
+      cookie->path = strdupdelim(value.b, value.e);
+    }
+    else if (TOKEN_IS(name, "expires")) {
+      char value_copy[128];
+      size_t value_len = value.e - value.b;
+      time_t expires;
+
+      if (!TOKEN_NON_EMPTY(value) || value_len >= sizeof(value_copy))
+        goto error;
+
+      memcpy(value_copy, value.b, value_len);
+      value_copy[value_len] = 0;
+
+      /* Check if expiration spec is valid.
+         If not, assume default (cookie doesn't expire, but valid only for
+         this session.) */
+      expires = http_atotm(value_copy);
+      if (expires != (time_t)-1) {
+        cookie->permanent = 1;
+        cookie->expiry_time = expires;
+        /* According to netscape's specification, expiry time in
+           the past means that discarding of a matching cookie
+           is requested.  */
+        if (cookie->expiry_time < cookies_now)
+          cookie->discard_requested = 1;
+      }
+    }
+    else if (TOKEN_IS(name, "max-age")) {
+      double maxage = -1;
+      char value_copy[32];
+      size_t value_len = value.e - value.b;
+
+      if (!TOKEN_NON_EMPTY(value) || value_len >= sizeof(value_copy))
+        goto error;
+
+      memcpy(value_copy, value.b, value_len);
+      value_copy[value_len] = 0;
+
+      sscanf(value_copy, "%lf", &maxage);
+      if (maxage == -1)
+        /* something went wrong. */
+        goto error;
+      cookie->permanent = 1;
+      cookie->expiry_time = cookies_now + (time_t)maxage;
+
+      /* According to rfc2109, a cookie with max-age of 0 means that
+         discarding of a matching cookie is requested.  */
+      if (maxage == 0)
+        cookie->discard_requested = 1;
+    }
+    else if (TOKEN_IS(name, "secure")) {
+      /* ignore value completely */
+      cookie->secure = 1;
+    }
+    /* else: Ignore unrecognized attribute. */
+  }
   if (*ptr)
     /* extract_param has encountered a syntax error */
     goto error;
@@ -458,13 +410,10 @@ parse_set_cookie (const char *set_cookie, bool silent)
   /* The cookie has been successfully constructed; return it. */
   return cookie;
 
- error:
+error:
   if (!silent)
-    logprintf (LOG_NOTQUIET,
-               _("Syntax error in Set-Cookie: %s at position %d.\n"),
-               quotearg_style (escape_quoting_style, set_cookie),
-               (int) (ptr - set_cookie));
-  delete_cookie (cookie);
+    logprintf(LOG_NOTQUIET, _("Syntax error in Set-Cookie: %s at position %d.\n"), quotearg_style(escape_quoting_style, set_cookie), (int)(ptr - set_cookie));
+  delete_cookie(cookie);
   return NULL;
 }
 
@@ -475,18 +424,19 @@ parse_set_cookie (const char *set_cookie, bool silent)
    mailcious attackers to destroy important cookie information and/or
    violate your privacy.  */
 
+#define REQUIRE_DIGITS(p)         \
+  do {                            \
+    if (!c_isdigit(*p))           \
+      return false;               \
+    for (++p; c_isdigit(*p); p++) \
+      ;                           \
+  } while (0)
 
-#define REQUIRE_DIGITS(p) do {                  \
-  if (!c_isdigit (*p))                          \
-    return false;                               \
-  for (++p; c_isdigit (*p); p++)                \
-    ;                                           \
-} while (0)
-
-#define REQUIRE_DOT(p) do {                     \
-  if (*p++ != '.')                              \
-    return false;                               \
-} while (0)
+#define REQUIRE_DOT(p) \
+  do {                 \
+    if (*p++ != '.')   \
+      return false;    \
+  } while (0)
 
 /* Check whether ADDR matches <digits>.<digits>.<digits>.<digits>.
 
@@ -494,18 +444,16 @@ parse_set_cookie (const char *set_cookie, bool silent)
    all we need is a check, preferably one that is small, fast, and
    well-defined.  */
 
-static bool
-numeric_address_p (const char *addr)
-{
-  const char *p = addr;
+static bool numeric_address_p(const char* addr) {
+  const char* p = addr;
 
-  REQUIRE_DIGITS (p);           /* A */
-  REQUIRE_DOT (p);              /* . */
-  REQUIRE_DIGITS (p);           /* B */
-  REQUIRE_DOT (p);              /* . */
-  REQUIRE_DIGITS (p);           /* C */
-  REQUIRE_DOT (p);              /* . */
-  REQUIRE_DIGITS (p);           /* D */
+  REQUIRE_DIGITS(p); /* A */
+  REQUIRE_DOT(p);    /* . */
+  REQUIRE_DIGITS(p); /* B */
+  REQUIRE_DOT(p);    /* . */
+  REQUIRE_DIGITS(p); /* C */
+  REQUIRE_DOT(p);    /* . */
+  REQUIRE_DIGITS(p); /* D */
 
   if (*p != '\0')
     return false;
@@ -528,90 +476,88 @@ numeric_address_p (const char *addr)
    */
 
 #ifdef HAVE_LIBPSL
-static psl_ctx_t *psl;
+static psl_ctx_t* psl;
 #endif
 
-static bool
-check_domain_match (const char *cookie_domain, const char *host)
-{
+static bool check_domain_match(const char* cookie_domain, const char* host) {
 #ifdef HAVE_LIBPSL
   static int init_psl;
-  char *cookie_domain_lower = NULL;
-  char *host_lower = NULL;
+  char* cookie_domain_lower = NULL;
+  char* host_lower = NULL;
   int is_acceptable;
 
-  DEBUGP (("cdm: 1\n"));
-  if (!init_psl)
-    {
-      init_psl = 1;
+  DEBUGP(("cdm: 1\n"));
+  if (!init_psl) {
+    init_psl = 1;
 
 #ifdef HAVE_PSL_LATEST
-      if ((psl = psl_latest (NULL)))
-        goto have_psl;
+    if ((psl = psl_latest(NULL)))
+      goto have_psl;
 
-      DEBUGP (("\nPSL: Failed to load any PSL data. "
-               "Falling back to insecure heuristics.\n"));
+    DEBUGP(
+        ("\nPSL: Failed to load any PSL data. "
+         "Falling back to insecure heuristics.\n"));
 #else
-      if ((psl = psl_builtin ()) && !psl_builtin_outdated ())
-        goto have_psl;
+    if ((psl = psl_builtin()) && !psl_builtin_outdated())
+      goto have_psl;
 
-      DEBUGP (("\nPSL: built-in data outdated. "
-               "Trying to load data from %s.\n",
-              quote (psl_builtin_filename ())));
+    DEBUGP(
+        ("\nPSL: built-in data outdated. "
+         "Trying to load data from %s.\n",
+         quote(psl_builtin_filename())));
 
-      if ((psl = psl_load_file (psl_builtin_filename ())))
-        goto have_psl;
+    if ((psl = psl_load_file(psl_builtin_filename())))
+      goto have_psl;
 
-      DEBUGP (("\nPSL: %s not found or not readable. "
-               "Falling back to built-in data.\n",
-              quote (psl_builtin_filename ())));
+    DEBUGP(
+        ("\nPSL: %s not found or not readable. "
+         "Falling back to built-in data.\n",
+         quote(psl_builtin_filename())));
 
-      if (!(psl = psl_builtin ()))
-        {
-          DEBUGP (("\nPSL: libpsl not built with a public suffix list. "
-                   "Falling back to insecure heuristics.\n"));
-          goto no_psl;
-        }
-#endif
+    if (!(psl = psl_builtin())) {
+      DEBUGP(
+          ("\nPSL: libpsl not built with a public suffix list. "
+           "Falling back to insecure heuristics.\n"));
+      goto no_psl;
     }
+#endif
+  }
   else if (!psl)
     goto no_psl;
 
 have_psl:
-  if (psl_str_to_utf8lower (cookie_domain, NULL, NULL, &cookie_domain_lower) == PSL_SUCCESS &&
-      psl_str_to_utf8lower (host, NULL, NULL, &host_lower) == PSL_SUCCESS)
-    {
-      is_acceptable = psl_is_cookie_domain_acceptable (psl, host_lower, cookie_domain_lower);
-    }
-  else
-    {
-        DEBUGP (("libpsl unable to parse domain name. "
-                 "Falling back to simple heuristics.\n"));
-        goto no_psl;
-    }
+  if (psl_str_to_utf8lower(cookie_domain, NULL, NULL, &cookie_domain_lower) == PSL_SUCCESS && psl_str_to_utf8lower(host, NULL, NULL, &host_lower) == PSL_SUCCESS) {
+    is_acceptable = psl_is_cookie_domain_acceptable(psl, host_lower, cookie_domain_lower);
+  }
+  else {
+    DEBUGP(
+        ("libpsl unable to parse domain name. "
+         "Falling back to simple heuristics.\n"));
+    goto no_psl;
+  }
 
-  xfree (cookie_domain_lower);
-  xfree (host_lower);
+  xfree(cookie_domain_lower);
+  xfree(host_lower);
 
   return is_acceptable == 1;
 
 no_psl:
   /* Cleanup the PSL pointers first */
-  xfree (cookie_domain_lower);
-  xfree (host_lower);
+  xfree(cookie_domain_lower);
+  xfree(host_lower);
 #endif
 
   /* For efficiency make some elementary checks first */
-  DEBUGP (("cdm: 2\n"));
+  DEBUGP(("cdm: 2\n"));
 
   /* For the sake of efficiency, check for exact match first. */
-  if (0 == strcasecmp (cookie_domain, host))
+  if (0 == strcasecmp(cookie_domain, host))
     return true;
 
-  DEBUGP (("cdm: 3\n"));
+  DEBUGP(("cdm: 3\n"));
 
   /* HOST must match the tail of cookie_domain. */
-  if (!match_tail (host, cookie_domain, true))
+  if (!match_tail(host, cookie_domain, true))
     return false;
 
   /* We know that COOKIE_DOMAIN is a subset of HOST; however, we must
@@ -640,18 +586,17 @@ no_psl:
     someone knows of a better way to handle this, please let me
     know.  */
   {
-    const char *p = cookie_domain;
-    int dccount = 1;            /* number of domain components */
-    int ldcl  = 0;              /* last domain component length */
-    int nldcl = 0;              /* next to last domain component length */
+    const char* p = cookie_domain;
+    int dccount = 1; /* number of domain components */
+    int ldcl = 0;    /* last domain component length */
+    int nldcl = 0;   /* next to last domain component length */
     int out;
     if (*p == '.')
       /* Ignore leading period in this calculation. */
       ++p;
-    DEBUGP (("cdm: 4\n"));
+    DEBUGP(("cdm: 4\n"));
     for (out = 0; !out; p++)
-      switch (*p)
-        {
+      switch (*p) {
         case '\0':
           out = 1;
           break;
@@ -659,171 +604,147 @@ no_psl:
           if (ldcl == 0)
             /* Empty domain component found -- the domain is invalid. */
             return false;
-          if (*(p + 1) == '\0')
-            {
-              /* Tolerate trailing '.' by not treating the domain as
-                 one ending with an empty domain component.  */
-              out = 1;
-              break;
-            }
+          if (*(p + 1) == '\0') {
+            /* Tolerate trailing '.' by not treating the domain as
+               one ending with an empty domain component.  */
+            out = 1;
+            break;
+          }
           nldcl = ldcl;
-          ldcl  = 0;
+          ldcl = 0;
           ++dccount;
           break;
         default:
           ++ldcl;
-        }
+      }
 
-    DEBUGP (("cdm: 5\n"));
+    DEBUGP(("cdm: 5\n"));
 
     if (dccount < 2)
       return false;
 
-    DEBUGP (("cdm: 6\n"));
+    DEBUGP(("cdm: 6\n"));
 
-    if (dccount == 2)
-      {
-        size_t i;
-        int known_toplevel = false;
-        static const char *known_toplevel_domains[] = {
-          ".com", ".edu", ".net", ".org", ".gov", ".mil", ".int"
-        };
-        for (i = 0; i < countof (known_toplevel_domains); i++)
-          if (match_tail (cookie_domain, known_toplevel_domains[i], true))
-            {
-              known_toplevel = true;
-              break;
-            }
-        if (!known_toplevel && nldcl <= 3)
-          return false;
-      }
+    if (dccount == 2) {
+      size_t i;
+      int known_toplevel = false;
+      static const char* known_toplevel_domains[] = {".com", ".edu", ".net", ".org", ".gov", ".mil", ".int"};
+      for (i = 0; i < countof(known_toplevel_domains); i++)
+        if (match_tail(cookie_domain, known_toplevel_domains[i], true)) {
+          known_toplevel = true;
+          break;
+        }
+      if (!known_toplevel && nldcl <= 3)
+        return false;
+    }
   }
 
-  DEBUGP (("cdm: 7\n"));
+  DEBUGP(("cdm: 7\n"));
 
   /* Don't allow the host "foobar.com" to set a cookie for domain
      "bar.com".  */
-  if (*cookie_domain != '.')
-    {
-      int dlen = strlen (cookie_domain);
-      int hlen = strlen (host);
-      /* cookie host:    hostname.foobar.com */
-      /* desired domain:             bar.com */
-      /* '.' must be here in host-> ^        */
-      if (hlen > dlen && host[hlen - dlen - 1] != '.')
-        return false;
-    }
+  if (*cookie_domain != '.') {
+    int dlen = strlen(cookie_domain);
+    int hlen = strlen(host);
+    /* cookie host:    hostname.foobar.com */
+    /* desired domain:             bar.com */
+    /* '.' must be here in host-> ^        */
+    if (hlen > dlen && host[hlen - dlen - 1] != '.')
+      return false;
+  }
 
-  DEBUGP (("cdm: 8\n"));
+  DEBUGP(("cdm: 8\n"));
 
   return true;
 }
 
-static int path_matches (const char *, const char *);
+static int path_matches(const char*, const char*);
 
 /* Check whether PATH begins with COOKIE_PATH. */
 
-static bool
-check_path_match (const char *cookie_path, const char *path)
-{
-  return path_matches (path, cookie_path) != 0;
+static bool check_path_match(const char* cookie_path, const char* path) {
+  return path_matches(path, cookie_path) != 0;
 }
 
 /* Process the HTTP `Set-Cookie' header.  This results in storing the
    cookie or discarding a matching one, or ignoring it completely, all
    depending on the contents.  */
 
-void
-cookie_handle_set_cookie (struct cookie_jar *jar,
-                          const char *host, int port,
-                          const char *path, const char *set_cookie)
-{
-  struct cookie *cookie;
-  cookies_now = time (NULL);
+void cookie_handle_set_cookie(struct cookie_jar* jar, const char* host, int port, const char* path, const char* set_cookie) {
+  struct cookie* cookie;
+  cookies_now = time(NULL);
   char buf[1024], *tmp;
   size_t pathlen = strlen(path);
 
   /* Wget's paths don't begin with '/' (blame rfc1808), but cookie
      usage assumes /-prefixed paths.  Until the rest of Wget is fixed,
      simply prepend slash to PATH.  */
-  if (pathlen < sizeof (buf) - 1)
+  if (pathlen < sizeof(buf) - 1)
     tmp = buf;
   else
-    tmp = xmalloc (pathlen + 2);
+    tmp = xmalloc(pathlen + 2);
 
   *tmp = '/';
-  memcpy (tmp + 1, path, pathlen + 1);
+  memcpy(tmp + 1, path, pathlen + 1);
   path = tmp;
 
-  cookie = parse_set_cookie (set_cookie, false);
+  cookie = parse_set_cookie(set_cookie, false);
   if (!cookie)
     goto out;
 
   /* Sanitize parts of cookie. */
 
-  if (!cookie->domain)
-    {
-      cookie->domain = xstrdup (host);
-      cookie->domain_exact = 1;
-      /* Set the port, but only if it's non-default. */
-      if (port != 80 && port != 443)
-        cookie->port = port;
+  if (!cookie->domain) {
+    cookie->domain = xstrdup(host);
+    cookie->domain_exact = 1;
+    /* Set the port, but only if it's non-default. */
+    if (port != 80 && port != 443)
+      cookie->port = port;
+  }
+  else {
+    if (!check_domain_match(cookie->domain, host)) {
+      logprintf(LOG_NOTQUIET, _("Cookie coming from %s attempted to set domain to "), quotearg_style(escape_quoting_style, host));
+      logprintf(LOG_NOTQUIET, _("%s\n"), quotearg_style(escape_quoting_style, cookie->domain));
+      cookie->discard_requested = true;
     }
-  else
-    {
-      if (!check_domain_match (cookie->domain, host))
-        {
-          logprintf (LOG_NOTQUIET,
-                     _("Cookie coming from %s attempted to set domain to "),
-                     quotearg_style (escape_quoting_style, host));
-          logprintf (LOG_NOTQUIET,
-                     _("%s\n"),
-                     quotearg_style (escape_quoting_style, cookie->domain));
-          cookie->discard_requested = true;
-        }
-    }
+  }
 
-  if (!cookie->path)
-    {
-      /* The cookie doesn't set path: set it to the URL path, sans the
-         file part ("/dir/file" truncated to "/dir/").  */
-      char *trailing_slash = strrchr (path, '/');
-      if (trailing_slash)
-        cookie->path = strdupdelim (path, trailing_slash + 1);
-      else
-        /* no slash in the string -- can this even happen? */
-        cookie->path = xstrdup (path);
+  if (!cookie->path) {
+    /* The cookie doesn't set path: set it to the URL path, sans the
+       file part ("/dir/file" truncated to "/dir/").  */
+    char* trailing_slash = strrchr(path, '/');
+    if (trailing_slash)
+      cookie->path = strdupdelim(path, trailing_slash + 1);
+    else
+      /* no slash in the string -- can this even happen? */
+      cookie->path = xstrdup(path);
+  }
+  else {
+    /* The cookie sets its own path; verify that it is legal. */
+    if (!check_path_match(cookie->path, path)) {
+      DEBUGP(("Attempt to fake the path: %s, %s\n", cookie->path, path));
+      goto out;
     }
-  else
-    {
-      /* The cookie sets its own path; verify that it is legal. */
-      if (!check_path_match (cookie->path, path))
-        {
-          DEBUGP (("Attempt to fake the path: %s, %s\n",
-                   cookie->path, path));
-          goto out;
-        }
-    }
+  }
 
   /* Now store the cookie, or discard an existing cookie, if
      discarding was requested.  */
 
-  if (cookie->discard_requested)
-    {
-      discard_matching_cookie (jar, cookie);
-      goto out;
-    }
+  if (cookie->discard_requested) {
+    discard_matching_cookie(jar, cookie);
+    goto out;
+  }
 
-  store_cookie (jar, cookie);
+  store_cookie(jar, cookie);
   if (tmp != buf)
-    xfree (tmp);
+    xfree(tmp);
   return;
 
- out:
+out:
   if (cookie)
-    delete_cookie (cookie);
+    delete_cookie(cookie);
   if (tmp != buf)
-    xfree (tmp);
+    xfree(tmp);
 }
 
 /* Support for sending out cookies in HTTP requests, based on
@@ -832,10 +753,8 @@ cookie_handle_set_cookie (struct cookie_jar *jar,
 
 /* Return a count of how many times CHR occurs in STRING. */
 
-static int
-count_char (const char *string, char chr)
-{
-  const char *p;
+static int count_char(const char* string, char chr) {
+  const char* p;
   int count = 0;
   for (p = string; *p; p++)
     if (*p == chr)
@@ -855,25 +774,22 @@ count_char (const char *string, char chr)
    DEST should be large enough to accept (in the worst case) as many
    elements as there are domain components of HOST.  */
 
-static int
-find_chains_of_host (struct cookie_jar *jar, const char *host,
-                     struct cookie *dest[])
-{
+static int find_chains_of_host(struct cookie_jar* jar, const char* host, struct cookie* dest[]) {
   int dest_count = 0;
   int passes, passcnt;
 
   /* Bail out quickly if there are no cookies in the jar.  */
-  if (!hash_table_count (jar->chains))
+  if (!hash_table_count(jar->chains))
     return 0;
 
-  if (numeric_address_p (host))
+  if (numeric_address_p(host))
     /* If host is an IP address, only check for the exact match. */
     passes = 1;
   else
     /* Otherwise, check all the subdomains except the top-level (last)
        one.  As a domain with N components has N-1 dots, the number of
        passes equals the number of dots.  */
-    passes = count_char (host, '.');
+    passes = count_char(host, '.');
 
   passcnt = 0;
 
@@ -881,15 +797,14 @@ find_chains_of_host (struct cookie_jar *jar, const char *host,
      progressing to less specific domains.  For instance, given HOST
      fly.srk.fer.hr, first look for fly.srk.fer.hr's chain, then
      srk.fer.hr's, then fer.hr's.  */
-  while (1)
-    {
-      struct cookie *chain = hash_table_get (jar->chains, host);
-      if (chain)
-        dest[dest_count++] = chain;
-      if (++passcnt >= passes)
-        break;
-      host = strchr (host, '.') + 1;
-    }
+  while (1) {
+    struct cookie* chain = hash_table_get(jar->chains, host);
+    if (chain)
+      dest[dest_count++] = chain;
+    if (++passcnt >= passes)
+      break;
+    host = strchr(host, '.') + 1;
+  }
 
   return dest_count;
 }
@@ -897,12 +812,10 @@ find_chains_of_host (struct cookie_jar *jar, const char *host,
 /* If FULL_PATH begins with PREFIX, return the length of PREFIX, zero
    otherwise.  */
 
-static int
-path_matches (const char *full_path, const char *prefix)
-{
-  int len = strlen (prefix);
+static int path_matches(const char* full_path, const char* prefix) {
+  int len = strlen(prefix);
 
-  if (0 != strncmp (full_path, prefix, len))
+  if (0 != strncmp(full_path, prefix, len))
     /* FULL_PATH doesn't begin with PREFIX. */
     return 0;
 
@@ -917,14 +830,10 @@ path_matches (const char *full_path, const char *prefix)
    there.  That value is a measure of how closely COOKIE matches PATH,
    used for ordering cookies.  */
 
-static bool
-cookie_matches_url (const struct cookie *cookie,
-                    const char *host, int port, const char *path,
-                    bool secflag, int *path_goodness)
-{
+static bool cookie_matches_url(const struct cookie* cookie, const char* host, int port, const char* path, bool secflag, int* path_goodness) {
   int pg;
 
-  if (cookie_expired_p (cookie))
+  if (cookie_expired_p(cookie))
     /* Ignore stale cookies.  Don't bother unchaining the cookie at
        this point -- Wget is a relatively short-lived application, and
        stale cookies will not be saved by `save_cookies'.  On the
@@ -941,11 +850,10 @@ cookie_matches_url (const struct cookie *cookie,
   /* If exact domain match is required, verify that cookie's domain is
      equal to HOST.  If not, assume success on the grounds of the
      cookie's chain having been found by find_chains_of_host.  */
-  if (cookie->domain_exact
-      && 0 != strcasecmp (host, cookie->domain))
+  if (cookie->domain_exact && 0 != strcasecmp(host, cookie->domain))
     return false;
 
-  pg = path_matches (path, cookie->path);
+  pg = path_matches(path, cookie->path);
   if (pg == 0)
     return false;
 
@@ -963,21 +871,19 @@ cookie_matches_url (const struct cookie *cookie,
    spec.  */
 
 struct weighed_cookie {
-  struct cookie *cookie;
+  struct cookie* cookie;
   int domain_goodness;
   int path_goodness;
 };
 
 /* Comparator used for uniquifying the list. */
 
-static int
-equality_comparator (const void *p1, const void *p2)
-{
-  struct weighed_cookie *wc1 = (struct weighed_cookie *)p1;
-  struct weighed_cookie *wc2 = (struct weighed_cookie *)p2;
+static int equality_comparator(const void* p1, const void* p2) {
+  struct weighed_cookie* wc1 = (struct weighed_cookie*)p1;
+  struct weighed_cookie* wc2 = (struct weighed_cookie*)p2;
 
-  int namecmp  = strcmp (wc1->cookie->attr, wc2->cookie->attr);
-  int valuecmp = strcmp (wc1->cookie->value, wc2->cookie->value);
+  int namecmp = strcmp(wc1->cookie->attr, wc2->cookie->attr);
+  int valuecmp = strcmp(wc1->cookie->value, wc2->cookie->value);
 
   /* We only really care whether both name and value are equal.  We
      return them in this order only for consistency...  */
@@ -988,51 +894,45 @@ equality_comparator (const void *p1, const void *p2)
    cookies with the same attr name and value.  Whenever a duplicate
    pair is found, one of the cookies is removed.  */
 
-static int
-eliminate_dups (struct weighed_cookie *outgoing, int count)
-{
-  struct weighed_cookie *h;     /* hare */
-  struct weighed_cookie *t;     /* tortoise */
-  struct weighed_cookie *end = outgoing + count;
+static int eliminate_dups(struct weighed_cookie* outgoing, int count) {
+  struct weighed_cookie* h; /* hare */
+  struct weighed_cookie* t; /* tortoise */
+  struct weighed_cookie* end = outgoing + count;
 
   /* We deploy a simple uniquify algorithm: first sort the array
      according to our sort criteria, then copy it to itself, comparing
      each cookie to its neighbor and ignoring the duplicates.  */
 
-  qsort (outgoing, count, sizeof (struct weighed_cookie), equality_comparator);
+  qsort(outgoing, count, sizeof(struct weighed_cookie), equality_comparator);
 
   /* "Hare" runs through all the entries in the array, followed by
      "tortoise".  If a duplicate is found, the hare skips it.
      Non-duplicate entries are copied to the tortoise ptr.  */
 
-  for (h = t = outgoing; h < end; h++)
-    {
-      if (h != end - 1)
-        {
-          struct cookie *c0 = h[0].cookie;
-          struct cookie *c1 = h[1].cookie;
-          if (!strcmp (c0->attr, c1->attr) && !strcmp (c0->value, c1->value))
-            continue;           /* ignore the duplicate */
-        }
-
-      /* If the hare has advanced past the tortoise (because of
-         previous dups), make sure the values get copied.  Otherwise,
-         no copying is necessary.  */
-      if (h != t)
-        *t++ = *h;
-      else
-        t++;
+  for (h = t = outgoing; h < end; h++) {
+    if (h != end - 1) {
+      struct cookie* c0 = h[0].cookie;
+      struct cookie* c1 = h[1].cookie;
+      if (!strcmp(c0->attr, c1->attr) && !strcmp(c0->value, c1->value))
+        continue; /* ignore the duplicate */
     }
+
+    /* If the hare has advanced past the tortoise (because of
+       previous dups), make sure the values get copied.  Otherwise,
+       no copying is necessary.  */
+    if (h != t)
+      *t++ = *h;
+    else
+      t++;
+  }
   return t - outgoing;
 }
 
 /* Comparator used for sorting by quality. */
 
-static int
-goodness_comparator (const void *p1, const void *p2)
-{
-  struct weighed_cookie *wc1 = (struct weighed_cookie *)p1;
-  struct weighed_cookie *wc2 = (struct weighed_cookie *)p2;
+static int goodness_comparator(const void* p1, const void* p2) {
+  struct weighed_cookie* wc1 = (struct weighed_cookie*)p1;
+  struct weighed_cookie* wc2 = (struct weighed_cookie*)p2;
 
   /* Subtractions take `wc2' as the first argument becauase we want a
      sort in *decreasing* order of goodness.  */
@@ -1051,17 +951,14 @@ goodness_comparator (const void *p1, const void *p2)
    cookies pertain to this request, i.e. no cookie header should be
    generated, NULL is returned.  */
 
-char *
-cookie_header (struct cookie_jar *jar, const char *host,
-               int port, const char *path, bool secflag)
-{
-  struct cookie *chains[32];
+char* cookie_header(struct cookie_jar* jar, const char* host, int port, const char* path, bool secflag) {
+  struct cookie* chains[32];
   int chain_count;
 
-  struct cookie *cookie;
-  struct weighed_cookie *outgoing;
+  struct cookie* cookie;
+  struct weighed_cookie* outgoing;
   size_t count, i, ocnt;
-  char *result = NULL;
+  char* result = NULL;
   int result_size, pos;
   char pathbuf[1024];
 
@@ -1070,10 +967,10 @@ cookie_header (struct cookie_jar *jar, const char *host,
   /* Allocate room for find_chains_of_host to write to.  The number of
      chains can at most equal the number of subdomains, hence
      1+<number of dots>.  We ignore cookies with more than 32 labels. */
-  chain_count = 1 + count_char (host, '.');
-  if (chain_count > (int) countof (chains))
+  chain_count = 1 + count_char(host, '.');
+  if (chain_count > (int)countof(chains))
     return NULL;
-  chain_count = find_chains_of_host (jar, host, chains);
+  chain_count = find_chains_of_host(jar, host, chains);
 
   /* No cookies for this host. */
   if (chain_count <= 0)
@@ -1083,20 +980,20 @@ cookie_header (struct cookie_jar *jar, const char *host,
      usage assumes /-prefixed paths.  Until the rest of Wget is fixed,
      simply prepend slash to PATH.  */
   {
-    char *tmp;
+    char* tmp;
     size_t pathlen = strlen(path);
 
-    if (pathlen < sizeof (pathbuf) - 1)
+    if (pathlen < sizeof(pathbuf) - 1)
       tmp = pathbuf;
     else
-      tmp = xmalloc (pathlen + 2);
+      tmp = xmalloc(pathlen + 2);
 
     *tmp = '/';
-    memcpy (tmp + 1, path, pathlen + 1);
+    memcpy(tmp + 1, path, pathlen + 1);
     path = tmp;
   }
 
-  cookies_now = time (NULL);
+  cookies_now = time(NULL);
 
   /* Now extract from the chains those cookies that match our host
      (for domain_exact cookies), port (for cookies with port other
@@ -1104,84 +1001,80 @@ cookie_header (struct cookie_jar *jar, const char *host,
 
   /* Count the number of matching cookies. */
   count = 0;
-  for (i = 0; i < (unsigned) chain_count; i++)
+  for (i = 0; i < (unsigned)chain_count; i++)
     for (cookie = chains[i]; cookie; cookie = cookie->next)
-      if (cookie_matches_url (cookie, host, port, path, secflag, NULL))
+      if (cookie_matches_url(cookie, host, port, path, secflag, NULL))
         ++count;
   if (!count)
-    goto out;                /* no cookies matched */
+    goto out; /* no cookies matched */
 
   /* Allocate the array. */
-  if (count > SIZE_MAX / sizeof (struct weighed_cookie))
-    goto out;                /* unable to process so many cookies */
-  outgoing = xmalloc (count * sizeof (struct weighed_cookie));
+  if (count > SIZE_MAX / sizeof(struct weighed_cookie))
+    goto out; /* unable to process so many cookies */
+  outgoing = xmalloc(count * sizeof(struct weighed_cookie));
 
   /* Fill the array with all the matching cookies from the chains that
      match HOST. */
   ocnt = 0;
-  for (i = 0; i < (unsigned) chain_count; i++)
-    for (cookie = chains[i]; cookie; cookie = cookie->next)
-      {
-        int pg;
-        if (!cookie_matches_url (cookie, host, port, path, secflag, &pg))
-          continue;
-        outgoing[ocnt].cookie = cookie;
-        outgoing[ocnt].domain_goodness = strlen (cookie->domain);
-        outgoing[ocnt].path_goodness   = pg;
-        ++ocnt;
-      }
-  assert (ocnt == count);
+  for (i = 0; i < (unsigned)chain_count; i++)
+    for (cookie = chains[i]; cookie; cookie = cookie->next) {
+      int pg;
+      if (!cookie_matches_url(cookie, host, port, path, secflag, &pg))
+        continue;
+      outgoing[ocnt].cookie = cookie;
+      outgoing[ocnt].domain_goodness = strlen(cookie->domain);
+      outgoing[ocnt].path_goodness = pg;
+      ++ocnt;
+    }
+  assert(ocnt == count);
 
   /* Eliminate duplicate cookies; that is, those whose name and value
      are the same.  */
-  count = eliminate_dups (outgoing, count);
+  count = eliminate_dups(outgoing, count);
 
   /* Sort the array so that best-matching domains come first, and
      that, within one domain, best-matching paths come first. */
-  qsort (outgoing, count, sizeof (struct weighed_cookie), goodness_comparator);
+  qsort(outgoing, count, sizeof(struct weighed_cookie), goodness_comparator);
 
   /* Count the space the name=value pairs will take. */
   result_size = 0;
-  for (i = 0; i < count; i++)
-    {
-      struct cookie *c = outgoing[i].cookie;
-      /* name=value */
-      result_size += strlen (c->attr) + 1 + strlen (c->value);
-    }
+  for (i = 0; i < count; i++) {
+    struct cookie* c = outgoing[i].cookie;
+    /* name=value */
+    result_size += strlen(c->attr) + 1 + strlen(c->value);
+  }
 
   /* Allocate output buffer:
      name=value pairs -- result_size
      "; " separators  -- (count - 1) * 2
      \0 terminator    -- 1 */
   result_size = result_size + (count - 1) * 2 + 1;
-  result = xmalloc (result_size);
+  result = xmalloc(result_size);
   pos = 0;
-  for (i = 0; i < count; i++)
-    {
-      struct cookie *c = outgoing[i].cookie;
-      int namlen = strlen (c->attr);
-      int vallen = strlen (c->value);
+  for (i = 0; i < count; i++) {
+    struct cookie* c = outgoing[i].cookie;
+    int namlen = strlen(c->attr);
+    int vallen = strlen(c->value);
 
-      memcpy (result + pos, c->attr, namlen);
-      pos += namlen;
-      result[pos++] = '=';
-      memcpy (result + pos, c->value, vallen);
-      pos += vallen;
-      if (i < count - 1)
-        {
-          result[pos++] = ';';
-          result[pos++] = ' ';
-        }
+    memcpy(result + pos, c->attr, namlen);
+    pos += namlen;
+    result[pos++] = '=';
+    memcpy(result + pos, c->value, vallen);
+    pos += vallen;
+    if (i < count - 1) {
+      result[pos++] = ';';
+      result[pos++] = ' ';
     }
+  }
   result[pos++] = '\0';
-  xfree (outgoing);
-  assert (pos == result_size);
+  xfree(outgoing);
+  assert(pos == result_size);
 
 out:
   if (path != pathbuf)
-    xfree (path);
+    xfree(path);
 
-return result;
+  return result;
 }
 
 /* Support for loading and saving cookies.  The format used for
@@ -1217,16 +1110,13 @@ return result;
    it, and store new boundary (location of the `:') to DOMAIN_E_PTR.
    If port is not specified, return 0.  */
 
-static int
-domain_port (const char *domain_b, const char *domain_e,
-             const char **domain_e_ptr)
-{
+static int domain_port(const char* domain_b, const char* domain_e, const char** domain_e_ptr) {
   int port = 0;
-  const char *p;
-  const char *colon = memchr (domain_b, ':', domain_e - domain_b);
+  const char* p;
+  const char* colon = memchr(domain_b, ':', domain_e - domain_b);
   if (!colon)
     return 0;
-  for (p = colon + 1; p < domain_e && c_isdigit (*p); p++)
+  for (p = colon + 1; p < domain_e && c_isdigit(*p); p++)
     port = 10 * port + (*p - '0');
   if (p < domain_e)
     /* Garbage following port number. */
@@ -1235,218 +1125,194 @@ domain_port (const char *domain_b, const char *domain_e,
   return port;
 }
 
-#define GET_WORD(p, b, e) do {                  \
-  b = p;                                        \
-  while (*p && *p != '\t')                      \
-    ++p;                                        \
-  e = p;                                        \
-  if (b == e || !*p)                            \
-    goto next;                                  \
-  ++p;                                          \
-} while (0)
+#define GET_WORD(p, b, e)    \
+  do {                       \
+    b = p;                   \
+    while (*p && *p != '\t') \
+      ++p;                   \
+    e = p;                   \
+    if (b == e || !*p)       \
+      goto next;             \
+    ++p;                     \
+  } while (0)
 
 /* Load cookies from FILE.  */
 
-void
-cookie_jar_load (struct cookie_jar *jar, const char *file)
-{
-  char *line = NULL;
+void cookie_jar_load(struct cookie_jar* jar, const char* file) {
+  char* line = NULL;
   size_t bufsize = 0;
 
-  FILE *fp = fopen (file, "r");
-  if (!fp)
-    {
-      logprintf (LOG_NOTQUIET, _("Cannot open cookies file %s: %s\n"),
-                 quote (file), strerror (errno));
-      return;
-    }
+  FILE* fp = fopen(file, "r");
+  if (!fp) {
+    logprintf(LOG_NOTQUIET, _("Cannot open cookies file %s: %s\n"), quote(file), strerror(errno));
+    return;
+  }
 
-  cookies_now = time (NULL);
+  cookies_now = time(NULL);
 
-  while (getline (&line, &bufsize, fp) > 0)
-    {
-      struct cookie *cookie;
-      char *p = line;
+  while (getline(&line, &bufsize, fp) > 0) {
+    struct cookie* cookie;
+    char* p = line;
 
-      double expiry;
-      int port;
+    double expiry;
+    int port;
 
-      char *domain_b  = NULL, *domain_e  = NULL;
-      char *domflag_b = NULL, *domflag_e = NULL;
-      char *path_b    = NULL, *path_e    = NULL;
-      char *secure_b  = NULL, *secure_e  = NULL;
-      char *expires_b = NULL, *expires_e = NULL;
-      char *name_b    = NULL, *name_e    = NULL;
-      char *value_b   = NULL, *value_e   = NULL;
+    char *domain_b = NULL, *domain_e = NULL;
+    char *domflag_b = NULL, *domflag_e = NULL;
+    char *path_b = NULL, *path_e = NULL;
+    char *secure_b = NULL, *secure_e = NULL;
+    char *expires_b = NULL, *expires_e = NULL;
+    char *name_b = NULL, *name_e = NULL;
+    char *value_b = NULL, *value_e = NULL;
 
-      /* Skip leading white-space. */
-      while (*p && c_isspace (*p))
-        ++p;
-      /* Ignore empty lines.  */
-      if (!*p || *p == '#')
-        continue;
-
-      GET_WORD (p, domain_b,  domain_e);
-      GET_WORD (p, domflag_b, domflag_e);
-      GET_WORD (p, path_b,    path_e);
-      GET_WORD (p, secure_b,  secure_e);
-      GET_WORD (p, expires_b, expires_e);
-      GET_WORD (p, name_b,    name_e);
-
-      /* Don't use GET_WORD for value because it ends with newline,
-         not TAB.  */
-      value_b = p;
-      value_e = p + strlen (p);
-      if (value_e > value_b && value_e[-1] == '\n')
-        --value_e;
-      if (value_e > value_b && value_e[-1] == '\r')
-        --value_e;
-      /* Empty values are legal (I think), so don't bother checking. */
-
-      cookie = cookie_new ();
-
-      cookie->attr    = strdupdelim (name_b, name_e);
-      cookie->value   = strdupdelim (value_b, value_e);
-      cookie->path    = strdupdelim (path_b, path_e);
-      cookie->secure  = BOUNDED_EQUAL (secure_b, secure_e, "TRUE");
-
-      /* Curl source says, quoting Andre Garcia: "flag: A TRUE/FALSE
-         value indicating if all machines within a given domain can
-         access the variable.  This value is set automatically by the
-         browser, depending on the value set for the domain."  */
-      cookie->domain_exact = !BOUNDED_EQUAL (domflag_b, domflag_e, "TRUE");
-
-      /* DOMAIN needs special treatment because we might need to
-         extract the port.  */
-      port = domain_port (domain_b, domain_e, (const char **)&domain_e);
-      if (port)
-        cookie->port = port;
-
-      if (*domain_b == '.')
-        ++domain_b;             /* remove leading dot internally */
-      cookie->domain  = strdupdelim (domain_b, domain_e);
-
-      /* safe default in case EXPIRES field is garbled. */
-      expiry = (double)cookies_now - 1;
-
-      /* I don't like changing the line, but it's safe here.  (line is
-         malloced.)  */
-      *expires_e = '\0';
-      sscanf (expires_b, "%lf", &expiry);
-
-      if (expiry == 0)
-        {
-          /* EXPIRY can be 0 for session cookies saved because the
-             user specified `--keep-session-cookies' in the past.
-             They remain session cookies, and will be saved only if
-             the user has specified `keep-session-cookies' again.  */
-        }
-      else
-        {
-          if (expiry < cookies_now)
-            goto abort_cookie;  /* ignore stale cookie. */
-          cookie->expiry_time = (time_t) expiry;
-          cookie->permanent = 1;
-        }
-
-      store_cookie (jar, cookie);
-
-    next:
+    /* Skip leading white-space. */
+    while (*p && c_isspace(*p))
+      ++p;
+    /* Ignore empty lines.  */
+    if (!*p || *p == '#')
       continue;
 
-    abort_cookie:
-      delete_cookie (cookie);
+    GET_WORD(p, domain_b, domain_e);
+    GET_WORD(p, domflag_b, domflag_e);
+    GET_WORD(p, path_b, path_e);
+    GET_WORD(p, secure_b, secure_e);
+    GET_WORD(p, expires_b, expires_e);
+    GET_WORD(p, name_b, name_e);
+
+    /* Don't use GET_WORD for value because it ends with newline,
+       not TAB.  */
+    value_b = p;
+    value_e = p + strlen(p);
+    if (value_e > value_b && value_e[-1] == '\n')
+      --value_e;
+    if (value_e > value_b && value_e[-1] == '\r')
+      --value_e;
+    /* Empty values are legal (I think), so don't bother checking. */
+
+    cookie = cookie_new();
+
+    cookie->attr = strdupdelim(name_b, name_e);
+    cookie->value = strdupdelim(value_b, value_e);
+    cookie->path = strdupdelim(path_b, path_e);
+    cookie->secure = BOUNDED_EQUAL(secure_b, secure_e, "TRUE");
+
+    /* Curl source says, quoting Andre Garcia: "flag: A TRUE/FALSE
+       value indicating if all machines within a given domain can
+       access the variable.  This value is set automatically by the
+       browser, depending on the value set for the domain."  */
+    cookie->domain_exact = !BOUNDED_EQUAL(domflag_b, domflag_e, "TRUE");
+
+    /* DOMAIN needs special treatment because we might need to
+       extract the port.  */
+    port = domain_port(domain_b, domain_e, (const char**)&domain_e);
+    if (port)
+      cookie->port = port;
+
+    if (*domain_b == '.')
+      ++domain_b; /* remove leading dot internally */
+    cookie->domain = strdupdelim(domain_b, domain_e);
+
+    /* safe default in case EXPIRES field is garbled. */
+    expiry = (double)cookies_now - 1;
+
+    /* I don't like changing the line, but it's safe here.  (line is
+       malloced.)  */
+    *expires_e = '\0';
+    sscanf(expires_b, "%lf", &expiry);
+
+    if (expiry == 0) {
+      /* EXPIRY can be 0 for session cookies saved because the
+         user specified `--keep-session-cookies' in the past.
+         They remain session cookies, and will be saved only if
+         the user has specified `keep-session-cookies' again.  */
+    }
+    else {
+      if (expiry < cookies_now)
+        goto abort_cookie; /* ignore stale cookie. */
+      cookie->expiry_time = (time_t)expiry;
+      cookie->permanent = 1;
     }
 
+    store_cookie(jar, cookie);
+
+  next:
+    continue;
+
+  abort_cookie:
+    delete_cookie(cookie);
+  }
+
   xfree(line);
-  fclose (fp);
+  fclose(fp);
 }
 
 /* Save cookies, in format described above, to FILE. */
 
-void
-cookie_jar_save (struct cookie_jar *jar, const char *file)
-{
-  FILE *fp;
+void cookie_jar_save(struct cookie_jar* jar, const char* file) {
+  FILE* fp;
   hash_table_iterator iter;
 
-  DEBUGP (("Saving cookies to %s.\n", file));
+  DEBUGP(("Saving cookies to %s.\n", file));
 
-  cookies_now = time (NULL);
+  cookies_now = time(NULL);
 
-  fp = fopen (file, "w");
-  if (!fp)
-    {
-      logprintf (LOG_NOTQUIET, _("Cannot open cookies file %s: %s\n"),
-                 quote (file), strerror (errno));
-      return;
+  fp = fopen(file, "w");
+  if (!fp) {
+    logprintf(LOG_NOTQUIET, _("Cannot open cookies file %s: %s\n"), quote(file), strerror(errno));
+    return;
+  }
+
+  fputs("# HTTP Cookie File\n", fp);
+  fprintf(fp, "# Generated by Wget on %s.\n", datetime_str(cookies_now));
+  fputs("# Edit at your own risk.\n\n", fp);
+
+  for (hash_table_iterate(jar->chains, &iter); hash_table_iter_next(&iter);) {
+    const char* domain = iter.key;
+    struct cookie* cookie = iter.value;
+    for (; cookie; cookie = cookie->next) {
+      if (!cookie->permanent && !opt.keep_session_cookies)
+        continue;
+      if (cookie_expired_p(cookie))
+        continue;
+      if (!cookie->domain_exact)
+        fputc('.', fp);
+      fputs(domain, fp);
+      if (cookie->port != PORT_ANY)
+        fprintf(fp, ":%d", cookie->port);
+      fprintf(fp, "\t%s\t%s\t%s\t%.0f\t%s\t%s\n", cookie->domain_exact ? "FALSE" : "TRUE", cookie->path, cookie->secure ? "TRUE" : "FALSE", (double)cookie->expiry_time, cookie->attr, cookie->value);
+      if (ferror(fp))
+        goto out;
     }
+  }
+out:
+  if (ferror(fp))
+    logprintf(LOG_NOTQUIET, _("Error writing to %s: %s\n"), quote(file), strerror(errno));
+  if (fclose(fp) < 0)
+    logprintf(LOG_NOTQUIET, _("Error closing %s: %s\n"), quote(file), strerror(errno));
 
-  fputs ("# HTTP Cookie File\n", fp);
-  fprintf (fp, "# Generated by Wget on %s.\n", datetime_str (cookies_now));
-  fputs ("# Edit at your own risk.\n\n", fp);
-
-  for (hash_table_iterate (jar->chains, &iter);
-       hash_table_iter_next (&iter);
-       )
-    {
-      const char *domain = iter.key;
-      struct cookie *cookie = iter.value;
-      for (; cookie; cookie = cookie->next)
-        {
-          if (!cookie->permanent && !opt.keep_session_cookies)
-            continue;
-          if (cookie_expired_p (cookie))
-            continue;
-          if (!cookie->domain_exact)
-            fputc ('.', fp);
-          fputs (domain, fp);
-          if (cookie->port != PORT_ANY)
-            fprintf (fp, ":%d", cookie->port);
-          fprintf (fp, "\t%s\t%s\t%s\t%.0f\t%s\t%s\n",
-                   cookie->domain_exact ? "FALSE" : "TRUE",
-                   cookie->path, cookie->secure ? "TRUE" : "FALSE",
-                   (double)cookie->expiry_time,
-                   cookie->attr, cookie->value);
-          if (ferror (fp))
-            goto out;
-        }
-    }
- out:
-  if (ferror (fp))
-    logprintf (LOG_NOTQUIET, _("Error writing to %s: %s\n"),
-               quote (file), strerror (errno));
-  if (fclose (fp) < 0)
-    logprintf (LOG_NOTQUIET, _("Error closing %s: %s\n"),
-               quote (file), strerror (errno));
-
-  DEBUGP (("Done saving cookies.\n"));
+  DEBUGP(("Done saving cookies.\n"));
 }
 
 /* Clean up cookie-related data. */
 
-void
-cookie_jar_delete (struct cookie_jar *jar)
-{
+void cookie_jar_delete(struct cookie_jar* jar) {
   /* Iterate over chains (indexed by domain) and free them. */
   hash_table_iterator iter;
-  for (hash_table_iterate (jar->chains, &iter); hash_table_iter_next (&iter); )
-    {
-      struct cookie *chain = iter.value;
-      xfree (iter.key);
-      /* Then all cookies in this chain. */
-      while (chain)
-        {
-          struct cookie *next = chain->next;
-          delete_cookie (chain);
-          chain = next;
-        }
+  for (hash_table_iterate(jar->chains, &iter); hash_table_iter_next(&iter);) {
+    struct cookie* chain = iter.value;
+    xfree(iter.key);
+    /* Then all cookies in this chain. */
+    while (chain) {
+      struct cookie* next = chain->next;
+      delete_cookie(chain);
+      chain = next;
     }
-  hash_table_destroy (jar->chains);
-  xfree (jar);
+  }
+  hash_table_destroy(jar->chains);
+  xfree(jar);
 
 #ifdef HAVE_LIBPSL
-  psl_free (psl);
+  psl_free(psl);
   psl = NULL;
 #endif
 }
@@ -1456,84 +1322,75 @@ cookie_jar_delete (struct cookie_jar *jar)
    from main.  */
 
 #ifdef TEST_COOKIES
-void
-test_cookies (void)
-{
+void test_cookies(void) {
   /* Tests expected to succeed: */
   static struct {
-    const char *data;
-    const char *results[10];
+    const char* data;
+    const char* results[10];
   } tests_succ[] = {
-    { "arg=value", {"arg", "value", NULL} },
-    { "arg1=value1;arg2=value2", {"arg1", "value1", "arg2", "value2", NULL} },
-    { "arg1=value1; arg2=value2", {"arg1", "value1", "arg2", "value2", NULL} },
-    { "arg1=value1;  arg2=value2;", {"arg1", "value1", "arg2", "value2", NULL} },
-    { "arg1=value1;  arg2=value2;  ", {"arg1", "value1", "arg2", "value2", NULL} },
-    { "arg1=\"value1\"; arg2=\"\"", {"arg1", "value1", "arg2", "", NULL} },
-    { "arg=", {"arg", "", NULL} },
-    { "arg1=; arg2=", {"arg1", "", "arg2", "", NULL} },
-    { "arg1 = ; arg2= ", {"arg1", "", "arg2", "", NULL} },
+      {"arg=value", {"arg", "value", NULL}},
+      {"arg1=value1;arg2=value2", {"arg1", "value1", "arg2", "value2", NULL}},
+      {"arg1=value1; arg2=value2", {"arg1", "value1", "arg2", "value2", NULL}},
+      {"arg1=value1;  arg2=value2;", {"arg1", "value1", "arg2", "value2", NULL}},
+      {"arg1=value1;  arg2=value2;  ", {"arg1", "value1", "arg2", "value2", NULL}},
+      {"arg1=\"value1\"; arg2=\"\"", {"arg1", "value1", "arg2", "", NULL}},
+      {"arg=", {"arg", "", NULL}},
+      {"arg1=; arg2=", {"arg1", "", "arg2", "", NULL}},
+      {"arg1 = ; arg2= ", {"arg1", "", "arg2", "", NULL}},
   };
 
   /* Tests expected to fail: */
-  static char *tests_fail[] = {
-    ";",
-    "arg=\"unterminated",
-    "=empty-name",
-    "arg1=;=another-empty-name",
+  static char* tests_fail[] = {
+      ";",
+      "arg=\"unterminated",
+      "=empty-name",
+      "arg1=;=another-empty-name",
   };
   int i;
 
-  for (i = 0; i < countof (tests_succ); i++)
-    {
-      int ind;
-      const char *data = tests_succ[i].data;
-      const char **expected = tests_succ[i].results;
-      struct cookie *c;
+  for (i = 0; i < countof(tests_succ); i++) {
+    int ind;
+    const char* data = tests_succ[i].data;
+    const char** expected = tests_succ[i].results;
+    struct cookie* c;
 
-      c = parse_set_cookie (data, true);
-      if (!c)
-        {
-          printf ("NULL cookie returned for valid data: %s\n", data);
-          continue;
+    c = parse_set_cookie(data, true);
+    if (!c) {
+      printf("NULL cookie returned for valid data: %s\n", data);
+      continue;
+    }
+
+    /* Test whether extract_param handles these cases correctly. */
+    {
+      param_token name, value;
+      const char* ptr = data;
+      int j = 0;
+      while (extract_param(&ptr, &name, &value, ';', NULL)) {
+        char* n = strdupdelim(name.b, name.e);
+        char* v = strdupdelim(value.b, value.e);
+        if (!expected[j]) {
+          printf("Too many parameters for '%s'\n", data);
+          break;
         }
-
-      /* Test whether extract_param handles these cases correctly. */
-      {
-        param_token name, value;
-        const char *ptr = data;
-        int j = 0;
-        while (extract_param (&ptr, &name, &value, ';', NULL))
-          {
-            char *n = strdupdelim (name.b, name.e);
-            char *v = strdupdelim (value.b, value.e);
-            if (!expected[j])
-              {
-                printf ("Too many parameters for '%s'\n", data);
-                break;
-              }
-            if (0 != strcmp (expected[j], n))
-              printf ("Invalid name %d for '%s' (expected '%s', got '%s')\n",
-                      j / 2 + 1, data, expected[j], n);
-            if (0 != strcmp (expected[j + 1], v))
-              printf ("Invalid value %d for '%s' (expected '%s', got '%s')\n",
-                      j / 2 + 1, data, expected[j + 1], v);
-            j += 2;
-            xfree (n);
-            xfree (v);
-          }
-        if (expected[j])
-          printf ("Too few parameters for '%s'\n", data);
+        if (0 != strcmp(expected[j], n))
+          printf("Invalid name %d for '%s' (expected '%s', got '%s')\n", j / 2 + 1, data, expected[j], n);
+        if (0 != strcmp(expected[j + 1], v))
+          printf("Invalid value %d for '%s' (expected '%s', got '%s')\n", j / 2 + 1, data, expected[j + 1], v);
+        j += 2;
+        xfree(n);
+        xfree(v);
       }
+      if (expected[j])
+        printf("Too few parameters for '%s'\n", data);
     }
+  }
 
-  for (i = 0; i < countof (tests_fail); i++)
-    {
-      struct cookie *c;
-      char *data = tests_fail[i];
-      c = parse_set_cookie (data, true);
-      if (c)
-        printf ("Failed to report error on invalid data: %s\n", data);
-    }
+  for (i = 0; i < countof(tests_fail); i++) {
+    struct cookie* c;
+    char* data = tests_fail[i];
+    c = parse_set_cookie(data, true);
+    if (c)
+      printf("Failed to report error on invalid data: %s\n", data);
+  }
 }
 #endif /* TEST_COOKIES */

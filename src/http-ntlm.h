@@ -31,13 +31,7 @@ Corresponding Source for a non-source form of such a combination
 shall include the source code for the parts of OpenSSL used as well
 as that of the covered work.  */
 
-typedef enum {
-  NTLMSTATE_NONE,
-  NTLMSTATE_TYPE1,
-  NTLMSTATE_TYPE2,
-  NTLMSTATE_TYPE3,
-  NTLMSTATE_LAST
-} wgetntlm;
+typedef enum { NTLMSTATE_NONE, NTLMSTATE_TYPE1, NTLMSTATE_TYPE2, NTLMSTATE_TYPE3, NTLMSTATE_LAST } wgetntlm;
 
 /* Struct used for NTLM challenge-response authentication */
 struct ntlmdata {
@@ -46,8 +40,8 @@ struct ntlmdata {
 };
 
 /* this is for ntlm header input */
-bool ntlm_input (struct ntlmdata *, const char *);
+bool ntlm_input(struct ntlmdata*, const char*);
 
 /* this is for creating ntlm header output */
-char *ntlm_output (struct ntlmdata *, const char *, const char *, bool *);
+char* ntlm_output(struct ntlmdata*, const char*, const char*, bool*);
 #endif

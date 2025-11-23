@@ -17,3 +17,8 @@ Commits follow the short, component-tagged style visible in `git log` (for examp
 
 ## Security & Configuration Tips
 Prefer GnuTLS or OpenSSL via the configure toggle, and document any non-default library paths (e.g., ``PKG_CONFIG_PATH=/opt/gnutls/lib/pkgconfig``) in your patch description. When adding network-facing code, run under Valgrind/ASan and mention the results so reviewers can focus on logic rather than memory hygiene.
+
+## Concurrency & Shared State
+Keep all logging and progress reporting thread-safe so concurrent downloads cannot trample each other's output. Guard shared resources (cookie and HSTS stores, DNS caches, OCSP stapling metadata, and similar process-wide state) with locks or other synchronization primitives, and document any new shared mutable data you introduce.
+
+See `checklist.md` for the full requirements checklist that a modern wget must satisfy.

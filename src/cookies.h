@@ -33,15 +33,13 @@ as that of the covered work.  */
 
 struct cookie_jar;
 
-struct cookie_jar *cookie_jar_new (void);
-void cookie_jar_delete (struct cookie_jar *);
+struct cookie_jar* cookie_jar_new(void);
+void cookie_jar_delete(struct cookie_jar*);
 
-void cookie_handle_set_cookie (struct cookie_jar *, const char *, int,
-                               const char *, const char *);
-char *cookie_header (struct cookie_jar *, const char *, int,
-                     const char *, bool);
+void cookie_handle_set_cookie(struct cookie_jar*, const char*, int, const char*, const char*);
+char* cookie_header(struct cookie_jar*, const char*, int, const char*, bool);
 
-void cookie_jar_load (struct cookie_jar *, const char *);
-void cookie_jar_save (struct cookie_jar *, const char *);
+void cookie_jar_load(struct cookie_jar*, const char*);
+void cookie_jar_save(struct cookie_jar*, const char*);
 
 #endif /* COOKIES_H */

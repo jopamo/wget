@@ -25,24 +25,22 @@ along with Wget.  If not, see <http://www.gnu.org/licenses/>.  */
 /* Final exit code possibilities. Exit codes 1 and 2 are reserved
  * for situations that lead to direct exits from Wget, not using the
  * value of final_exit_status. */
-enum
-  {
-    WGET_EXIT_SUCCESS = 0,
-    WGET_EXIT_GENERIC_ERROR = 1,
-    WGET_EXIT_PARSE_ERROR = 2,
-    WGET_EXIT_IO_FAIL = 3,
-    WGET_EXIT_NETWORK_FAIL = 4,
-    WGET_EXIT_SSL_AUTH_FAIL = 5,
-    WGET_EXIT_SERVER_AUTH_FAIL = 6,
-    WGET_EXIT_PROTOCOL_ERROR = 7,
-    WGET_EXIT_SERVER_ERROR = 8,
+enum {
+  WGET_EXIT_SUCCESS = 0,
+  WGET_EXIT_GENERIC_ERROR = 1,
+  WGET_EXIT_PARSE_ERROR = 2,
+  WGET_EXIT_IO_FAIL = 3,
+  WGET_EXIT_NETWORK_FAIL = 4,
+  WGET_EXIT_SSL_AUTH_FAIL = 5,
+  WGET_EXIT_SERVER_AUTH_FAIL = 6,
+  WGET_EXIT_PROTOCOL_ERROR = 7,
+  WGET_EXIT_SERVER_ERROR = 8,
 
-    WGET_EXIT_UNKNOWN
-  };
+  WGET_EXIT_UNKNOWN
+};
 
-void inform_exit_status (uerr_t err);
+void inform_exit_status(uerr_t err);
 
-int get_exit_status (void);
-
+int get_exit_status(void);
 
 #endif /* WGET_EXITS_H */

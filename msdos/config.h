@@ -27,7 +27,6 @@
    shall include the source code for the parts of OpenSSL used as well
    as that of the covered work.  */
 
-
 #ifndef CONFIG_DOS_H
 #define CONFIG_DOS_H
 
@@ -43,21 +42,21 @@
 #include <sys/errno.h>
 
 #if defined(__WATCOMC__)
-  #if (__WATCOMC__ >= 1250)  /* OW 1.5+ */
-  #define OPENWATCOM_15
-  #endif
-  #if (__WATCOMC__ >= 1270)  /* OW 1.7+ */
-    #define OPENWATCOM_17
-  #endif
+#if (__WATCOMC__ >= 1250) /* OW 1.5+ */
+#define OPENWATCOM_15
+#endif
+#if (__WATCOMC__ >= 1270) /* OW 1.7+ */
+#define OPENWATCOM_17
+#endif
 #endif
 
 #if defined(__HIGHC__)
-  #define HAVE_UNISTD_H 1
-  #define HAVE_UTIME_H 1
+#define HAVE_UNISTD_H 1
+#define HAVE_UTIME_H 1
 #endif
 
 #if defined(__WATCOMC__) || defined(__BORLANDC__) || defined(__HIGHC__)
-  #define inline
+#define inline
 #endif
 
 #define USE_OPIE 1
@@ -65,76 +64,76 @@
 #define DEBUG
 
 #ifdef __DJGPP__
-  #define HAVE__BOOL          1
-  #define HAVE_STRCASECMP 1
-  #define HAVE_STRNCASECMP 1
-  #define HAVE_SIGSETJMP 1
-  #define HAVE_SIGBLOCK 1
-  #define HAVE_STRUCT_UTIMBUF 1
-  #define HAVE_SYS_SELECT_H   1
-  #define HAVE_USLEEP         1
-  #define HAVE_UTIME_H        1
-  #define HAVE_INT64_T        1
+#define HAVE__BOOL 1
+#define HAVE_STRCASECMP 1
+#define HAVE_STRNCASECMP 1
+#define HAVE_SIGSETJMP 1
+#define HAVE_SIGBLOCK 1
+#define HAVE_STRUCT_UTIMBUF 1
+#define HAVE_SYS_SELECT_H 1
+#define HAVE_USLEEP 1
+#define HAVE_UTIME_H 1
+#define HAVE_INT64_T 1
 
-  #if (DJGPP_MINOR >= 4)
-    #define HAVE_STDBOOL_H 1
-    #define HAVE_STDINT_H  1
-    #define HAVE_SNPRINTF 1
-    #define HAVE_VSNPRINTF 1
-    #define HAVE_UINT32_T 1
-  #endif
+#if (DJGPP_MINOR >= 4)
+#define HAVE_STDBOOL_H 1
+#define HAVE_STDINT_H 1
+#define HAVE_SNPRINTF 1
+#define HAVE_VSNPRINTF 1
+#define HAVE_UINT32_T 1
+#endif
 #endif
 
 #ifdef __HIGHC__
-  #define HAVE_STRUCT_UTIMBUF 1
-  #define HAVE_UTIME_H 1
+#define HAVE_STRUCT_UTIMBUF 1
+#define HAVE_UTIME_H 1
 #endif
 
 #ifdef OPENWATCOM_15
-  #define HAVE_ALLOCA_H    1
-  #define HAVE_INT64_T     1
-  #define HAVE_SNPRINTF    1
-  #define HAVE_STRCASECMP  1
-  #define HAVE_STRNCASECMP 1
-  #define HAVE_STDINT_H    1
-  #define HAVE_UTIME_H     1
+#define HAVE_ALLOCA_H 1
+#define HAVE_INT64_T 1
+#define HAVE_SNPRINTF 1
+#define HAVE_STRCASECMP 1
+#define HAVE_STRNCASECMP 1
+#define HAVE_STDINT_H 1
+#define HAVE_UTIME_H 1
 #endif
 
 #ifdef OPENWATCOM_17
-  #define HAVE__BOOL       1
-  #define HAVE_STDBOOL_H   1
+#define HAVE__BOOL 1
+#define HAVE_STDBOOL_H 1
 #endif
 
-#define HAVE_PROCESS_H     1
+#define HAVE_PROCESS_H 1
 #define HAVE_STRDUP 1
 #define HAVE_STDLIB_H 1
 #define HAVE_STRING_H 1
 #define HAVE_BUILTIN_MD5 1
 #define HAVE_ISATTY 1
 
-#define lookup_host  wget_lookuphost
-#define select       select_s
-#define socklen_t    int
+#define lookup_host wget_lookuphost
+#define select select_s
+#define socklen_t int
 
-#define sock_read    wget_sock_read
-#define sock_write   wget_sock_write
-#define sock_close   wget_sock_close
+#define sock_read wget_sock_read
+#define sock_write wget_sock_write
+#define sock_close wget_sock_close
 
 #if !defined(__DJGPP__)
-  #include <direct.h>
-  #define mkdir(p,a)  (mkdir)(p)
-  #define strcasecmp stricmp
+#include <direct.h>
+#define mkdir(p, a) (mkdir)(p)
+#define strcasecmp stricmp
 #endif
 
 #if !defined(MSDOS)
-  #define MSDOS
+#define MSDOS
 #endif
 
 #if !defined(USE_WATT32)
-  #define USE_WATT32
+#define USE_WATT32
 #endif
 
 #define LOCALEDIR ""
 #define OS_TYPE "DOS"
 
-#endif  /* CONFIG_DOS_H */
+#endif /* CONFIG_DOS_H */
