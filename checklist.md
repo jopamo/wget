@@ -21,7 +21,7 @@ NOTE: WHEN WORKING THROUGH CHECKLIST, MARK OFF COMPLETED ITEMS, ADD MISSING ITEM
 * [ ] Parallel downloading of multiple files — update `src/recur.c`, `src/transfer.c`, `src/main.c`
 * [ ] Parallel range-requests for single-file acceleration — update `src/http.c`, `src/retr.c`
 * [ ] Connection pooling with persistent keep-alive and per-host limits — update `src/http.c`, `src/host.c`, `src/transfer.c`
-* [ ] Zero-blocking cross-thread notifications using `ev_async` — update `src/evloop.c`, `src/threading.c`
+* [x] Zero-blocking cross-thread notifications using `ev_async` — update `src/evloop.c`, `src/threading.c`
 * [x] Internal DNS caching layer (c-ares)
 * [x] Fully asynchronous DNS resolution (c-ares required)
 * [x] Integrate c-ares with libev using c-ares fds → `ev_io` watchers and c-ares timeouts → `ev_timer`
@@ -32,7 +32,7 @@ NOTE: WHEN WORKING THROUGH CHECKLIST, MARK OFF COMPLETED ITEMS, ADD MISSING ITEM
 **Next steps**
 - Promote per-transfer state machines to persistent libev watchers (connect/retr now use central loop helpers per operation; follow-up is to remove remaining synchronous glue).
 - Add per-host pools / keep-alive reuse policies running under libev timers to prep for large-connection workloads.
-- Layer in `ev_async` cross-thread notifications + worker hand-off for CPU-heavy helpers (decompression, parsing).
+- Build on the new `ev_async` cross-thread notifications by wiring worker hand-off for CPU-heavy helpers (decompression, parsing).
 
 ---
 
