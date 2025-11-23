@@ -1147,7 +1147,9 @@ static int format_and_print_line(const char* prefix, const char* line, int line_
 
 _Noreturn static void print_version(void) {
   const char* wgetrc_title = _("Wgetrc: ");
+#ifdef ENABLE_NLS
   const char* locale_title = _("Locale: ");
+#endif
   const char* compile_title = _("Compile: ");
   const char* link_title = _("Link: ");
   char *env_wgetrc, *user_wgetrc;
@@ -1809,12 +1811,18 @@ only if outputting to a regular file.\n"));
 
 #ifdef HAVE_LIBCARES
   if (opt.bind_dns_address || opt.dns_servers) {
+    struct ares_options options;
+    int optmask = 0;
+
     if (ares_library_init(ARES_LIB_INIT_ALL)) {
       fprintf(stderr, _("Failed to init libcares\n"));
       exit(WGET_EXIT_GENERIC_ERROR);
     }
 
-    if (ares_init(&ares) != ARES_SUCCESS) {
+    xzero(options);
+    host_prepare_ares_options(&options, &optmask);
+
+    if (ares_init_options(&ares, &options, optmask) != ARES_SUCCESS) {
       fprintf(stderr, _("Failed to init c-ares channel\n"));
       exit(WGET_EXIT_GENERIC_ERROR);
     }

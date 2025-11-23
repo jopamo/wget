@@ -1,32 +1,6 @@
 /* Host name resolution and matching.
-   Copyright (C) 1996-2012, 2015, 2018-2024 Free Software Foundation,
-   Inc.
-
-This file is part of GNU Wget.
-
-GNU Wget is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 3 of the License, or
- (at your option) any later version.
-
-GNU Wget is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Wget.  If not, see <http://www.gnu.org/licenses/>.
-
-Additional permission under GNU GPL version 3 section 7
-
-If you modify this program, or any covered work, by linking or
-combining it with the OpenSSL project's OpenSSL library (or a
-modified version of that library), containing parts covered by the
-terms of the OpenSSL or SSLeay licenses, the Free Software Foundation
-grants you additional permission to convey the resulting work.
-Corresponding Source for a non-source form of such a combination
-shall include the source code for the parts of OpenSSL used as well
-as that of the covered work.  */
+ * src/host.c
+ */
 
 #include "wget.h"
 
@@ -573,39 +547,114 @@ static void cache_remove(const char* host) {
 #include <ares.h>
 extern ares_channel ares;
 
-static struct address_list* merge_address_lists(struct address_list* al1, struct address_list* al2) {
-  int count = al1->count + al2->count;
+struct ares_options;
 
-  /* merge al2 into al1 */
-  al1->addresses = xrealloc(al1->addresses, sizeof(ip_address) * count);
-  memcpy(al1->addresses + al1->count, al2->addresses, sizeof(ip_address) * al2->count);
-  al1->count = count;
+struct ares_socket_watch {
+  ares_socket_t fd;
+  int readable;
+  int writable;
+};
 
-  address_list_delete(al2);
+static struct ares_socket_watch* ares_watches;
+static size_t ares_watch_count;
 
-  return al1;
+static void ares_track_socket_state(ares_socket_t fd, int readable, int writable) {
+  size_t i;
+
+  for (i = 0; i < ares_watch_count; ++i) {
+    if (ares_watches[i].fd == fd) {
+      if (!readable && !writable) {
+        if (i + 1 < ares_watch_count)
+          memmove(&ares_watches[i], &ares_watches[i + 1], (ares_watch_count - i - 1) * sizeof(*ares_watches));
+        --ares_watch_count;
+      }
+      else {
+        ares_watches[i].readable = readable;
+        ares_watches[i].writable = writable;
+      }
+      return;
+    }
+  }
+
+  if (!readable && !writable)
+    return;
+
+  ares_watches = xrealloc(ares_watches, (ares_watch_count + 1) * sizeof(*ares_watches));
+  ares_watches[ares_watch_count].fd = fd;
+  ares_watches[ares_watch_count].readable = readable;
+  ares_watches[ares_watch_count].writable = writable;
+  ++ares_watch_count;
 }
 
-static struct address_list* address_list_from_hostent(struct hostent* host) {
-  int count, i;
-  struct address_list* al = xnew0(struct address_list);
+static void ares_clear_socket_state(void) _GL_UNUSED;
+static void ares_clear_socket_state(void) {
+  xfree(ares_watches);
+  ares_watches = NULL;
+  ares_watch_count = 0;
+}
 
-  for (count = 0; host->h_addr_list[count]; count++)
-    ;
+static struct address_list* address_list_from_ares_nodes(const struct ares_addrinfo_node* nodes) {
+  struct address_list* al;
+  const struct ares_addrinfo_node* ptr;
+  ip_address* ip;
+  int count = 0;
 
-  assert(count > 0);
+  for (ptr = nodes; ptr != NULL; ptr = ptr->ai_next)
+    if (ptr->ai_family == AF_INET
+#ifdef ENABLE_IPV6
+        || ptr->ai_family == AF_INET6
+#endif
+    )
+      ++count;
 
+  if (count == 0)
+    return NULL;
+
+  al = xnew0(struct address_list);
   al->addresses = xnew_array(ip_address, count);
   al->count = count;
   al->refcount = 1;
 
-  for (i = 0; i < count; i++) {
-    ip_address* ip = &al->addresses[i];
-    ip->family = host->h_addrtype;
-    memcpy(IP_INADDR_DATA(ip), host->h_addr_list[i], ip->family == AF_INET ? 4 : 16);
+  ip = al->addresses;
+  for (ptr = nodes; ptr != NULL; ptr = ptr->ai_next) {
+    if (ptr->ai_family == AF_INET) {
+      const struct sockaddr_in* sin = (const struct sockaddr_in*)ptr->ai_addr;
+      ip->family = AF_INET;
+      ip->data.d4 = sin->sin_addr;
+      ++ip;
+    }
+#ifdef ENABLE_IPV6
+    else if (ptr->ai_family == AF_INET6) {
+      const struct sockaddr_in6* sin6 = (const struct sockaddr_in6*)ptr->ai_addr;
+      ip->family = AF_INET6;
+      ip->data.d6 = sin6->sin6_addr;
+#ifdef HAVE_SOCKADDR_IN6_SCOPE_ID
+      ip->ipv6_scope = sin6->sin6_scope_id;
+#endif
+      ++ip;
+    }
+#endif
   }
 
   return al;
+}
+
+static void wget_ares_addrinfo_callback(void* arg, int status, int timeouts _GL_UNUSED, struct ares_addrinfo* info) {
+  struct address_list** al = (struct address_list**)arg;
+
+  if (!info || status != ARES_SUCCESS) {
+    *al = NULL;
+    if (info)
+      ares_freeaddrinfo(info);
+    return;
+  }
+
+  *al = address_list_from_ares_nodes(info->nodes);
+  ares_freeaddrinfo(info);
+}
+
+static void host_ares_socket_state_cb(void* data _GL_UNUSED, ares_socket_t socket_fd, int readable, int writable) {
+  ares_track_socket_state(socket_fd, readable, writable);
 }
 
 /* Since GnuLib's select() (i.e. rpl_select()) cannot handle socket-numbers
@@ -624,11 +673,29 @@ static void wait_ares(ares_channel channel) {
   for (;;) {
     struct timeval *tvp, tv;
     fd_set read_fds, write_fds;
-    int nfds, rc;
+    int nfds = 0;
+    size_t i;
+
+    if (ares_watch_count == 0)
+      break;
 
     FD_ZERO(&read_fds);
     FD_ZERO(&write_fds);
-    nfds = ares_fds(channel, &read_fds, &write_fds);
+
+    for (i = 0; i < ares_watch_count; ++i) {
+      struct ares_socket_watch* watch = &ares_watches[i];
+      if (watch->readable) {
+        FD_SET(watch->fd, &read_fds);
+        if ((int)watch->fd + 1 > nfds)
+          nfds = (int)watch->fd + 1;
+      }
+      if (watch->writable) {
+        FD_SET(watch->fd, &write_fds);
+        if ((int)watch->fd + 1 > nfds)
+          nfds = (int)watch->fd + 1;
+      }
+    }
+
     if (nfds == 0)
       break;
 
@@ -642,25 +709,57 @@ static void wait_ares(ares_channel channel) {
     else
       tvp = ares_timeout(channel, NULL, &tv);
 
-    rc = select(nfds, &read_fds, &write_fds, NULL, tvp);
-    if (rc == 0 && timer && ptimer_measure(timer) >= opt.dns_timeout)
-      ares_cancel(channel);
-    else
-      ares_process(channel, &read_fds, &write_fds);
+    int rc = select(nfds, &read_fds, &write_fds, NULL, tvp);
+
+    if (rc == 0) {
+      if (timer && ptimer_measure(timer) >= opt.dns_timeout) {
+        ares_cancel(channel);
+        continue;
+      }
+    }
+    else if (rc < 0) {
+      if (errno == EINTR)
+        continue;
+      break;
+    }
+
+    ares_fd_events_t* events = NULL;
+    size_t event_count = 0;
+
+    if (rc > 0) {
+      events = xnew_array(ares_fd_events_t, ares_watch_count);
+      for (i = 0; i < ares_watch_count; ++i) {
+        unsigned int mask = 0;
+        struct ares_socket_watch* watch = &ares_watches[i];
+
+        if (watch->readable && FD_ISSET(watch->fd, &read_fds))
+          mask |= ARES_FD_EVENT_READ;
+        if (watch->writable && FD_ISSET(watch->fd, &write_fds))
+          mask |= ARES_FD_EVENT_WRITE;
+
+        if (mask != 0) {
+          events[event_count].fd = watch->fd;
+          events[event_count].events = mask;
+          ++event_count;
+        }
+      }
+    }
+
+    ares_process_fds(channel, events, event_count, ARES_PROCESS_FLAG_NONE);
+    xfree(events);
   }
+
   if (timer)
     ptimer_destroy(timer);
 }
 
-static void callback(void* arg, int status, int timeouts _GL_UNUSED, struct hostent* host) {
-  struct address_list** al = (struct address_list**)arg;
-
-  if (!host || status != ARES_SUCCESS) {
-    *al = NULL;
+void host_prepare_ares_options(struct ares_options* options, int* optmask) {
+  if (!options || !optmask)
     return;
-  }
 
-  *al = address_list_from_hostent(host);
+  options->sock_state_cb = host_ares_socket_state_cb;
+  options->sock_state_cb_data = NULL;
+  *optmask |= ARES_OPT_SOCK_STATE_CB;
 }
 #endif
 
@@ -761,22 +860,24 @@ struct address_list* lookup_host(const char* host, int flags) {
 #ifdef ENABLE_IPV6
 #ifdef HAVE_LIBCARES
   if (ares) {
-    struct address_list* al4 = NULL;
-    struct address_list* al6 = NULL;
+    struct ares_addrinfo_hints hints;
+    struct address_list* async_al = NULL;
 
-    if (opt.ipv4_only || !opt.ipv6_only)
-      ares_gethostbyname(ares, host, AF_INET, callback, &al4);
-    if (opt.ipv6_only || !opt.ipv4_only)
-      ares_gethostbyname(ares, host, AF_INET6, callback, &al6);
+    xzero(hints);
+    hints.ai_socktype = SOCK_STREAM;
+    if (opt.ipv4_only)
+      hints.ai_family = AF_INET;
+    else if (opt.ipv6_only)
+      hints.ai_family = AF_INET6;
+    else
+      hints.ai_family = AF_UNSPEC;
+    if (flags & LH_BIND)
+      hints.ai_flags |= AI_PASSIVE;
 
+    ares_getaddrinfo(ares, host, NULL, &hints, wget_ares_addrinfo_callback, &async_al);
     wait_ares(ares);
 
-    if (al4 && al6)
-      al = merge_address_lists(al4, al6);
-    else if (al4)
-      al = al4;
-    else
-      al = al6;
+    al = async_al;
   }
   else
 #endif
@@ -834,7 +935,15 @@ struct address_list* lookup_host(const char* host, int flags) {
 #else /* not ENABLE_IPV6 */
 #ifdef HAVE_LIBCARES
   if (ares) {
-    ares_gethostbyname(ares, host, AF_INET, callback, &al);
+    struct ares_addrinfo_hints hints;
+
+    xzero(hints);
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    if (flags & LH_BIND)
+      hints.ai_flags |= AI_PASSIVE;
+
+    ares_getaddrinfo(ares, host, NULL, &hints, wget_ares_addrinfo_callback, &al);
     wait_ares(ares);
   }
   else
@@ -943,6 +1052,9 @@ void host_cleanup(void) {
     host_name_addresses_map = NULL;
   }
   wget_mutex_unlock(&dns_cache_lock);
+#ifdef HAVE_LIBCARES
+  ares_clear_socket_state();
+#endif
 }
 #endif
 
