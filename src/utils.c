@@ -2423,6 +2423,10 @@ long get_max_length(const char* path, int length, int name) {
   long ret;
   char *p, *d;
 
+#if !HAVE_PATHCONF
+  (void)name;
+#endif
+
   /* Make a copy of the path that we can modify. */
   p = path ? strdupdelim(path, path + length) : strdup("");
 
