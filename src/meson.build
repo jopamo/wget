@@ -19,6 +19,7 @@ sources = [
   'http-header.c',
   'http-ntlm.c',
   'http-pconn.c',
+  'http-pool.c',
   'http.c',
   'http_auth.c',
   'http_body.c',

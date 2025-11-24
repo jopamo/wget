@@ -50,6 +50,7 @@
 #endif
 #include "http-header.h"
 #include "http-pconn.h"
+#include "http-pool.h"
 
 #ifdef TESTING
 #include "../tests/unit-tests.h"
@@ -151,15 +152,15 @@ static bool parse_strict_transport_security(const char* header, int64_t* max_age
    `pc_active_p && (fd) == pc_last_fd' is "we're *now* using an
    active, registered connection".  */
 
-#define CLOSE_FINISH(ctx)                              \
-  do {                                                 \
-    if (!(ctx)->keep_alive) {                          \
-      if (pconn_active && (ctx)->sock == pconn.socket) \
-        invalidate_persistent();                       \
-      else                                             \
-        fd_close((ctx)->sock);                         \
-      (ctx)->sock = -1;                                \
-    }                                                  \
+#define CLOSE_FINISH(ctx)                                                                            \
+  do {                                                                                               \
+    if (!(ctx)->keep_alive) {                                                                        \
+      if (pconn_active && (ctx)->sock == pconn.socket)                                               \
+        invalidate_persistent();                                                                     \
+      else                                                                                           \
+        pool_return_connection((ctx)->sock, (ctx)->conn->host, (ctx)->conn->port, (ctx)->using_ssl); \
+      (ctx)->sock = -1;                                                                              \
+    }                                                                                                \
   } while (0)
 
 #define CLOSE_INVALIDATE(ctx)                        \
@@ -167,7 +168,7 @@ static bool parse_strict_transport_security(const char* header, int64_t* max_age
     if (pconn_active && (ctx)->sock == pconn.socket) \
       invalidate_persistent();                       \
     else                                             \
-      fd_close((ctx)->sock);                         \
+      pool_invalidate_connection((ctx)->sock);       \
     (ctx)->sock = -1;                                \
   } while (0)
 
@@ -571,7 +572,7 @@ void http_loop_continue_async(struct http_transaction_ctx* ctx, uerr_t prev_op_s
 #endif
 
         if (ctx->keep_alive)
-          register_persistent(ctx->conn->host, ctx->conn->port, ctx->sock, ctx->using_ssl);
+          pool_register_connection(ctx->conn->host, ctx->conn->port, ctx->sock, ctx->using_ssl);
 
         // Check for UNAUTHORIZED, REDIRECTED, NO_CONTENT, RANGE_NOT_SATISFIABLE conditions
         if (ctx->statcode == HTTP_STATUS_UNAUTHORIZED) {
@@ -914,6 +915,7 @@ void http_loop_cleanup(struct http_transaction_ctx* ctx) {
 
 void http_cleanup(void) {
   pconn_cleanup();
+  pool_cleanup();
 #ifdef ENABLE_COOKIES
   cookies_cleanup();
 #endif
@@ -1308,13 +1310,36 @@ static uerr_t establish_connection(const struct url* u,
       relevant = u;
 #endif
 
-    if (persistent_available_p(relevant->host, relevant->port,
+    /* Try to get a connection from the pool first */
+    sock = pool_get_connection(relevant->host, relevant->port,
 #ifdef HAVE_SSL
                                relevant->scheme == SCHEME_HTTPS,
 #else
                                0,
 #endif
-                               &host_lookup_failed)) {
+                               &host_lookup_failed);
+
+    if (sock >= 0) {
+      /* Successfully got a connection from the pool */
+      *using_ssl = (relevant->scheme == SCHEME_HTTPS);
+#if ENABLE_IPV6
+      int family = socket_family(sock, ENDPOINT_PEER);
+      if (family == AF_INET6)
+        logprintf(LOG_VERBOSE, _("Reusing pooled connection to [%s]:%d.\n"), quotearg_style(escape_quoting_style, relevant->host), relevant->port);
+      else
+#endif
+        logprintf(LOG_VERBOSE, _("Reusing pooled connection to %s:%d.\n"), quotearg_style(escape_quoting_style, relevant->host), relevant->port);
+      DEBUGP(("Reusing pooled fd %d.\n", sock));
+      /* Note: Authorization handling would need to be tracked per connection in the pool */
+    }
+    else if (persistent_available_p(relevant->host, relevant->port,
+#ifdef HAVE_SSL
+                                    relevant->scheme == SCHEME_HTTPS,
+#else
+                                    0,
+#endif
+                                    &host_lookup_failed)) {
+      /* Fall back to legacy persistent connection */
       int family = socket_family(pconn.socket, ENDPOINT_PEER);
       sock = pconn.socket;
       *using_ssl = pconn.ssl;

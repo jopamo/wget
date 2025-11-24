@@ -34,6 +34,7 @@
 #include "http.h"
 #include "cookies.h"
 #include "hsts.h" /* for initializing hsts_store to NULL */
+#include "http-pool.h"
 #include "ptimer.h"
 #include "warc.h"
 #include "version.h"
@@ -1227,6 +1228,7 @@ int main(int argc, char** argv) {
   g_main_ctx = &main_ctx;
   wget_worker_pool_init(0);
   atexit(wget_worker_pool_shutdown);
+  pool_init();
 
   i18n_initialize();
 
