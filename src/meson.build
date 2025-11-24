@@ -42,6 +42,7 @@ sources = [
   'threading.c',
   'tmpdir.c',
   'transfer.c',
+  'transfer_wait.c',
   'url.c',
   'utils.c',
   version_src,

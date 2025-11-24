@@ -30,8 +30,8 @@
 #include "host.h"
 #include "connect.h"
 #include "hash.h"
-#include "evhelpers.h"
 #include "socket_opts.h"
+#include "transfer_wait.h"
 
 #include <stdint.h>
 
@@ -262,7 +262,7 @@ static int connect_with_timeout(int fd, const struct sockaddr* addr, socklen_t a
   if (wait_timeout <= 0)
     wait_timeout = -1;
 
-  int wait_result = wget_ev_io_wait(fd, wait_timeout, WAIT_FOR_WRITE);
+  int wait_result = transfer_io_wait_blocking(fd, wait_timeout, WAIT_FOR_WRITE);
   if (wait_result <= 0) {
     if (wait_result == 0)
       errno = ETIMEDOUT;
@@ -674,7 +674,7 @@ bool retryable_socket_connect_error(int err) {
 }
 
 int select_fd(int fd, double maxtime, int wait_for) {
-  return wget_ev_io_wait(fd, maxtime, wait_for);
+  return transfer_io_wait_blocking(fd, maxtime, wait_for);
 }
 
 /* Return true if the connection to the remote site established through
@@ -690,7 +690,7 @@ int select_fd(int fd, double maxtime, int wait_for) {
    request */
 
 bool test_socket_open(int sock) {
-  int ret = wget_ev_io_wait(sock, 0, WAIT_FOR_READ);
+  int ret = transfer_io_wait_blocking(sock, 0, WAIT_FOR_READ);
   return ret == 0;
 }
 

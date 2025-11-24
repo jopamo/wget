@@ -25,6 +25,8 @@ test('signals_libev_dispatch', signal_helper_test)
 evhelpers_sources = files(
   'evhelpers_test.c',
   '../src/evhelpers.c',
+  '../src/transfer_wait.c',
+  '../src/transfer.c',
   '../src/evloop.c',
   '../src/threading.c',
   '../src/xalloc.c',

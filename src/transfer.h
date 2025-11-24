@@ -58,6 +58,11 @@ struct transfer_context {
   int user_priority;
 };
 
+#ifndef TRANSFER_CTX_T_DEFINED
+#define TRANSFER_CTX_T_DEFINED
+typedef struct transfer_context transfer_ctx_t;
+#endif
+
 void transfer_context_init(struct transfer_context* ctx);
 void transfer_context_prepare(struct transfer_context* ctx, const struct options* template_opts, const char* requested_uri);
 void transfer_context_free(struct transfer_context* ctx);

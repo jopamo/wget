@@ -4,6 +4,7 @@
 #include "evhelpers.h"
 #include "evloop.h"
 #include "log.h"
+#include "transfer_wait.h"
 
 #include <errno.h>
 #include <ev.h>
@@ -39,7 +40,7 @@ static void test_wait_for_read_ready(void) {
   make_pipe(&reader, &writer);
   write(writer, "x", 1);
 
-  int ret = wget_ev_io_wait(reader, 0.1, WAIT_FOR_READ);
+  int ret = transfer_io_wait_blocking(reader, 0.1, WAIT_FOR_READ);
   expect(ret == 1, "read wait did not report readiness");
 
   close(reader);
@@ -51,7 +52,7 @@ static void test_wait_timeout(void) {
   make_pipe(&reader, &writer);
 
   errno = 0;
-  int ret = wget_ev_io_wait(reader, 0.02, WAIT_FOR_READ);
+  int ret = transfer_io_wait_blocking(reader, 0.02, WAIT_FOR_READ);
   expect(ret == 0, "timeout should return 0");
   expect(errno == ETIMEDOUT, "timeout should set ETIMEDOUT");
 
@@ -63,7 +64,7 @@ static void test_wait_for_write_ready(void) {
   int reader, writer;
   make_pipe(&reader, &writer);
 
-  int ret = wget_ev_io_wait(writer, 0.02, WAIT_FOR_WRITE);
+  int ret = transfer_io_wait_blocking(writer, 0.02, WAIT_FOR_WRITE);
   expect(ret == 1, "write wait should be ready");
 
   close(reader);

@@ -2,15 +2,9 @@
 
 The refactor roadmap in `checklist.md` requires us to retire the synchronous helpers that stall the libev loop while a single transfer progresses. This document tracks each blocking helper, why it is problematic, and exactly where it is consumed today so future patches can eliminate or replace them.
 
-## `wget_ev_io_wait` — `src/evhelpers.c:52`
+## `wget_ev_io_wait` — removed
 
-*Purpose*: Historically ran the global libev loop until a single fd reported readiness, effectively serialising I/O. As of the continuous-loop refactor, pthread-enabled builds now register the watcher and block on a condition variable while the background libev thread wakes the waiter.
-
-*Call sites*:
-
-- `src/connect.c:285` — `connect_with_timeout` blocks while waiting for connect().
-- `src/connect.c:701` — `select_fd` wrapper.
-- `src/connect.c:723` — `test_socket_open` polls for readability.
+*Purpose*: Historically ran the global libev loop until a single fd reported readiness, effectively serialising I/O. It has now been superseded by the scheduler-friendly helpers in `src/transfer_wait.c` (`transfer_io_wait_schedule()` for continuations plus `transfer_io_wait_blocking()` for legacy callers), and the remaining call sites in `src/connect.c` have migrated.
 
 ## `wget_ev_sleep` — `src/evhelpers.c:114`
 
@@ -53,8 +47,8 @@ To remove the four blocking helpers we need coordinated replacements that keep l
 ### Behavioral requirements
 
 1. **Non-blocking connect/read/write**  
-   - `connect_with_timeout` currently calls `wget_ev_io_wait`. Rework so it registers an `ev_io` watcher for `EV_WRITE` (connect readiness) plus a timer. When either fires, the scheduler resumes the operation. (The helper no longer spins the loop, but replacing it with scheduler-aware APIs removes the per-call condition variables.)  
-   - Provide an API such as `transfer_scheduler_wait_io(ctx, fd, events, timeout, completion_cb)`.
+   - `connect_with_timeout`, `select_fd`, and `test_socket_open` now route through the scheduler-aware waiters in `transfer_wait.c`, so callers can register continuations (or fall back to the blocking shim) instead of driving libev manually.  
+   - Expand this API until every transport component (`fd_read`, TLS glue, etc.) exposes the same continuation-based flow.
 
 2. **Timer/delay semantics**  
    - Replace `wget_ev_sleep` with `transfer_scheduler_delay(ctx, seconds, cb)` so retry logic enqueues a timer and returns. Scheduler fires the callback and resumes the state machine.  

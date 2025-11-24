@@ -13,7 +13,10 @@ struct scheduler;
 struct transfer_context;
 
 typedef struct scheduler scheduler_t;
+#ifndef TRANSFER_CTX_T_DEFINED
+#define TRANSFER_CTX_T_DEFINED
 typedef struct transfer_context transfer_ctx_t;
+#endif
 
 typedef void (*transfer_cb_t)(transfer_ctx_t* ctx, void* user_arg, int status);
 
