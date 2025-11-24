@@ -48,5 +48,6 @@ struct urlpos;
 
 void recursive_cleanup(void);
 uerr_t retrieve_tree(struct url*, struct iri*);
+bool wget_recur_file_looks_like_sitemap(const char* file);
 
 #endif /* RECUR_H */
