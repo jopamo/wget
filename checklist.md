@@ -25,16 +25,16 @@
 * [ ] Connection pooling with persistent keep-alive and per-host limits – update `src/http.c`, `src/host.c`, `src/transfer.c`
 * [ ] Enforce aggressive reuse of TCP/TLS sessions to minimize handshake overhead – update `src/http.c`, `src/openssl.c`, `src/host.c`
 
-### Parallel transfer refactor roadmap
+### Next steps: Parallel transfer refactor roadmap
 
 To flip the remaining `[ ]` entries in this section we now require the staged refactor below. Each phase builds on the prior one; treat the individual items as hard requirements, not “nice to have”.
 
 1. **Prepare foundational architecture**
-   - Audit every blocking helper (`wget_ev_io_wait`, `fd_read_body`, `wget_ev_loop_run_transfers`, etc.), mark them legacy, and catalog all call sites.
-   - Rework `src/evloop.c` so the main libev loop runs continuously; remove per-transfer blocking `ev_run` calls.
-   - Introduce a scheduler in `src/transfer.c` that owns a pool of `transfer_context`s, accepts enqueue requests, and reports completion asynchronously. (In progress: new `src/scheduler.c` + `src/scheduler.h` expose enqueue/cancel/status APIs that bind transfer contexts to the central loop; remaining HTTP wiring still pending.)
-   - Convert connect → header → body → finish flows into libev-driven state machines for each protocol.
-   - Demonstrate N concurrent transfers (10/100/1000) without blocking the loop.
+   - [x] Audit every blocking helper (`wget_ev_io_wait`, `fd_read_body`, `wget_ev_loop_run_transfers`, etc.), mark them legacy, and catalog all call sites. (See `docs/blocking-helpers.md` for the tracker.)
+   - [x] Rework `src/evloop.c` so the main libev loop runs continuously; remove per-transfer blocking `ev_run` calls (event loop now runs in a dedicated pthread-backed loop thread; blocking helpers wait via condition variables).
+   - [ ] Introduce a scheduler in `src/transfer.c` that owns a pool of `transfer_context`s, accepts enqueue requests, and reports completion asynchronously. (In progress: new `src/scheduler.c` + `src/scheduler.h` expose enqueue/cancel/status APIs that bind transfer contexts to the central loop; remaining HTTP wiring still pending.)
+   - [ ] Convert connect → header → body → finish flows into libev-driven state machines for each protocol.
+   - [ ] Demonstrate N concurrent transfers (10/100/1000) without blocking the loop.
 
 2. **Make shared data structures concurrency-safe**
    - Audit mutation of `dl_url_file_map`, recursion queues, cookie/HSTS stores, progress/logging buffers, etc.
@@ -137,7 +137,7 @@ See `docs/blocking-helpers.md` for the design notes and outstanding call sites. 
 
 ## **7. Validation, observability, and release readiness**
 
-* [ ] Document a repeatable manual test matrix (libev/c-ares builds, HTTPS targets, recursion) and capture commands/logs in `docs/testing.md` or a new `docs/test-matrix.md`.
+* [x] Document a repeatable manual test matrix (libev/c-ares builds, HTTPS targets, recursion) and capture commands/logs in `docs/testing.md` or a new `docs/test-matrix.md`.
 * [ ] Add libev/c-ares integration tests that assert watchers fire as expected (extend `tests/evloop_transfer_test.c` or add new suites under `tests/`).
 * [ ] Instrument the scheduler with debug logging / stats hooks so we can prove per-host limits, queue depth, and throughput against the “thousands of concurrent transfers” goal (`src/scheduler.c`, `src/log.c`).
 * [ ] Automate ASan/Valgrind smoke runs in CI scripts or Meson targets to catch regressions before release (`meson.build`, `tests/` helpers).

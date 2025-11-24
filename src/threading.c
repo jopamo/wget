@@ -26,10 +26,16 @@
 #ifdef HAVE_UNISTD_H
 #include <unistd.h>
 #endif
+#if defined HAVE_PTHREAD_H && HAVE_PTHREAD_H
+#include <time.h>
+#include <sys/time.h>
+#include <errno.h>
+#endif
 
 #if defined HAVE_PTHREAD_H && HAVE_PTHREAD_H
 
 static pthread_mutex_t pthread_init_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t pthread_cond_init_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static void pthread_mutex_lazy_init(wget_mutex_t* mutex) {
   if (mutex->initialized)
@@ -47,6 +53,18 @@ static void pthread_mutex_lazy_init(wget_mutex_t* mutex) {
     mutex->initialized = true;
   }
   pthread_mutex_unlock(&pthread_init_lock);
+}
+
+static void pthread_cond_lazy_init(wget_cond_t* cond) {
+  if (cond->initialized)
+    return;
+
+  pthread_mutex_lock(&pthread_cond_init_lock);
+  if (!cond->initialized) {
+    pthread_cond_init(&cond->cond, NULL);
+    cond->initialized = true;
+  }
+  pthread_mutex_unlock(&pthread_cond_init_lock);
 }
 
 void wget_mutex_init(wget_mutex_t* mutex) {
@@ -70,12 +88,89 @@ void wget_mutex_destroy(wget_mutex_t* mutex) {
   }
 }
 
+void wget_cond_init(wget_cond_t* cond) {
+  if (!cond)
+    return;
+  cond->initialized = false;
+}
+
+void wget_cond_wait(wget_cond_t* cond, wget_mutex_t* mutex) {
+  if (!cond || !mutex)
+    return;
+  pthread_cond_lazy_init(cond);
+  pthread_mutex_lazy_init(mutex);
+  pthread_cond_wait(&cond->cond, &mutex->mutex);
+}
+
+bool wget_cond_timedwait(wget_cond_t* cond, wget_mutex_t* mutex, double timeout_seconds) {
+  if (!cond || !mutex)
+    return false;
+
+  if (timeout_seconds < 0)
+    timeout_seconds = 0;
+
+  pthread_cond_lazy_init(cond);
+  pthread_mutex_lazy_init(mutex);
+
+  struct timespec ts;
+#ifdef CLOCK_REALTIME
+  clock_gettime(CLOCK_REALTIME, &ts);
+#else
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  ts.tv_sec = tv.tv_sec;
+  ts.tv_nsec = tv.tv_usec * 1000;
+#endif
+  time_t seconds = (time_t)timeout_seconds;
+  double fractional = timeout_seconds - (double)seconds;
+  ts.tv_sec += seconds;
+  long nsec = ts.tv_nsec + (long)(fractional * 1000000000.0);
+  if (nsec >= 1000000000L) {
+    ts.tv_sec += 1;
+    nsec -= 1000000000L;
+  }
+  ts.tv_nsec = nsec;
+
+  int rc = pthread_cond_timedwait(&cond->cond, &mutex->mutex, &ts);
+  if (rc == ETIMEDOUT)
+    return false;
+  return rc == 0;
+}
+
+void wget_cond_signal(wget_cond_t* cond) {
+  if (!cond || !cond->initialized)
+    return;
+  pthread_cond_signal(&cond->cond);
+}
+
+void wget_cond_broadcast(wget_cond_t* cond) {
+  if (!cond || !cond->initialized)
+    return;
+  pthread_cond_broadcast(&cond->cond);
+}
+
+void wget_cond_destroy(wget_cond_t* cond) {
+  if (!cond || !cond->initialized)
+    return;
+  pthread_cond_destroy(&cond->cond);
+  cond->initialized = false;
+}
+
 #else
 
 void wget_mutex_init(wget_mutex_t* mutex WGET_ATTR_UNUSED) {}
 void wget_mutex_lock(wget_mutex_t* mutex WGET_ATTR_UNUSED) {}
 void wget_mutex_unlock(wget_mutex_t* mutex WGET_ATTR_UNUSED) {}
 void wget_mutex_destroy(wget_mutex_t* mutex WGET_ATTR_UNUSED) {}
+
+void wget_cond_init(wget_cond_t* cond WGET_ATTR_UNUSED) {}
+void wget_cond_wait(wget_cond_t* cond WGET_ATTR_UNUSED, wget_mutex_t* mutex WGET_ATTR_UNUSED) {}
+bool wget_cond_timedwait(wget_cond_t* cond WGET_ATTR_UNUSED, wget_mutex_t* mutex WGET_ATTR_UNUSED, double timeout_seconds WGET_ATTR_UNUSED) {
+  return true;
+}
+void wget_cond_signal(wget_cond_t* cond WGET_ATTR_UNUSED) {}
+void wget_cond_broadcast(wget_cond_t* cond WGET_ATTR_UNUSED) {}
+void wget_cond_destroy(wget_cond_t* cond WGET_ATTR_UNUSED) {}
 
 #endif
 

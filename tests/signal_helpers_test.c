@@ -9,6 +9,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
 /* Provide minimal globals the production objects expect. */
 const char* exec_name = "signal_helpers_test";
@@ -38,10 +39,18 @@ static void handler_b(int signum) {
   wget_ev_loop_break();
 }
 
-static void exercise_signal_once(void) {
+static bool exercise_signal_once(void) {
+  sig_atomic_t before = handler_a_hits + handler_b_hits;
   ev_feed_signal_event(wget_ev_loop_get(), TEST_SIGNAL);
   wget_ev_loop_wakeup();
-  wget_ev_loop_run_once();
+
+  struct timespec ts = {.tv_sec = 0, .tv_nsec = 1000000};
+  for (int i = 0; i < 1000; ++i) {
+    if (handler_a_hits + handler_b_hits > before)
+      return true;
+    nanosleep(&ts, NULL);
+  }
+  return handler_a_hits + handler_b_hits > before;
 }
 
 static void expect(bool condition, const char* message) {
@@ -62,18 +71,18 @@ int main(void) {
   observed_signum = 0;
 
   wget_signals_watch(TEST_SIGNAL, handler_a);
-  exercise_signal_once();
+  expect(exercise_signal_once(), "handler A did not trigger");
   expect(handler_a_hits == 1, "handler A not triggered");
   expect(observed_signum == TEST_SIGNAL, "handler A saw wrong signum");
 
   wget_signals_watch(TEST_SIGNAL, handler_b);
-  exercise_signal_once();
+  expect(exercise_signal_once(), "handler B did not trigger");
   expect(handler_a_hits == 1, "handler A should not fire twice");
   expect(handler_b_hits == 1, "handler B should fire once");
   expect(observed_signum == TEST_SIGNAL, "handler B saw wrong signum");
 
   wget_signals_unwatch(TEST_SIGNAL);
-  exercise_signal_once();
+  expect(!exercise_signal_once(), "handler invoked after unwatch");
   expect(handler_a_hits == 1 && handler_b_hits == 1, "handler invoked after unwatch");
 
   wget_signals_shutdown();

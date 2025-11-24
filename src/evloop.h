@@ -7,6 +7,12 @@
 
 #include <stdbool.h>
 
+#if defined HAVE_PTHREAD_H && HAVE_PTHREAD_H
+#define WGET_EVLOOP_CONTINUOUS 1
+#else
+#define WGET_EVLOOP_CONTINUOUS 0
+#endif
+
 struct ev_loop;
 
 typedef void (*wget_ev_loop_async_cb)(void*);
@@ -22,7 +28,6 @@ bool wget_ev_loop_is_initialized(void);
 void wget_ev_loop_transfer_ref(void);
 void wget_ev_loop_transfer_unref(void);
 bool wget_ev_loop_has_active_transfers(void);
-/* LEGACY_BLOCKING: blocks until all tracked transfers finish. */
 void wget_ev_loop_run_transfers(void);
 bool wget_ev_loop_post_async(wget_ev_loop_async_cb cb, void* arg);
 

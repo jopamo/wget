@@ -50,6 +50,28 @@ void wget_mutex_lock(wget_mutex_t* mutex);
 void wget_mutex_unlock(wget_mutex_t* mutex);
 void wget_mutex_destroy(wget_mutex_t* mutex);
 
+typedef struct wget_cond {
+#if defined HAVE_PTHREAD_H && HAVE_PTHREAD_H
+  pthread_cond_t cond;
+  bool initialized;
+#else
+  int dummy;
+#endif
+} wget_cond_t;
+
+#if defined HAVE_PTHREAD_H && HAVE_PTHREAD_H
+#define WGET_COND_INITIALIZER {PTHREAD_COND_INITIALIZER, false}
+#else
+#define WGET_COND_INITIALIZER {0}
+#endif
+
+void wget_cond_init(wget_cond_t* cond);
+void wget_cond_wait(wget_cond_t* cond, wget_mutex_t* mutex);
+bool wget_cond_timedwait(wget_cond_t* cond, wget_mutex_t* mutex, double timeout_seconds);
+void wget_cond_signal(wget_cond_t* cond);
+void wget_cond_broadcast(wget_cond_t* cond);
+void wget_cond_destroy(wget_cond_t* cond);
+
 typedef void (*wget_async_task_fn)(void*);
 
 typedef struct wget_async_task {

@@ -21,8 +21,9 @@
 struct worker_state {
   atomic_int work_calls;
   atomic_int completion_calls;
-  atomic_int errors;
   pthread_t main_thread;
+  wget_mutex_t lock;
+  wget_cond_t cond;
 };
 
 static void worker_job(void* arg) {
@@ -32,19 +33,23 @@ static void worker_job(void* arg) {
 
 static void worker_complete(void* arg) {
   struct worker_state* state = arg;
-  /* Completion callbacks should always run inside the main loop thread. */
-  if (!pthread_equal(pthread_self(), state->main_thread))
-    atomic_fetch_add_explicit(&state->errors, 1, memory_order_relaxed);
   atomic_fetch_add_explicit(&state->completion_calls, 1, memory_order_relaxed);
+  wget_mutex_lock(&state->lock);
+  wget_cond_broadcast(&state->cond);
+  wget_mutex_unlock(&state->lock);
 }
 
 int main(void) {
   struct worker_state state = {
       .work_calls = ATOMIC_VAR_INIT(0),
       .completion_calls = ATOMIC_VAR_INIT(0),
-      .errors = ATOMIC_VAR_INIT(0),
       .main_thread = pthread_self(),
+      .lock = WGET_MUTEX_INITIALIZER,
+      .cond = WGET_COND_INITIALIZER,
   };
+
+  wget_mutex_init(&state.lock);
+  wget_cond_init(&state.cond);
 
   if (wget_worker_pool_available())
     return 1;
@@ -60,19 +65,21 @@ int main(void) {
       return 1;
   }
 
+  wget_mutex_lock(&state.lock);
   while (atomic_load_explicit(&state.completion_calls, memory_order_acquire) < JOB_COUNT)
-    wget_ev_loop_run_once();
+    wget_cond_wait(&state.cond, &state.lock);
+  wget_mutex_unlock(&state.lock);
 
   if (atomic_load_explicit(&state.work_calls, memory_order_acquire) != JOB_COUNT)
     return 1;
   if (atomic_load_explicit(&state.completion_calls, memory_order_acquire) != JOB_COUNT)
-    return 1;
-  if (atomic_load_explicit(&state.errors, memory_order_acquire) != 0)
     return 1;
 
   wget_worker_pool_shutdown();
   if (wget_worker_pool_available())
     return 1;
 
+  wget_cond_destroy(&state.cond);
+  wget_mutex_destroy(&state.lock);
   return 0;
 }

@@ -672,6 +672,8 @@ struct html_parse_async_job {
   struct urlpos* urls;
   bool meta_nofollow;
   bool done;
+  wget_mutex_t lock;
+  wget_cond_t cond;
 };
 
 static struct urlpos* get_urls_html_fm_internal(const char* file, const struct file_memory* fm, const char* url, bool* meta_disallow_follow, struct iri* iri) {
@@ -718,7 +720,10 @@ static void html_parse_async_complete(void* arg) {
   struct html_parse_async_job* job = arg;
   if (job->meta_out)
     *job->meta_out = job->meta_nofollow;
+  wget_mutex_lock(&job->lock);
   job->done = true;
+  wget_cond_broadcast(&job->cond);
+  wget_mutex_unlock(&job->lock);
 }
 
 static struct urlpos* get_urls_html_fm_async(const char* file, const struct file_memory* fm, const char* url, bool* meta_disallow_follow, struct iri* iri) {
@@ -731,15 +736,29 @@ static struct urlpos* get_urls_html_fm_async(const char* file, const struct file
       .urls = NULL,
       .meta_nofollow = false,
       .done = false,
+      .lock = WGET_MUTEX_INITIALIZER,
+      .cond = WGET_COND_INITIALIZER,
   };
 
+  wget_mutex_init(&job.lock);
+  wget_cond_init(&job.cond);
+
   if (!wget_worker_pool_submit(html_parse_async_work, html_parse_async_complete, &job))
-    return get_urls_html_fm_internal(file, fm, url, meta_disallow_follow, iri);
+    goto fallback;
 
+  wget_mutex_lock(&job.lock);
   while (!job.done)
-    wget_ev_loop_run_once();
+    wget_cond_wait(&job.cond, &job.lock);
+  wget_mutex_unlock(&job.lock);
 
+  wget_cond_destroy(&job.cond);
+  wget_mutex_destroy(&job.lock);
   return job.urls;
+
+fallback:
+  wget_cond_destroy(&job.cond);
+  wget_mutex_destroy(&job.lock);
+  return get_urls_html_fm_internal(file, fm, url, meta_disallow_follow, iri);
 }
 
 /* Analyze HTML tags FILE and construct a list of URLs referenced from
@@ -829,6 +848,8 @@ struct sitemap_parse_async_job {
   const char* url;
   struct urlpos* urls;
   bool done;
+  wget_mutex_t lock;
+  wget_cond_t cond;
 };
 
 static void sitemap_parse_async_work(void* arg) {
@@ -838,7 +859,10 @@ static void sitemap_parse_async_work(void* arg) {
 
 static void sitemap_parse_async_complete(void* arg) {
   struct sitemap_parse_async_job* job = arg;
+  wget_mutex_lock(&job->lock);
   job->done = true;
+  wget_cond_broadcast(&job->cond);
+  wget_mutex_unlock(&job->lock);
 }
 
 static struct urlpos* get_urls_sitemap_fm(const char* file, const struct file_memory* fm, const char* url) {
@@ -851,15 +875,28 @@ static struct urlpos* get_urls_sitemap_fm(const char* file, const struct file_me
       .url = url,
       .urls = NULL,
       .done = false,
+      .lock = WGET_MUTEX_INITIALIZER,
+      .cond = WGET_COND_INITIALIZER,
   };
 
+  wget_mutex_init(&job.lock);
+  wget_cond_init(&job.cond);
+
   if (!wget_worker_pool_submit(sitemap_parse_async_work, sitemap_parse_async_complete, &job))
-    return get_urls_sitemap_fm_internal(file, fm, url);
+    goto fallback;
 
+  wget_mutex_lock(&job.lock);
   while (!job.done)
-    wget_ev_loop_run_once();
-
+    wget_cond_wait(&job.cond, &job.lock);
+  wget_mutex_unlock(&job.lock);
+  wget_cond_destroy(&job.cond);
+  wget_mutex_destroy(&job.lock);
   return job.urls;
+
+fallback:
+  wget_cond_destroy(&job.cond);
+  wget_mutex_destroy(&job.lock);
+  return get_urls_sitemap_fm_internal(file, fm, url);
 }
 
 struct urlpos* get_urls_sitemap(const char* file, const char* url, struct iri* iri WGET_ATTR_UNUSED) {

@@ -550,6 +550,10 @@ struct dns_query_ctx {
   struct address_list* result;
   int status;
   bool complete;
+#if WGET_EVLOOP_CONTINUOUS
+  wget_mutex_t lock;
+  wget_cond_t cond;
+#endif
 };
 
 static struct ares_socket_watch** ares_watches;
@@ -649,6 +653,43 @@ static void ares_io_cb(EV_P_ ev_io* w, int revents) {
 }
 
 static bool dns_wait_for_completion(struct dns_query_ctx* ctx) {
+#if WGET_EVLOOP_CONTINUOUS
+  if (!ctx)
+    return false;
+
+  struct ptimer* timer = NULL;
+  bool timed_out = false;
+
+  if (opt.dns_timeout > 0)
+    timer = ptimer_new();
+
+  wget_mutex_lock(&ctx->lock);
+  while (!ctx->complete && !timed_out) {
+    if (opt.dns_timeout > 0) {
+      double elapsed = timer ? ptimer_measure(timer) : 0.0;
+      double remaining = opt.dns_timeout - elapsed;
+      if (remaining <= 0) {
+        timed_out = true;
+        break;
+      }
+      if (!wget_cond_timedwait(&ctx->cond, &ctx->lock, remaining))
+        timed_out = true;
+    }
+    else
+      wget_cond_wait(&ctx->cond, &ctx->lock);
+  }
+  wget_mutex_unlock(&ctx->lock);
+
+  if (timer)
+    ptimer_destroy(timer);
+
+  if (timed_out) {
+    ares_cancel(ares);
+    ares_update_timer();
+  }
+
+  return !timed_out && ctx->complete;
+#else
   struct ptimer* timer = NULL;
   bool timed_out = false;
 
@@ -670,6 +711,7 @@ static bool dns_wait_for_completion(struct dns_query_ctx* ctx) {
     ptimer_destroy(timer);
 
   return !timed_out && ctx->complete;
+#endif
 }
 
 static struct address_list* address_list_from_ares_nodes(const struct ares_addrinfo_node* nodes) {
@@ -721,6 +763,9 @@ static struct address_list* address_list_from_ares_nodes(const struct ares_addri
 static void wget_ares_addrinfo_callback(void* arg, int status, int timeouts WGET_ATTR_UNUSED, struct ares_addrinfo* info) {
   struct dns_query_ctx* ctx = (struct dns_query_ctx*)arg;
 
+#if WGET_EVLOOP_CONTINUOUS
+  wget_mutex_lock(&ctx->lock);
+#endif
   ctx->status = status;
   ctx->result = NULL;
 
@@ -731,6 +776,10 @@ static void wget_ares_addrinfo_callback(void* arg, int status, int timeouts WGET
     ares_freeaddrinfo(info);
 
   ctx->complete = true;
+#if WGET_EVLOOP_CONTINUOUS
+  wget_cond_broadcast(&ctx->cond);
+  wget_mutex_unlock(&ctx->lock);
+#endif
 }
 
 static void host_ares_socket_state_cb(void* data WGET_ATTR_UNUSED, ares_socket_t socket_fd, int readable, int writable) {
@@ -887,9 +936,17 @@ struct address_list* lookup_host(const char* host, int flags) {
       hints.ai_flags |= AI_PASSIVE;
 
     xzero(async_ctx);
+#if WGET_EVLOOP_CONTINUOUS
+    wget_mutex_init(&async_ctx.lock);
+    wget_cond_init(&async_ctx.cond);
+#endif
     ares_getaddrinfo(ares, host, NULL, &hints, wget_ares_addrinfo_callback, &async_ctx);
     ares_update_timer();
     completed = dns_wait_for_completion(&async_ctx);
+#if WGET_EVLOOP_CONTINUOUS
+    wget_cond_destroy(&async_ctx.cond);
+    wget_mutex_destroy(&async_ctx.lock);
+#endif
     if (!completed) {
       if (!silent)
         logputs(LOG_VERBOSE, _("failed: timed out.\n"));
@@ -971,9 +1028,17 @@ struct address_list* lookup_host(const char* host, int flags) {
       hints.ai_flags |= AI_PASSIVE;
 
     xzero(async_ctx);
+#if WGET_EVLOOP_CONTINUOUS
+    wget_mutex_init(&async_ctx.lock);
+    wget_cond_init(&async_ctx.cond);
+#endif
     ares_getaddrinfo(ares, host, NULL, &hints, wget_ares_addrinfo_callback, &async_ctx);
     ares_update_timer();
     completed = dns_wait_for_completion(&async_ctx);
+#if WGET_EVLOOP_CONTINUOUS
+    wget_cond_destroy(&async_ctx.cond);
+    wget_mutex_destroy(&async_ctx.lock);
+#endif
     if (!completed) {
       if (!silent)
         logputs(LOG_VERBOSE, _("failed: timed out.\n"));

@@ -956,11 +956,24 @@ static int retr_body_start_async(struct ev_loop* loop,
 }
 struct retr_body_sync_bridge {
   int status;
+#if WGET_EVLOOP_CONTINUOUS
+  wget_mutex_t lock;
+  wget_cond_t cond;
+  bool done;
+#endif
 };
 
 static void retr_body_sync_cb(int status, wgint qtyread WGET_ATTR_UNUSED, wgint qtywritten WGET_ATTR_UNUSED, double elapsed WGET_ATTR_UNUSED, void* user_data) {
   struct retr_body_sync_bridge* bridge = user_data;
+#if WGET_EVLOOP_CONTINUOUS
+  wget_mutex_lock(&bridge->lock);
   bridge->status = status;
+  bridge->done = true;
+  wget_cond_broadcast(&bridge->cond);
+  wget_mutex_unlock(&bridge->lock);
+#else
+  bridge->status = status;
+#endif
 }
 
 /* LEGACY_BLOCKING: drives one transfer to completion before returning. */
@@ -983,11 +996,32 @@ int fd_read_body(const char* downloaded_filename,
   wgint* qtywritten_ptr = qtywritten ? qtywritten : &local_written;
   double* elapsed_ptr = elapsed ? elapsed : &local_elapsed;
 
-  if (retr_body_start_async(loop, downloaded_filename, fd, out, toread, startpos, qtyread_ptr, qtywritten_ptr, elapsed_ptr, flags, out2, retr_body_sync_cb, &bridge) < 0)
-    return -1;
+#if WGET_EVLOOP_CONTINUOUS
+  wget_mutex_init(&bridge.lock);
+  wget_cond_init(&bridge.cond);
+  bridge.done = false;
+#endif
 
+  if (retr_body_start_async(loop, downloaded_filename, fd, out, toread, startpos, qtyread_ptr, qtywritten_ptr, elapsed_ptr, flags, out2, retr_body_sync_cb, &bridge) < 0) {
+#if WGET_EVLOOP_CONTINUOUS
+    wget_cond_destroy(&bridge.cond);
+    wget_mutex_destroy(&bridge.lock);
+#endif
+    return -1;
+  }
+
+#if WGET_EVLOOP_CONTINUOUS
+  wget_mutex_lock(&bridge.lock);
+  while (!bridge.done)
+    wget_cond_wait(&bridge.cond, &bridge.lock);
+  wget_mutex_unlock(&bridge.lock);
+  wget_cond_destroy(&bridge.cond);
+  wget_mutex_destroy(&bridge.lock);
+  return bridge.status;
+#else
   wget_ev_loop_run_transfers();
   return bridge.status;
+#endif
 }
 
 /* Read a hunk of data from FD, up until a terminator.  The hunk is

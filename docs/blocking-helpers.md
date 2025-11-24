@@ -4,7 +4,7 @@ The refactor roadmap in `checklist.md` requires us to retire the synchronous hel
 
 ## `wget_ev_io_wait` — `src/evhelpers.c:52`
 
-*Purpose*: Runs the global libev loop until a single fd reports readiness, effectively serialising I/O.
+*Purpose*: Historically ran the global libev loop until a single fd reported readiness, effectively serialising I/O. As of the continuous-loop refactor, pthread-enabled builds now register the watcher and block on a condition variable while the background libev thread wakes the waiter.
 
 *Call sites*:
 
@@ -14,7 +14,7 @@ The refactor roadmap in `checklist.md` requires us to retire the synchronous hel
 
 ## `wget_ev_sleep` — `src/evhelpers.c:114`
 
-*Purpose*: Spins the central loop until a timer fires, preventing other transfers from progressing.
+*Purpose*: Previously spun the central loop until a timer fired. It now arms a timer and blocks on a condition variable so the dedicated event-loop thread continues to serve other transfers.
 
 *Call sites*:
 
@@ -22,20 +22,20 @@ The refactor roadmap in `checklist.md` requires us to retire the synchronous hel
 
 ## `fd_read_body` — `src/retr.c:981`
 
-*Purpose*: Starts the asynchronous body reader and then blocks on `wget_ev_loop_run_transfers()` until the download finishes.
+*Purpose*: Starts the asynchronous body reader and waits for completion. The old implementation drove `wget_ev_loop_run_transfers()`; the new version blocks on a condition variable so other transfers keep progressing, but it still serialises the caller until the transfer finishes.
 
 *Call sites*:
 
 - `src/http.c:1549-1564` — HTTP response body download.
 
-## `wget_ev_loop_run_transfers` — `src/evloop.c:115`
+## `wget_ev_loop_run_transfers` — `src/evloop.c`
 
-*Purpose*: Drives the libev loop until all transfers finish, preventing concurrency.
+*Purpose*: Used to drive the libev loop until all transfers finished, preventing concurrency. With the background libev thread in `src/evloop.c`, pthread-enabled builds keep the loop running continuously and this helper is a no-op shim retained for non-pthread fallbacks.
 
 *Call sites*:
 
-- `src/retr.c:1003` — used by `fd_read_body`.
-- (Tests: `tests/evloop_transfer_test.c:31,37`.)
+- `src/retr.c:1003` — legacy fallback path only.
+- (Tests: `tests/evloop_transfer_test.c` used to exercise the helper; now rely on the continuous loop.)
 
 ---
 
@@ -53,7 +53,7 @@ To remove the four blocking helpers we need coordinated replacements that keep l
 ### Behavioral requirements
 
 1. **Non-blocking connect/read/write**  
-   - `connect_with_timeout` currently calls `wget_ev_io_wait`. Rework so it registers an `ev_io` watcher for `EV_WRITE` (connect readiness) plus a timer. When either fires, the scheduler resumes the operation.  
+   - `connect_with_timeout` currently calls `wget_ev_io_wait`. Rework so it registers an `ev_io` watcher for `EV_WRITE` (connect readiness) plus a timer. When either fires, the scheduler resumes the operation. (The helper no longer spins the loop, but replacing it with scheduler-aware APIs removes the per-call condition variables.)  
    - Provide an API such as `transfer_scheduler_wait_io(ctx, fd, events, timeout, completion_cb)`.
 
 2. **Timer/delay semantics**  
@@ -69,7 +69,7 @@ To remove the four blocking helpers we need coordinated replacements that keep l
    - Callers enqueue the body state machine and receive completion via `cbs->on_finished`. No synchronous wait remains.
 
 4. **Loop ownership**  
-   - Introduce `transfer_scheduler_run()` that is driven from `main()` and never blocks per transfer.  
+   - Introduce `transfer_scheduler_run()` that is driven from `main()` and never blocks per transfer. The background event-loop thread now keeps libev responsive, but future work still needs scheduler-driven ownership so synchronous wrappers disappear entirely.  
    - Provide `transfer_scheduler_poll()` for components like recursion to advance the loop incrementally when scheduling additional work.
 
 ### Migration plan (high-level)
