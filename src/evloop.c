@@ -174,17 +174,6 @@ bool wget_ev_loop_has_active_transfers(void) {
   return active_transfer_machines > 0;
 }
 
-void wget_ev_loop_run_transfers(void) {
-#if WGET_EVLOOP_CONTINUOUS
-  wget_ev_loop_init();
-#else
-  struct ev_loop* loop = wget_ev_loop_get();
-  while (wget_ev_loop_has_active_transfers())
-    ev_run(loop, EVRUN_ONCE);
-  evloop_run_mailbox();
-#endif
-}
-
 bool wget_ev_loop_post_async(wget_ev_loop_async_cb cb, void* arg) {
   if (!cb)
     return false;

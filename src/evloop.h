@@ -28,7 +28,6 @@ bool wget_ev_loop_is_initialized(void);
 void wget_ev_loop_transfer_ref(void);
 void wget_ev_loop_transfer_unref(void);
 bool wget_ev_loop_has_active_transfers(void);
-void wget_ev_loop_run_transfers(void);
 bool wget_ev_loop_post_async(wget_ev_loop_async_cb cb, void* arg);
 
 #endif /* WGET_EVLOOP_H */

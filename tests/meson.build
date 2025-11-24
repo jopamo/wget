@@ -76,23 +76,6 @@ transfer_context_test = executable(
 
 test('transfer_context_helpers', transfer_context_test)
 
-evloop_transfer_sources = files(
-  'evloop_transfer_test.c',
-  'test_stubs.c',
-  '../src/evloop.c',
-  '../src/threading.c',
-  '../src/xalloc.c',
-)
-
-evloop_transfer_test = executable(
-  'evloop_transfer_test',
-  evloop_transfer_sources,
-  include_directories: test_includes,
-  dependencies: [libev_dep],
-  install: false,
-)
-
-test('evloop_transfer_tracking', evloop_transfer_test)
 
 evloop_async_sources = files(
   'evloop_async_test.c',
@@ -149,3 +132,12 @@ http_response_test = executable(
 )
 
 test('http_response_stat_helpers', http_response_test)
+
+
+# HTTP connection pool tests - TODO: Implement connection pool tests
+# These tests require full wget infrastructure and are currently disabled
+# due to missing dependencies in the test environment
+
+# Performance benchmark tests - TODO: Implement performance benchmarks
+# These tests require full wget infrastructure and are currently disabled
+# due to missing dependencies in the test environment

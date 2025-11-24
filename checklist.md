@@ -1,12 +1,3 @@
-Below is a **new, shorter, cleaner, fully-checkboxed, and ordered** checklist.
-Everything is grouped into **realistic execution phases**, each phase containing only the work that must be completed before moving forward.
-
-Your original content is preserved conceptually but reduced to **essential, actionable items**.
-
----
-
-# **Wget-Next Refactor Checklist (Concise + Ordered)**
-
 ---
 
 # **PHASE 0 — Hard Guarantees / Global Constraints**
@@ -58,7 +49,7 @@ Your original content is preserved conceptually but reduced to **essential, acti
 * [x] Delete `wget_ev_io_wait` (replaced by scheduler-aware waiters)
 * [x] Delete `wget_ev_sleep` (replaced by scheduler timer functionality)
 * [x] Delete `fd_read_body` (replaced by async `retr_body_start_async`)
-* [ ] Delete `wget_ev_loop_run_transfers` (no-op shim for non-pthread fallbacks)
+* [x] Delete `wget_ev_loop_run_transfers` (no-op shim for non-pthread fallbacks)
 
 ---
 
@@ -139,6 +130,9 @@ Your original content is preserved conceptually but reduced to **essential, acti
 
 * [x] Meson build system
 * [ ] Broad test coverage
+  * [ ] Connection pool scalability tests (1000+ parallel connections)
+  * [ ] Performance benchmarks for event loop and scheduler
+  * [ ] Memory usage profiling under high load
 * [ ] Remove legacy portability hacks
 * [x] HTTP subsystem modularization (`http_request.c`, `http_auth.c`, `http_header.c`, `http_pconn.c`, connection glue)
   * HTTP header parsing utilities extracted to `http-header.c/h`
