@@ -6,6 +6,7 @@
 #define WGET_HTTP_INTERNAL_H
 
 #include "wget.h"
+#include "host.h"
 
 typedef enum {
   ENC_INVALID = -1, /* invalid encoding */
@@ -46,7 +47,16 @@ struct http_stat {
   encoding_t local_encoding;  /* the encoding of the local file */
   encoding_t remote_encoding; /* the encoding of the remote file */
 
-  bool temporary; /* downloading a temporary file */
+  bool temporary;  /* downloading a temporary file */
+  void* user_data; /* optional caller-provided context */
+
+  /* WARC related fields, moved from http_body_download parameters */
+  char* url;
+  char* warc_timestamp_str;
+  char* warc_request_uuid;
+  ip_address* warc_ip;
+  char* type;
+  char* head;
 };
 
 #endif /* WGET_HTTP_INTERNAL_H */
