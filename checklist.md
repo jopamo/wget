@@ -66,7 +66,7 @@ NOTE: WHEN WORKING THROUGH CHECKLIST, MARK OFF COMPLETED ITEMS, ADD MISSING ITEM
 * [x] Link extraction from HTML and XHTML
 * [x] Link extraction from CSS files
 * [ ] Parsing and traversal of RSS and Atom feeds — update `src/recur.c`, `src/html-parse.c`
-* [ ] Parsing of XML Sitemap files — update `src/recur.c`, `src/html-parse.c`
+* [x] Parsing of XML Sitemap files — update `src/recur.c`, `src/html-parse.c`
 * [ ] Metalink multi-source engine driven by libev state machines — update `src/metalink.c`, `src/transfer.c`, `src/evloop.c`
 * [ ] Extended recursion filters and smarter crawl heuristics — update `src/recur.c`, `src/spider.c`
 * [ ] Ensure recursion is also fully asynchronous (no blocking parsing or sleeps) — update `src/recur.c`, `src/evloop.c`

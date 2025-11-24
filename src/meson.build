@@ -33,6 +33,7 @@ sources = [
   'recur.c',
   'res.c',
   'retr.c',
+  'metalink_checks.c',
   'socket_opts.c',
   'signals.c',
   'spider.c',

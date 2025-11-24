@@ -768,6 +768,115 @@ struct urlpos* get_urls_html(const char* file, const char* url, bool* meta_disal
   return urls;
 }
 
+static const char* sitemap_strip_namespace(const char* name) {
+  const char* local = strrchr(name, ':');
+  return local ? local + 1 : name;
+}
+
+static void sitemap_tag_mapper(struct taginfo* tag, void* arg) {
+  struct map_context* ctx = arg;
+  const char* local;
+  const char* start;
+  const char* end;
+  char* link;
+  struct urlpos* up;
+
+  if (!tag || !tag->name || !tag->end_tag_p || !tag->contents_begin || !tag->contents_end || tag->contents_begin > tag->contents_end)
+    return;
+
+  local = sitemap_strip_namespace(tag->name);
+  if (c_strcasecmp(local, "loc"))
+    return;
+
+  start = tag->contents_begin;
+  end = tag->contents_end;
+
+  while (start < end && c_isspace(*start))
+    ++start;
+  while (end > start && c_isspace(*(end - 1)))
+    --end;
+
+  if (end <= start)
+    return;
+
+  link = strdupdelim(start, end);
+  if (!link)
+    return;
+
+  up = append_url(link, (int)(start - ctx->text), (int)(end - start), ctx);
+  xfree(link);
+  if (!up)
+    return;
+
+  up->link_expect_html = 1;
+}
+
+static struct urlpos* get_urls_sitemap_fm_internal(const char* file, const struct file_memory* fm, const char* url) {
+  struct map_context ctx;
+
+  memset(&ctx, 0, sizeof(ctx));
+  ctx.text = (char*)fm->content;
+  ctx.parent_base = url ? url : opt.base_href;
+  ctx.document_file = file;
+
+  map_html_tags(fm->content, fm->length, sitemap_tag_mapper, &ctx, 0, NULL, NULL);
+  return ctx.head;
+}
+
+struct sitemap_parse_async_job {
+  const char* file;
+  const struct file_memory* fm;
+  const char* url;
+  struct urlpos* urls;
+  bool done;
+};
+
+static void sitemap_parse_async_work(void* arg) {
+  struct sitemap_parse_async_job* job = arg;
+  job->urls = get_urls_sitemap_fm_internal(job->file, job->fm, job->url);
+}
+
+static void sitemap_parse_async_complete(void* arg) {
+  struct sitemap_parse_async_job* job = arg;
+  job->done = true;
+}
+
+static struct urlpos* get_urls_sitemap_fm(const char* file, const struct file_memory* fm, const char* url) {
+  if (!wget_worker_pool_available())
+    return get_urls_sitemap_fm_internal(file, fm, url);
+
+  struct sitemap_parse_async_job job = {
+      .file = file,
+      .fm = fm,
+      .url = url,
+      .urls = NULL,
+      .done = false,
+  };
+
+  if (!wget_worker_pool_submit(sitemap_parse_async_work, sitemap_parse_async_complete, &job))
+    return get_urls_sitemap_fm_internal(file, fm, url);
+
+  while (!job.done)
+    wget_ev_loop_run_once();
+
+  return job.urls;
+}
+
+struct urlpos* get_urls_sitemap(const char* file, const char* url, struct iri* iri WGET_ATTR_UNUSED) {
+  struct file_memory* fm;
+  struct urlpos* urls;
+
+  fm = wget_read_file(file);
+  if (!fm) {
+    logprintf(LOG_NOTQUIET, "%s: %s\n", file, strerror(errno));
+    return NULL;
+  }
+
+  urls = get_urls_sitemap_fm(file, fm, url);
+  wget_read_file_free(fm);
+  return urls;
+}
+
 /* This doesn't really have anything to do with HTML, but it's similar
    to get_urls_html, so we put it here.  */
 

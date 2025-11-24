@@ -37,6 +37,7 @@
 #include "spider.h"
 #include "warc.h"
 #include "c-strcase.h"
+#include "c-strcasestr.h"
 #include "version.h"
 #include "xstrndup.h"
 #ifdef HAVE_METALINK
@@ -69,6 +70,8 @@ static struct cookie_jar* wget_cookie_jar;
 #define TEXTHTML_S "text/html"
 #define TEXTXHTML_S "application/xhtml+xml"
 #define TEXTCSS_S "text/css"
+#define TEXTXML_S "text/xml"
+#define APPXML_S "application/xml"
 
 /* Some status code validation macros: */
 #define H_10X(x) (((x) >= 100) && ((x) < 200))
@@ -2318,6 +2321,11 @@ static void set_content_type(int* dt, const char* type) {
     *dt |= TEXTCSS;
   else
     *dt &= ~TEXTCSS;
+
+  if (type && (0 == c_strcasecmp(type, TEXTXML_S) || 0 == c_strcasecmp(type, APPXML_S) || c_strcasestr(type, "+xml")))
+    *dt |= TEXTXML;
+  else
+    *dt &= ~TEXTXML;
 }
 
 #ifdef HAVE_METALINK

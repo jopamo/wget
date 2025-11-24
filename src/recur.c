@@ -187,6 +187,35 @@ static reject_reason descend_redirect(const char*, struct url*, int, struct url*
 static void write_reject_log_header(FILE*);
 static void write_reject_log_reason(FILE*, reject_reason, const struct url*, const struct url*);
 
+bool wget_recur_file_looks_like_sitemap(const char* file) {
+  FILE* fp;
+  char buf[4096 + 1];
+  size_t len;
+  bool match = false;
+
+  if (!file)
+    return false;
+
+  fp = fopen(file, "rb");
+  if (!fp)
+    return false;
+
+  len = fread(buf, 1, sizeof(buf) - 1, fp);
+  fclose(fp);
+
+  if (len == 0)
+    return false;
+
+  buf[len] = '\0';
+  for (size_t i = 0; i < len; ++i)
+    buf[i] = c_tolower(buf[i]);
+
+  if (strstr(buf, "<urlset") || strstr(buf, "<sitemapindex"))
+    match = true;
+
+  return match;
+}
+
 /* Retrieve a part of the web beginning with START_URL.  This used to
    be called "recursive retrieval", because the old function was
    recursive and implemented depth-first search.  retrieve_tree on the
@@ -256,6 +285,7 @@ uerr_t retrieve_tree(struct url* start_url_parsed, struct iri* pi) {
     int depth;
     bool html_allowed, css_allowed;
     bool is_css = false;
+    bool is_sitemap = false;
     bool dash_p_leaf_HTML = false;
 
     if (opt.quota && total_downloaded_bytes > opt.quota)
@@ -288,6 +318,10 @@ uerr_t retrieve_tree(struct url* start_url_parsed, struct iri* pi) {
         descend = true;
         is_css = is_css_bool;
       }
+      else if (html_allowed && wget_recur_file_looks_like_sitemap(file)) {
+        descend = true;
+        is_sitemap = true;
+      }
     }
     else {
       int dt = 0, url_err;
@@ -307,6 +341,7 @@ uerr_t retrieve_tree(struct url* start_url_parsed, struct iri* pi) {
         if (html_allowed && file && status == RETROK && (dt & RETROKF) && (dt & TEXTHTML)) {
           descend = true;
           is_css = false;
+          is_sitemap = false;
         }
 
         /* a little different, css_allowed can override content type
@@ -315,6 +350,12 @@ uerr_t retrieve_tree(struct url* start_url_parsed, struct iri* pi) {
         if (file && status == RETROK && (dt & RETROKF) && ((dt & TEXTCSS) || css_allowed)) {
           descend = true;
           is_css = true;
+          is_sitemap = false;
+        }
+
+        if (!is_css && file && status == RETROK && (dt & RETROKF) && (dt & TEXTXML)) {
+          descend = true;
+          is_sitemap = true;
         }
 
         if (redirected) {
@@ -374,7 +415,14 @@ uerr_t retrieve_tree(struct url* start_url_parsed, struct iri* pi) {
 
     if (descend) {
       bool meta_disallow_follow = false;
-      struct urlpos* children = is_css ? get_urls_css_file(file, url) : get_urls_html(file, url, &meta_disallow_follow, i);
+      struct urlpos* children = NULL;
+
+      if (is_css)
+        children = get_urls_css_file(file, url);
+      else if (is_sitemap)
+        children = get_urls_sitemap(file, url, i);
+      else
+        children = get_urls_html(file, url, &meta_disallow_follow, i);
 
       if (opt.use_robots && meta_disallow_follow) {
         logprintf(LOG_VERBOSE, _("nofollow attribute found in %s. Will not follow any links on this page\n"), file);

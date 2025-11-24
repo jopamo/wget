@@ -242,7 +242,8 @@ enum {
   ADDED_HTML_EXTENSION = 0x0020, /* added ".html" extension due to -E */
   TEXTCSS = 0x0040,              /* document is of type text/css */
   IF_MODIFIED_SINCE = 0x0080,    /* use if-modified-since header */
-  METALINK_METADATA = 0x0100     /* use HTTP response for Metalink metadata */
+  METALINK_METADATA = 0x0100,    /* use HTTP response for Metalink metadata */
+  TEXTXML = 0x0200               /* document is XML (sitemaps, feeds, etc.) */
 };
 
 /* Universal error type -- used almost everywhere.  Error reporting of

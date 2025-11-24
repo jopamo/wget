@@ -127,3 +127,66 @@ worker_pool_test = executable(
 )
 
 test('worker_pool_dispatch', worker_pool_test)
+
+sitemap_sources = files(
+  'sitemap_test.c',
+  'test_stubs.c',
+  'stub_host_validation.c',
+  'html_url_stubs.c',
+  'css_url_stubs.c',
+  'digest_stubs.c',
+  '../src/html-url.c',
+  '../src/html-parse.c',
+  '../src/url.c',
+  '../src/utils.c',
+  '../src/quoting.c',
+  '../src/strcase.c',
+  '../src/hash.c',
+  '../src/xalloc.c',
+  '../src/threading.c',
+  '../src/evloop.c',
+)
+
+if have_iri
+  sitemap_sources += '../src/iri.c'
+endif
+
+sitemap_deps = [libev_dep, threads_dep]
+if pcre2_dep.found()
+  sitemap_deps += pcre2_dep
+elif pcre_dep.found()
+  sitemap_deps += pcre_dep
+endif
+
+sitemap_test = executable(
+  'sitemap_test',
+  sitemap_sources,
+  include_directories: test_includes,
+  dependencies: sitemap_deps,
+  install: false,
+)
+
+test('sitemap_parsing', sitemap_test)
+
+if metalink_dep.found()
+  metalink_checksum_sources = files(
+    'metalink_checksum_test.c',
+    'test_stubs.c',
+    '../src/metalink_checks.c',
+    '../src/digest.c',
+    '../src/utils.c',
+    '../src/xalloc.c',
+    '../src/threading.c',
+    '../src/evloop.c',
+  )
+
+  metalink_checksum_test = executable(
+    'metalink_checksum_test',
+    metalink_checksum_sources,
+    include_directories: test_includes,
+    dependencies: [libev_dep, threads_dep, metalink_dep],
+    install: false,
+  )
+
+  test('metalink_checksums', metalink_checksum_test)
+endif
