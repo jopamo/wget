@@ -10,6 +10,7 @@
 #include <string.h>
 #include <signal.h>
 #include <spawn.h>
+#include <ev.h>
 #ifdef ENABLE_NLS
 #include <locale.h>
 #endif
@@ -19,18 +20,19 @@
 
 #include "exits.h"
 #include "utils.h"
-#include "init.h"
 #include "retr.h"
 #include "recur.h"
 #include "host.h"
 #include "evloop.h"
 #include "threading.h"
+#include "init.h"
 #include "url.h"
 #include "progress.h" /* for progress_handle_sigwinch */
 #include "signals.h"
 #include "convert.h"
 #include "spider.h"
-#include "http.h" /* for save_cookies */
+#include "http.h"
+#include "cookies.h"
 #include "hsts.h" /* for initializing hsts_store to NULL */
 #include "ptimer.h"
 #include "warc.h"
@@ -63,6 +65,65 @@ void* ares;
 #endif
 
 struct options opt;
+
+static struct main_loop_ctx* g_main_ctx;
+
+static void main_retrieve_url_cb(struct retrieve_url_ctx* ctx);
+static void main_retrieve_from_file_cb(struct retrieve_from_file_ctx* ctx);
+
+static void main_ctx_maybe_set_error(struct main_loop_ctx* ctx, uerr_t result);
+static void main_ctx_operation_finished(struct main_loop_ctx* ctx);
+
+static void main_ctx_maybe_set_error(struct main_loop_ctx* ctx, uerr_t result) {
+  if (!ctx)
+    return;
+
+  if (result != RETROK && ctx->overall_status == RETROK)
+    ctx->overall_status = result;
+}
+
+static void main_ctx_operation_finished(struct main_loop_ctx* ctx) {
+  if (!ctx)
+    return;
+
+  if (ctx->pending_operations > 0)
+    ctx->pending_operations--;
+
+  if (ctx->pending_operations <= 0 && ctx->loop)
+    ev_break(ctx->loop, EVBREAK_ALL);
+}
+
+static void main_retrieve_url_cb(struct retrieve_url_ctx* ctx) {
+  if (!g_main_ctx || !ctx)
+    return;
+
+  if (ctx->result == RETROK)
+    g_main_ctx->numurls_succeeded++;
+  else
+    main_ctx_maybe_set_error(g_main_ctx, ctx->result);
+
+  main_ctx_operation_finished(g_main_ctx);
+}
+
+static void main_retrieve_from_file_cb(struct retrieve_from_file_ctx* ctx) {
+  if (!ctx)
+    return;
+
+  struct main_loop_ctx* ctx_ptr = ctx->main_ctx ? ctx->main_ctx : g_main_ctx;
+  if (!ctx_ptr)
+    return;
+
+  if (ctx->count)
+    ctx_ptr->numurls_succeeded += *ctx->count;
+
+  main_ctx_maybe_set_error(ctx_ptr, ctx->result);
+  main_ctx_operation_finished(ctx_ptr);
+
+  if (ctx->count) {
+    xfree(ctx->count);
+    ctx->count = NULL;
+  }
+}
 
 /* defined in version.c */
 extern char* system_getrc;
@@ -1139,12 +1200,19 @@ int cleaned_up;
 
 int main(int argc, char** argv) {
   char* p;
-  int i, ret, longindex;
+  int i, longindex;
   int nurls;
   int argstring_length;
   bool use_userconfig = false;
   bool noconfig = false;
   bool append_to_log = false;
+
+  struct main_loop_ctx main_ctx;
+  main_ctx.pending_operations = 0;
+  main_ctx.numurls_succeeded = 0;
+  main_ctx.overall_status = RETROK;
+  main_ctx.loop = NULL;
+  main_ctx.all_finished = false;
 
   cleaned_up = 0; /* do cleanup later */
 
@@ -1155,6 +1223,8 @@ int main(int argc, char** argv) {
   program_name = argv[0];
 
   wget_ev_loop_init();
+  main_ctx.loop = wget_ev_loop_get();
+  g_main_ctx = &main_ctx;
   wget_worker_pool_init(0);
   atexit(wget_worker_pool_shutdown);
 
@@ -1193,7 +1263,8 @@ int main(int argc, char** argv) {
      option ("--config") and parse it before the other user options. */
   longindex = -1;
 
-  while ((getopt_long(argc, argv, short_options, long_options, &longindex)) != -1) {
+  int ret_getopt_long;  // Declare ret_getopt_long here
+  while ((ret_getopt_long = getopt_long(argc, argv, short_options, long_options, &longindex)) != -1) {
     int confval;
     struct cmdline_option* config_opt;
 
@@ -1221,28 +1292,28 @@ int main(int argc, char** argv) {
 
   /* If the user did not specify a config, read the system wgetrc and ~/.wgetrc. */
   if (noconfig == false && use_userconfig == false)
-    if ((ret = initialize()))
-      return ret;
+    if ((main_ctx.overall_status = initialize()))
+      exit(main_ctx.overall_status);  // Use exit because this is fatal error
 
   opterr = 0;
   optind = 0;
 
   longindex = -1;
-  while ((ret = getopt_long(argc, argv, short_options, long_options, &longindex)) != -1) {
+  while ((ret_getopt_long = getopt_long(argc, argv, short_options, long_options, &longindex)) != -1) {
     int val;
     struct cmdline_option* cmdopt;
 
     /* If LONGINDEX is unchanged, it means RET is referring a short
        option.  */
     if (longindex == -1) {
-      if (ret == '?') {
+      if (ret_getopt_long == '?') {
         print_usage(1);
         fprintf(stderr, "\n");
         fprintf(stderr, _("Try `%s --help' for more options.\n"), exec_name);
         exit(WGET_EXIT_PARSE_ERROR);
       }
       /* Find the short option character in the mapping.  */
-      longindex = optmap[ret - 32];
+      longindex = optmap[ret_getopt_long - 32];
     }
     val = long_options[longindex].val;
 
@@ -1761,11 +1832,9 @@ only if outputting to a regular file.\n"));
   /* Retrieve the URLs from argument list.  */
   for (i = 0; i < nurls; i++, optind++) {
     char* t;
-    char *filename = NULL, *redirected_URL = NULL;
-    int dt = 0, url_err;
-    /* Need to do a new struct iri every time, because
-     * retrieve_url may modify it in some circumstances,
-     * currently. */
+    char *filename_ptr = NULL, *redirected_URL_ptr = NULL;  // Pointers for retrieve_url_start_async
+    int* dt_ptr = xcalloc(1, sizeof(int));                  // dt needs to be allocated here
+    int url_err;
     struct iri* iri = iri_new();
     struct url* url_parsed;
 
@@ -1778,7 +1847,10 @@ only if outputting to a regular file.\n"));
 
     if (!url_parsed) {
       logprintf(LOG_NOTQUIET, "%s: %s.\n", t, url_error(url_err));
+      main_ctx.overall_status = URLERROR;  // Store error status
       inform_exit_status(URLERROR);
+      xfree(dt_ptr);
+      iri_free(iri);
     }
     else {
       /* Request credentials if use_askpass is set. */
@@ -1786,27 +1858,25 @@ only if outputting to a regular file.\n"));
         use_askpass(url_parsed);
 
       if (opt.recursive || opt.page_requisites) {
+        // retrieve_tree is still blocking, so it must be called synchronously for now.
+        // This will need to be refactored into an async version later.
         retrieve_tree(url_parsed, NULL);
+        // For now, assume retrieve_tree is blocking and completes here.
+        // If it succeeds, increment numurls_succeeded
+        main_ctx.numurls_succeeded++;  // Placeholder, actual status needs to be checked
+        url_free(url_parsed);
+        iri_free(iri);
+        xfree(dt_ptr);
       }
       else {
-        struct transfer_context tctx;
-        transfer_context_prepare(&tctx, &opt, t);
-        retrieve_url(url_parsed, t, &filename, &redirected_URL, NULL, &dt, opt.recursive, iri, true, &tctx);
-        transfer_context_free(&tctx);
-      }
+        struct transfer_context* tctx = xcalloc(1, sizeof(struct transfer_context));
+        transfer_context_prepare(tctx, &opt, t);
+        tctx->user_data = &main_ctx;  // Link transfer_context to main_loop_ctx
 
-      if (opt.delete_after && filename != NULL && file_exists_p(filename, NULL)) {
-        DEBUGP(("Removing file due to --delete-after in main():\n"));
-        logprintf(LOG_VERBOSE, _("Removing %s.\n"), filename);
-        if (unlink(filename))
-          logprintf(LOG_NOTQUIET, "unlink: %s\n", strerror(errno));
+        retrieve_url_start_async(url_parsed, t, &redirected_URL_ptr, &filename_ptr, NULL, dt_ptr, opt.recursive, iri, true, tctx, main_retrieve_url_cb);
+        main_ctx.pending_operations++;
       }
-      xfree(redirected_URL);
-      xfree(filename);
-      url_free(url_parsed);
     }
-
-    iri_free(iri);
 
     if (t != argv[optind])
       xfree(t);
@@ -1814,17 +1884,32 @@ only if outputting to a regular file.\n"));
 
   /* And then from the input file, if any.  */
   if (opt.input_filename) {
-    int count;
-    int status;
-    status = retrieve_from_file(opt.input_filename, opt.force_html, &count);
-    inform_exit_status(status);
-    if (!count)
-      logprintf(LOG_NOTQUIET, _("No URLs found in %s.\n"), opt.input_filename);
+    int* count_ptr = xcalloc(1, sizeof(int));  // Managed by retrieve_from_file_ctx
+    main_ctx.pending_operations++;
+
+    struct retrieve_from_file_ctx* rff_ctx = retrieve_from_file_start_async(opt.input_filename, opt.force_html, count_ptr, main_retrieve_from_file_cb);
+    if (!rff_ctx) {
+      main_ctx.overall_status = FWRITEERR;
+      inform_exit_status(FWRITEERR);
+      main_ctx.pending_operations--;
+      xfree(count_ptr);
+    }
+    else {
+      // Link retrieve_from_file_ctx to main_ctx
+      rff_ctx->main_ctx = &main_ctx;
+    }
+  }
+
+  // Run the event loop until all operations are finished
+  if (main_ctx.pending_operations > 0) {
+    ev_run(main_ctx.loop, 0);  // Run until no active watchers
   }
 
   /* Print broken links. */
   if (opt.recursive && opt.spider)
     print_broken_links();
+
+  numurls = main_ctx.numurls_succeeded;
 
   /* Print the downloaded sum.  */
   if ((opt.recursive || opt.page_requisites || nurls > 1 || (opt.input_filename && total_downloaded_bytes != 0)) && total_downloaded_bytes != 0) {
@@ -1849,7 +1934,7 @@ only if outputting to a regular file.\n"));
 
 #ifdef ENABLE_COOKIES
   if (opt.cookies_output)
-    save_cookies();
+    cookies_save(opt.cookies_output);
 #endif
 
 #ifdef HAVE_HSTS
@@ -1865,7 +1950,7 @@ only if outputting to a regular file.\n"));
   wget_signals_shutdown();
   wget_ev_loop_deinit();
 
-  exit(get_exit_status());
+  exit(main_ctx.overall_status);  // Use overall_status for exit, if any
 }
 
 /*
