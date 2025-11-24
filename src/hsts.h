@@ -42,6 +42,7 @@
 typedef struct hsts_store* hsts_store_t;
 
 hsts_store_t hsts_store_open(const char*);
+extern hsts_store_t hsts_store;
 
 void hsts_store_save(hsts_store_t, const char*);
 void hsts_store_close(hsts_store_t);
