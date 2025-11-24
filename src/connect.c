@@ -12,11 +12,7 @@
 
 #include <sys/socket.h>
 
-#ifdef __VMS
-#include "vms_ip.h"
-#else /* def __VMS */
 #include <netdb.h>
-#endif /* def __VMS [else] */
 #include <netinet/in.h>
 #ifdef HAVE_NETINET_TCP_H
 #include <netinet/tcp.h>

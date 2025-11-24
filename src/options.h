@@ -246,10 +246,9 @@ struct options {
   char* body_data;      /* HTTP Method Data String */
   char* body_file;      /* HTTP Method File */
 
-  enum { restrict_unix, restrict_vms } restrict_files_os;                          /* file name restriction ruleset. */
   bool restrict_files_ctrl;                                                                          /* non-zero if control chars in URLs
-                                                                                                        are restricted from appearing in
-                                                                                                        generated file names. */
+                                                                                                       are restricted from appearing in
+                                                                                                       generated file names. */
   bool restrict_files_nonascii;                                                                      /* non-zero if bytes with values greater
                                                                                                         than 127 are restricted. */
   enum { restrict_no_case_restriction, restrict_lowercase, restrict_uppercase } restrict_files_case; /* file name case restriction. */

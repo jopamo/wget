@@ -46,18 +46,7 @@
 #include "log.h"
 #include "threading.h"
 
-/* 2005-10-25 SMS.
-   VMS log files are often VFC record format, not stream, so fputs() can
-   produce multiple records, even when there's no newline terminator in
-   the buffer.  The result is unsightly output with spurious newlines.
-   Using fprintf() instead of fputs(), along with inhibiting some
-   fflush() activity below, seems to solve the problem.
-*/
-#ifdef __VMS
-#define FPUTS(s, f) fprintf((f), "%s", (s))
-#else /* def __VMS */
 #define FPUTS(s, f) fputs((s), (f))
-#endif /* def __VMS [else] */
 
 /* This file implements support for "logging".  Logging means printing
    output, plus several additional features:
@@ -490,16 +479,7 @@ static void logflush_locked(void) {
   FILE* fp = get_log_fp();
   FILE* warcfp = get_warc_log_fp();
   if (fp) {
-/* 2005-10-25 SMS.
-   On VMS, flush only for a terminal.  See note at FPUTS macro, above.
-*/
-#ifdef __VMS
-    if (isatty(fileno(fp))) {
-      fflush(fp);
-    }
-#else  /* def __VMS */
     fflush(fp);
-#endif /* def __VMS [else] */
   }
 
   if (warcfp != NULL)
@@ -938,7 +918,6 @@ void redirect_output(bool to_file, const char* signal_name) {
 /* Check whether there's a need to redirect output. */
 
 static void check_redirect_output_locked(void) {
-#ifndef __VMS
   /* If it was redirected already to log file by SIGHUP, SIGUSR1 or -o parameter,
    * it was permanent.
    * If there was no SIGHUP or SIGUSR1 and shell is interactive
@@ -955,5 +934,4 @@ static void check_redirect_output_locked(void) {
       redirect_output_locked(false, NULL);
     }
   }
-#endif /* !__VMS */
 }

@@ -302,9 +302,7 @@ static const struct {
     {"tries", &opt.ntry, cmd_number_inf},
     {"trustservernames", &opt.trustservernames, cmd_boolean},
     {"unlink", &opt.unlink_requested, cmd_boolean},
-#ifndef __VMS
     {"useaskpass", &opt.use_askpass, cmd_use_askpass},
-#endif
     {"useproxy", &opt.use_proxy, cmd_boolean},
     {"user", &opt.user, cmd_string},
     {"useragent", NULL, cmd_spec_useragent},
@@ -400,12 +398,6 @@ void defaults(void) {
   opt.compression = compression_none;
 #endif
 
-  /* The default for file name restriction defaults to the OS type. */
-#if defined(__VMS)
-  opt.restrict_files_os = restrict_vms;
-#else
-  opt.restrict_files_os = restrict_unix;
-#endif
   opt.restrict_files_ctrl = true;
   opt.restrict_files_nonascii = false;
   opt.restrict_files_case = restrict_no_case_restriction;
@@ -517,15 +509,7 @@ char* wgetrc_env_file_name(void) {
 /* Append file name to (locally appropriate) directory spec.
    Return pointer to allocated storage. */
 char* ajoin_dir_file(const char* dir, const char* file) {
-  char* dir_file;
-#ifdef __VMS
-  /* No separator: "dev:[dir]" + "name.type" */
-  dir_file = aprintf("%s%s", dir, file);
-#else  /* def __VMS */
-  /* Slash separator: "/a/b" + "/" + "name.type" */
-  dir_file = aprintf("%s/%s", dir, file);
-#endif /* def __VMS [else] */
-  return dir_file;
+  return aprintf("%s/%s", dir, file);
 }
 
 /* Check for the existence of '$HOME/.wgetrc' and return its path
@@ -1424,7 +1408,6 @@ static bool cmd_spec_regex_type(const char* com, const char* val, void* place_ig
 }
 
 static bool cmd_spec_restrict_file_names(const char* com, const char* val, void* place_ignored WGET_ATTR_UNUSED) {
-  int restrict_os = opt.restrict_files_os;
   int restrict_ctrl = opt.restrict_files_ctrl;
   int restrict_case = opt.restrict_files_case;
   int restrict_nonascii = opt.restrict_files_nonascii;
@@ -1438,10 +1421,9 @@ static bool cmd_spec_restrict_file_names(const char* com, const char* val, void*
     if (!end)
       end = val + strlen(val);
 
-    if (VAL_IS("unix"))
-      restrict_os = restrict_unix;
-    else if (VAL_IS("vms"))
-      restrict_os = restrict_vms;
+    if (VAL_IS("unix")) {
+      /* Legacy token; Unix-style restrictions are the only supported mode now. */
+    }
     else if (VAL_IS("lowercase"))
       restrict_case = restrict_lowercase;
     else if (VAL_IS("uppercase"))
@@ -1453,7 +1435,7 @@ static bool cmd_spec_restrict_file_names(const char* com, const char* val, void*
     else {
       fprintf(stderr, _("\
 %s: %s: Invalid restriction %s,\n\
-    use [unix|vms],[lowercase|uppercase],[nocontrol],[ascii].\n"),
+    use [unix],[lowercase|uppercase],[nocontrol],[ascii].\n"),
               exec_name, com, quote(val));
       return false;
     }
@@ -1464,7 +1446,6 @@ static bool cmd_spec_restrict_file_names(const char* com, const char* val, void*
 
 #undef VAL_IS
 
-  opt.restrict_files_os = restrict_os;
   opt.restrict_files_ctrl = restrict_ctrl;
   opt.restrict_files_case = restrict_case;
   opt.restrict_files_nonascii = restrict_nonascii;
@@ -1787,14 +1768,15 @@ const char* test_cmd_spec_restrict_file_names(void) {
   unsigned i;
   static const struct {
     const char* val;
-    int expected_restrict_files_os;
     bool expected_restrict_files_ctrl;
     int expected_restrict_files_case;
+    bool expected_restrict_files_nonascii;
     bool result;
   } test_array[] = {
-      {"unix", restrict_unix, true, restrict_no_case_restriction, true},
-      {"vms,lowercase", restrict_vms, true, restrict_lowercase, true},
-      {"unix,nocontrol,lowercase,", restrict_unix, false, restrict_lowercase, true},
+      {"unix", true, restrict_no_case_restriction, false, true},
+      {"unix,nocontrol,lowercase,", false, restrict_lowercase, false, true},
+      {"ascii,uppercase", true, restrict_uppercase, true, true},
+      {"vms,lowercase", true, restrict_no_case_restriction, false, false},
   };
 
   for (i = 0; i < countof(test_array); ++i) {
@@ -1805,13 +1787,14 @@ const char* test_cmd_spec_restrict_file_names(void) {
 
     /*
     fprintf (stderr, "test_cmd_spec_restrict_file_names: TEST %d\n", i); fflush (stderr);
-    fprintf (stderr, "opt.restrict_files_os: %d\n",   opt.restrict_files_os); fflush (stderr);
     fprintf (stderr, "opt.restrict_files_ctrl: %d\n", opt.restrict_files_ctrl); fflush (stderr);
     fprintf (stderr, "opt.restrict_files_case: %d\n", opt.restrict_files_case); fflush (stderr);
+    fprintf (stderr, "opt.restrict_files_nonascii: %d\n", opt.restrict_files_nonascii); fflush (stderr);
     */
-    mu_assert("test_cmd_spec_restrict_file_names: wrong result", res == test_array[i].result && (int)opt.restrict_files_os == test_array[i].expected_restrict_files_os &&
-                                                                     opt.restrict_files_ctrl == test_array[i].expected_restrict_files_ctrl &&
-                                                                     (int)opt.restrict_files_case == test_array[i].expected_restrict_files_case);
+    mu_assert("test_cmd_spec_restrict_file_names: wrong result",
+              res == test_array[i].result && opt.restrict_files_ctrl == test_array[i].expected_restrict_files_ctrl &&
+                  (int)opt.restrict_files_case == test_array[i].expected_restrict_files_case &&
+                  opt.restrict_files_nonascii == test_array[i].expected_restrict_files_nonascii);
   }
 
   return NULL;

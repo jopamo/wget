@@ -103,11 +103,7 @@ int path_search(char* tmpl, size_t tmpl_len, const char* dir, const char* pfx, b
   }
 
   size_t dlen = strlen(chosen);
-#ifdef __VMS
-  bool add_slash = false;
-#else
   bool add_slash = dlen != 0 && !IS_DIR_SEPARATOR(chosen[dlen - 1]);
-#endif
   size_t needed = dlen + (add_slash ? 1 : 0) + plen + 6 + 1;
   if (tmpl_len < needed) {
     errno = EINVAL;

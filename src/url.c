@@ -51,10 +51,6 @@
 #endif
 #include <langinfo.h>
 
-#ifdef __VMS
-#include "vms.h"
-#endif /* def __VMS */
-
 #ifdef TESTING
 #include "../tests/unit-tests.h"
 #endif
@@ -1230,22 +1226,20 @@ static void append_string(const char* str, struct growable* dest) {
 
 enum {
   filechr_not_unix = 1, /* unusable on Unix, / and \0 */
-  filechr_not_vms = 2,  /* unusable on VMS (ODS5), 0x00-0x1F * ? */
-  filechr_control = 4   /* a control character, e.g. 0-31 */
+  filechr_control = 2   /* a control character, e.g. 0-31 */
 };
 
 #define FILE_CHAR_TEST(c, mask) ((opt.restrict_files_nonascii && !c_isascii((unsigned char)(c))) || (filechr_table[(unsigned char)(c)] & (mask)))
 
 /* Shorthands for the table: */
 #define U filechr_not_unix
-#define V filechr_not_vms
 #define W 0
 #define C filechr_control
 
-#define UVWC (U | V | C)
+#define UVWC (U | C)
 #define UW U
-#define VC (V | C)
-#define VW V
+#define VC C
+#define VW 0
 
 /* Table of characters unsafe under various conditions (see above).
 
@@ -1260,9 +1254,9 @@ static const unsigned char filechr_table[256] = {
     VC,   VC, VC, VC, VC, VC, VC, VC, /* DLE DC1 DC2 DC3  DC4 NAK SYN ETB */
     VC,   VC, VC, VC, VC, VC, VC, VC, /* CAN EM  SUB ESC  FS  GS  RS  US  */
     0,    0,  W,  0,  0,  0,  0,  0,  /* SP  !   "   #    $   %   &   '   */
-    0,    0,  VW, 0,  0,  0,  0,  UW, /* (   )   *   +    ,   -   .   /   */
+    0,    0,  W,  0,  0,  0,  0,  UW, /* (   )   *   +    ,   -   .   /   */
     0,    0,  0,  0,  0,  0,  0,  0,  /* 0   1   2   3    4   5   6   7   */
-    0,    0,  W,  0,  W,  0,  W,  VW, /* 8   9   :   ;    <   =   >   ?   */
+    0,    0,  W,  0,  W,  0,  W,  W,  /* 8   9   :   ;    <   =   >   ?   */
     0,    0,  0,  0,  0,  0,  0,  0,  /* @   A   B   C    D   E   F   G   */
     0,    0,  0,  0,  0,  0,  0,  0,  /* H   I   J   K    L   M   N   O   */
     0,    0,  0,  0,  0,  0,  0,  0,  /* P   Q   R   S    T   U   V   W   */
@@ -1280,7 +1274,6 @@ static const unsigned char filechr_table[256] = {
     0,    0,  0,  0,  0,  0,  0,  0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 };
 #undef U
-#undef V
 #undef W
 #undef C
 #undef UW
@@ -1293,11 +1286,9 @@ static const unsigned char filechr_table[256] = {
    "www.xemacs.org:4001/index.html".  */
 #define FN_PORT_SEP ':'
 
-/* FN_QUERY_SEP is the separator between the file name and the URL
-   query, normally '?'.  Because VMS cannot handle '?' in a
-   file name, we use '@' instead there.  */
-#define FN_QUERY_SEP ((opt.restrict_files_os != restrict_vms) ? '?' : '@')
-#define FN_QUERY_SEP_STR ((opt.restrict_files_os != restrict_vms) ? "?" : "@")
+/* FN_QUERY_SEP is the separator between the file name and the URL query. */
+#define FN_QUERY_SEP '?'
+#define FN_QUERY_SEP_STR "?"
 
 /* Quote path element, characters in [b, e), as file name, and append
    the quoted string to DEST.  Each character is quoted as per
@@ -1317,12 +1308,7 @@ static void append_uri_pathel(const char* b, const char* e, bool escaped, struct
   if (!dest)
     return;
 
-  if (opt.restrict_files_os == restrict_unix)
-    mask = filechr_not_unix;
-  else if (opt.restrict_files_os == restrict_vms)
-    mask = filechr_not_vms;
-  else
-    mask = filechr_not_unix;
+  mask = filechr_not_unix;
 
   if (opt.restrict_files_ctrl)
     mask |= filechr_control;
@@ -1663,19 +1649,6 @@ char* url_file_name(const struct url* u, char* replaced_filename) {
     if (unique != fname)
       xfree(fname);
   }
-
-/* On VMS, alter the name as required. */
-#ifdef __VMS
-  {
-    char* unique2;
-
-    unique2 = ods_conform(unique);
-    if (unique2 != unique) {
-      xfree(unique);
-      unique = unique2;
-    }
-  }
-#endif /* def __VMS */
 
   return unique;
 }

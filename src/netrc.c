@@ -83,21 +83,6 @@ void search_netrc(const char* host, const char** acc, const char** passwd, int s
     return;
   /* Find ~/.netrc.  */
   if (!processed_netrc) {
-#ifdef __VMS
-
-    int err;
-    struct stat buf;
-    char* path = "SYS$LOGIN:.netrc";
-
-    netrc_list = NULL;
-    processed_netrc = 1;
-
-    err = stat(path, &buf);
-    if (err == 0)
-      netrc_list = parse_netrc(path);
-
-#else /* def __VMS */
-
     netrc_list = NULL;
     processed_netrc = 1;
 
@@ -110,8 +95,6 @@ void search_netrc(const char* host, const char** acc, const char** passwd, int s
         netrc_list = parse_netrc(path);
       xfree(path);
     }
-
-#endif /* def __VMS [else] */
   }
   /* If nothing to do...  */
   if (!netrc_list)

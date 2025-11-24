@@ -48,10 +48,6 @@
 #endif
 
 
-#ifdef __VMS
-#include "vms.h"
-#endif /* __VMS */
-
 #ifndef PATH_SEPARATOR
 #define PATH_SEPARATOR '/'
 #endif
@@ -340,9 +336,7 @@ static struct cmdline_option option_data[] = {
     {"tries", 't', OPT_VALUE, "tries", -1},
     {"unlink", 0, OPT_BOOLEAN, "unlink", -1},
     {"trust-server-names", 0, OPT_BOOLEAN, "trustservernames", -1},
-#ifndef __VMS
     {"use-askpass", 0, OPT_VALUE, "useaskpass", -1},
-#endif
     {"use-server-timestamps", 0, OPT_BOOLEAN, "useservertimestamps", -1},
     {"user", 0, OPT_VALUE, "user", -1},
     {"user-agent", 'U', OPT_VALUE, "useragent", -1},
@@ -623,15 +617,13 @@ Download:\n"),
        --user=USER                 set the HTTP user to USER\n"),
                                N_("\
        --password=PASS             set the HTTP password to PASS\n"),
-                               N_("\
+       N_("\
        --ask-password              prompt for passwords\n"),
-#ifndef __VMS
                                N_("\
        --use-askpass=COMMAND       specify credential handler for requesting \n\
                                      username and password.  If no COMMAND is \n\
                                      specified the WGET_ASKPASS or the SSH_ASKPASS \n\
                                      environment variable is used.\n"),
-#endif
                                N_("\
        --no-iri                    turn off IRI support\n"),
                                N_("\
@@ -821,13 +813,8 @@ Recursive download:\n"),
                                N_("\
        --backups=N                 before writing file X, rotate up to N backup files\n"),
 
-#ifdef __VMS
-                               N_("\
-  -K,  --backup-converted          before converting file X, back up as X_orig\n"),
-#else  /* def __VMS */
                                N_("\
   -K,  --backup-converted          before converting file X, back up as X.orig\n"),
-#endif /* def __VMS [else] */
                                N_("\
   -m,  --mirror                    shortcut for -N -r -l inf\n"),
                                N_("\
@@ -1085,12 +1072,6 @@ _Noreturn static void print_version(void) {
   if (printf("\n") < 0)
     exit(WGET_EXIT_IO_FAIL);
 
-  /* Print VMS-specific version info. */
-#ifdef __VMS
-  if (vms_version_supplement() < 0)
-    exit(WGET_EXIT_IO_FAIL);
-#endif /* def __VMS */
-
   /* Handle the case when $WGETRC is unset and $HOME/.wgetrc is
      absent. */
   if (printf("%s\n", wgetrc_title) < 0)
@@ -1181,12 +1162,7 @@ int main(int argc, char** argv) {
   i18n_initialize();
 
   /* Construct the name of the executable, without the directory part.  */
-#ifdef __VMS
-  /* On VMS, lose the "dev:[dir]" prefix and the ".EXE;nnn" suffix. */
-  exec_name = vms_basename(argv[0]);
-#else  /* def __VMS */
   exec_name = base_name(argv[0]);
-#endif /* def __VMS [else] */
 
   /* Construct the arguments string. */
   for (argstring_length = 1, i = 1; i < argc; i++)
@@ -1663,11 +1639,8 @@ for details.\n\n"));
   /* Open the output filename if necessary.  */
 
   /* 2005-04-17 SMS.
-     Note that having the output_stream ("-O") file opened here rather than
-     during the protocol-specific retrieval limits the ability on VMS to open
-     the file differently for ASCII versus binary transfers.  Doing it here,
-     however, allows an open failure to be detected immediately, without
-     first connecting to the server. */
+     Opening the output file here rather than during protocol-specific
+     retrieval allows an open failure to be detected immediately. */
   if (opt.output_document) {
     if (HYPHENP(opt.output_document)) {
       output_stream = stdout;
@@ -1675,21 +1648,11 @@ for details.\n\n"));
     else {
       struct stat st;
 
-#ifdef __VMS
-/* Common fopen() optional arguments:
-   sequential access only, access callback function.
-*/
-#define FOPEN_OPT_ARGS , "fop=sqo", "acc", acc_cb, &open_id
-      int open_id = 7;
-#else /* def __VMS */
-#define FOPEN_OPT_ARGS
-#endif /* def __VMS [else] */
-
       if (opt.unlink_requested) {
         unlink(opt.output_document);
       }
 
-      output_stream = fopen(opt.output_document, opt.always_rest ? "ab" : "wb" FOPEN_OPT_ARGS);
+      output_stream = fopen(opt.output_document, opt.always_rest ? "ab" : "wb");
       if (output_stream == NULL) {
         perror(opt.output_document);
         exit(WGET_EXIT_GENERIC_ERROR);
@@ -1757,16 +1720,6 @@ only if outputting to a regular file.\n"));
     }
   }
 #endif
-
-#ifdef __VMS
-  /* Set global ODS5 flag according to the specified destination (if
-     any), otherwise according to the current default device.
-  */
-  if (output_stream == NULL)
-    set_ods5_dest("SYS$DISK");
-  else if (output_stream != stdout)
-    set_ods5_dest(opt.output_document);
-#endif /* def __VMS */
 
 #ifdef SIGHUP
   /* Respect environments (e.g. nohup) that have already disabled SIGHUP. */

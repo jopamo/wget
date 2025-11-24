@@ -5,11 +5,7 @@
 #ifndef HOST_H
 #define HOST_H
 
-#ifdef __VMS
-#include "vms_ip.h"
-#else /* def __VMS */
 #include <netdb.h>
-#endif /* def __VMS [else] */
 #include <sys/socket.h>
 #include <netinet/in.h>
 #ifndef __BEOS__

@@ -15,11 +15,7 @@
 #ifndef __BEOS__
 #include <arpa/inet.h>
 #endif
-#ifdef __VMS
-#include "vms_ip.h"
-#else /* def __VMS */
 #include <netdb.h>
-#endif /* def __VMS [else] */
 #define SET_H_ERRNO(err) ((void)(h_errno = (err)))
 
 #include <errno.h>

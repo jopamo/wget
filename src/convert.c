@@ -478,7 +478,6 @@ static void write_backup_file(const char* file, downloaded_file_t downloaded_fil
      Note we only do this for files we've successfully downloaded,
      so we don't clobber .orig files sitting around from previous
      invocations
-     On VMS, use "_orig" instead of ".orig"
      See "wget.h" */
 
   if (!converted_files)

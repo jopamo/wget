@@ -96,10 +96,6 @@
 #include "utils.h"
 #include "hash.h"
 
-#ifdef __VMS
-#include "vms.h"
-#endif /* def __VMS */
-
 #ifdef TESTING
 #include "../tests/unit-tests.h"
 #endif
@@ -125,80 +121,6 @@ _Noreturn static void memfatal(const char* context, long attempted_size) {
   exit(WGET_EXIT_GENERIC_ERROR);
 }
 
-/* Character property table for (re-)escaping VMS ODS5 extended file
-   names.  Note that this table ignores Unicode.
-
-   ODS2 valid characters: 0-9 A-Z a-z $ - _ ~
-
-   ODS5 Invalid characters:
-      C0 control codes (0x00 to 0x1F inclusive)
-      Asterisk (*)
-      Question mark (?)
-
-   ODS5 Invalid characters only in VMS V7.2 (which no one runs, right?):
-      Double quotation marks (")
-      Backslash (\)
-      Colon (:)
-      Left angle bracket (<)
-      Right angle bracket (>)
-      Slash (/)
-      Vertical bar (|)
-
-   Characters escaped by "^":
-      SP  !  "  #  %  &  '  (  )  +  ,  .  :  ;  =
-       @  [  \  ]  ^  `  {  |  }  ~
-
-   Either "^_" or "^ " is accepted as a space.  Period (.) is a special
-   case.  Note that un-escaped < and > can also confuse a directory
-   spec.
-
-   Characters put out as ^xx:
-      7F (DEL)
-      80-9F (C1 control characters)
-      A0 (nonbreaking space)
-      FF (Latin small letter y diaeresis)
-
-   Other cases:
-      Unicode: "^Uxxxx", where "xxxx" is four hex digits.
-
-    Property table values:
-      Normal escape:    1
-      Space:            2
-      Dot:              4
-      Hex-hex escape:   8
-      ODS2 normal:     16
-      ODS2 lower case: 32
-      Hex digit:       64
-*/
-
-unsigned char char_prop[256] = {
-
-    /* NUL SOH STX ETX EOT ENQ ACK BEL   BS  HT  LF  VT  FF  CR  SO  SI */
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-
-    /* DLE DC1 DC2 DC3 DC4 NAK SYN ETB  CAN  EM SUB ESC  FS  GS  RS  US */
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-
-    /*  SP  !   "   #   $   %   &   '    (   )   *   +   ,   -   .   /  */
-    2, 1, 1, 1, 16, 1, 1, 1, 1, 1, 0, 1, 1, 16, 4, 0,
-
-    /*  0   1   2   3   4   5   6   7    8   9   :   ;   <   =   >   ?  */
-    80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 1, 1, 1, 1, 1, 1,
-
-    /*  @   A   B   C   D   E   F   G    H   I   J   K   L   M   N   O  */
-    1, 80, 80, 80, 80, 80, 80, 16, 16, 16, 16, 16, 16, 16, 16, 16,
-
-    /*  P   Q   R   S   T   U   V   W    X   Y   Z   [   \   ]   ^   _  */
-    16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 1, 1, 1, 1, 16,
-
-    /*  `   a   b   c   d   e   f   g    h   i   j   k   l   m   n   o  */
-    1, 96, 96, 96, 96, 96, 96, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-
-    /*  p   q   r   s   t   u   v   w    x   y   z   {   |   }   ~  DEL */
-    32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 1, 1, 1, 17, 8,
-
-    8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8};
 
 /* Utility function: like xstrdup(), but also lowercases S.  */
 
@@ -414,14 +336,6 @@ char* datetime_str(time_t t) {
   return fmttime(t, "%Y-%m-%d %H:%M:%S");
 }
 
-#ifdef __VMS
-
-bool fork_to_background(void) {
-  return false;
-}
-
-#else /* def __VMS */
-
 #if !defined(MSDOS)
 bool fork_to_background(void) {
   pid_t pid;
@@ -467,8 +381,6 @@ bool fork_to_background(void) {
 }
 #endif /* !MSDOS */
 
-#endif /* def __VMS [else] */
-
 /* "Touch" FILE, i.e. make its mtime ("modified time") equal the time
    specified with TM.  The atime ("access time") is set to the current
    time.  */
@@ -504,14 +416,6 @@ bool file_exists_p(const char* filename, file_stats_t* fstats) {
   if (!filename)
     return false;
 
-#ifdef __VMS
-  int ret = stat(filename, &buf);
-  if (ret >= 0) {
-    if (fstats != NULL)
-      fstats->access_err = errno;
-  }
-  return ret >= 0;
-#else
   errno = 0;
   if (stat(filename, &buf) == 0 && S_ISREG(buf.st_mode) &&
       (((S_IRUSR & buf.st_mode) && (getuid() == buf.st_uid)) || ((S_IRGRP & buf.st_mode) && group_member(buf.st_gid)) || (S_IROTH & buf.st_mode))) {
@@ -529,7 +433,6 @@ bool file_exists_p(const char* filename, file_stats_t* fstats) {
     return false;
   }
   /* NOTREACHED */
-#endif
 }
 
 /* Returns 0 if PATH is a directory, 1 otherwise (any kind of file).
@@ -566,12 +469,6 @@ wgint file_size(const char* filename) {
   return st.st_size;
 #endif
 }
-
-/* 2005-02-19 SMS.
-   If no UNIQ_SEP is defined (as on VMS), have unique_name() return the
-   original name.  With the VMS file systems' versioning, everything
-   should be fine, and appending ".NN" just causes trouble.
-*/
 
 #ifdef UNIQ_SEP
 
@@ -628,24 +525,7 @@ char* unique_name(const char* file) {
   return file_exists_p(file, NULL) ? unique_name_1(file) : xstrdup(file);
 }
 
-#else /* def UNIQ_SEP */
-
-/* Dummy unique_name() for VMS.  Return the original name as easily as
-   possible.
-*/
-char* unique_name_passthrough(const char* file, bool allow_passthrough) {
-  /* Return the FILE itself, without modification, irregardful. */
-  return (char*)file;
-}
-char *
-
-unique_name (const char *file)
-{
-  /* Return the FILE itself, without modification, irregardful. */
-  return xstrdup(file);
-}
-
-#endif /* def UNIQ_SEP [else] */
+#endif /* def UNIQ_SEP */
 
 /* Create a file based on NAME, except without overwriting an existing
    file with that name.  Providing O_EXCL is correctly implemented,
@@ -686,56 +566,12 @@ FILE* unique_create(const char* name, bool binary, char** opened_name) {
 FILE* fopen_excl(const char* fname, int binary) {
   int fd;
 #ifdef O_EXCL
-
-/* 2005-04-14 SMS.
-   VMS lacks O_BINARY, but makes up for it in weird and wonderful ways.
-   It also has file versions which obviate all the O_EXCL effort.
-   O_TRUNC (something of a misnomer) requests a new version.
-*/
-#ifdef __VMS
-/* Common open() optional arguments:
-   sequential access only, access callback function.
-*/
-#define OPEN_OPT_ARGS "fop=sqo", "acc", acc_cb, &open_id
-
-  int open_id;
-  int flags = O_WRONLY | O_CREAT | O_TRUNC;
-
-  if (binary > 1) {
-    open_id = 11;
-    fd = open(fname,          /* File name. */
-              flags,          /* Flags. */
-              0777,           /* Mode for default protection. */
-              "ctx=bin,stm",  /* Binary, stream access. */
-              "rfm=stmlf",    /* Stream_LF. */
-              OPEN_OPT_ARGS); /* Access callback. */
-  }
-  else if (binary) {
-    open_id = 12;
-    fd = open(fname,          /* File name. */
-              flags,          /* Flags. */
-              0777,           /* Mode for default protection. */
-              "ctx=bin,stm",  /* Binary, stream access. */
-              "rfm=fix",      /* Fixed-length, */
-              "mrs=512",      /* 512-byte records. */
-              OPEN_OPT_ARGS); /* Access callback. */
-  }
-  else {
-    open_id = 13;
-    fd = open(fname,          /* File name. */
-              flags,          /* Flags. */
-              0777,           /* Mode for default protection. */
-              "rfm=stmlf",    /* Stream_LF. */
-              OPEN_OPT_ARGS); /* Access callback. */
-  }
-#else /* def __VMS */
   int flags = O_WRONLY | O_CREAT | O_EXCL;
 #ifdef O_BINARY
   if (binary)
     flags |= O_BINARY;
 #endif
   fd = open(fname, flags, 0666);
-#endif /* def __VMS [else] */
 
   if (fd < 0)
     return NULL;
@@ -794,14 +630,12 @@ FILE* fopen_stat(const char* fname, const char* mode, file_stats_t* fstats) {
     fclose(fp);
     return NULL;
   }
-#ifndef __VMS
   if (fstats != NULL && (fdstats.st_dev != fstats->st_dev || fdstats.st_ino != fstats->st_ino)) {
     /* File changed since file_exists_p() : NOT SAFE */
     logprintf(LOG_NOTQUIET, _("File %s changed since the last check. Security check failed.\n"), fname);
     fclose(fp);
     return NULL;
   }
-#endif
 
   return fp;
 }
@@ -838,14 +672,12 @@ int open_stat(const char* fname, int flags, mode_t mode, file_stats_t* fstats) {
     close(fd);
     return -1;
   }
-#ifndef __VMS
   if (fstats != NULL && (fdstats.st_dev != fstats->st_dev || fdstats.st_ino != fstats->st_ino)) {
     /* File changed since file_exists_p() : NOT SAFE */
     logprintf(LOG_NOTQUIET, _("Trying to open file %s but it changed since last check. Security check failed.\n"), fname);
     close(fd);
     return -1;
   }
-#endif
 
   return fd;
 }

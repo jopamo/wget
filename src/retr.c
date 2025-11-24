@@ -10,10 +10,6 @@
 #include <errno.h>
 #include <string.h>
 #include <assert.h>
-#ifdef VMS
-#include <unixio.h> /* For delete(). */
-#endif
-
 #if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
 #include <zlib.h>
 #endif
@@ -179,20 +175,10 @@ static int write_data(FILE* out, FILE* out2, const char* buf, int bufsize, wgint
      (which stdio would write out immediately anyway), and slow
      downloads wouldn't be limited by disk speed.  */
 
-  /* 2005-04-20 SMS.
-     Perhaps it shouldn't hinder performance, but it sure does, at least
-     on VMS (more than 2X).  Rather than speculate on what it should or
-     shouldn't do, it might make more sense to test it.  Even better, it
-     might be nice to explain what possible benefit it could offer, as
-     it appears to be a clear invitation to poor performance with no
-     actual justification.  (Also, why 16K?  Anyone test other values?)
-  */
-#ifndef __VMS
   if (out)
     fflush(out);
   if (out2)
     fflush(out2);
-#endif /* ndef __VMS */
 
   if (out && ferror(out))
     return -2;
@@ -1728,14 +1714,7 @@ void free_urlpos(struct urlpos* l) {
 
 /* Rotate FNAME opt.backups times */
 void rotate_backups(const char* fname) {
-#ifdef __VMS
-#define SEP "_"
-#define AVS ";*" /* All-version suffix. */
-#define AVSL (sizeof(AVS) - 1)
-#else
 #define SEP "."
-#define AVSL 0
-#endif
 #define FILE_BUF_SIZE 1024
 
   /* avoid alloca() here */
@@ -1749,19 +1728,6 @@ void rotate_backups(const char* fname) {
       return;
 
   for (i = opt.backups; i > 1; i--) {
-#ifdef VMS
-    /* Delete (all versions of) any existing max-suffix file, to avoid
-     * creating multiple versions of it.  (On VMS, rename() will
-     * create a new version of an existing destination file, not
-     * destroy/overwrite it.)
-     */
-    if (i == opt.backups) {
-      if (((unsigned)snprintf(to, sizeof(to), "%s%s%d%s", fname, SEP, i, AVS)) >= sizeof(to))
-        logprintf(LOG_NOTQUIET, "Failed to delete %s: File name truncation\n", to);
-      else
-        delete(to);
-    }
-#endif
     overflow = (unsigned)snprintf(to, FILE_BUF_SIZE, "%s%s%d", fname, SEP, i) >= FILE_BUF_SIZE;
     overflow |= (unsigned)snprintf(from, FILE_BUF_SIZE, "%s%s%d", fname, SEP, i - 1) >= FILE_BUF_SIZE;
 
@@ -1785,6 +1751,7 @@ void rotate_backups(const char* fname) {
   }
 
 #undef FILE_BUF_SIZE
+#undef SEP
 }
 
 static bool no_proxy_match(const char*, const char**);
