@@ -7,7 +7,6 @@
 
 #include "wget.h"
 
-
 typedef enum {
   ENC_INVALID = -1, /* invalid encoding */
   ENC_NONE = 0,     /* no special encoding */

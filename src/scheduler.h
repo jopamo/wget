@@ -19,21 +19,11 @@ typedef struct transfer_context transfer_ctx_t;
 #endif
 
 typedef void (*transfer_cb_t)(transfer_ctx_t* ctx, void* user_arg, int status);
+typedef void (*scheduler_timer_cb_t)(void* user_arg);
 
-enum {
-  SCHED_OK = 0,
-  SCHED_ERR_RESOURCE = -1,
-  SCHED_ERR_INVALID = -2,
-  SCHED_ERR_CANCELLED = -3,
-  SCHED_ERR_SHUTDOWN = -4,
-  SCHED_ERR_NOT_SUPPORTED = -5
-};
+enum { SCHED_OK = 0, SCHED_ERR_RESOURCE = -1, SCHED_ERR_INVALID = -2, SCHED_ERR_CANCELLED = -3, SCHED_ERR_SHUTDOWN = -4, SCHED_ERR_NOT_SUPPORTED = -5 };
 
-enum {
-  SCHED_FLAG_NONE = 0,
-  SCHED_FLAG_HIGH_PRIORITY = 1 << 0,
-  SCHED_FLAG_HOST_LIMIT = 1 << 1
-};
+enum { SCHED_FLAG_NONE = 0, SCHED_FLAG_HIGH_PRIORITY = 1 << 0, SCHED_FLAG_HOST_LIMIT = 1 << 1 };
 
 typedef struct scheduler_params {
   size_t max_queue_depth;
@@ -48,15 +38,15 @@ typedef struct scheduler_host_limits {
 scheduler_t* scheduler_create(struct ev_loop* loop, size_t max_concurrent_transfers);
 int scheduler_destroy(scheduler_t* sched, bool wait_for_completion);
 
-int scheduler_enqueue(scheduler_t* sched,
-                      transfer_ctx_t* ctx,
-                      unsigned int flags,
-                      transfer_cb_t done_cb,
-                      void* user_arg);
+int scheduler_enqueue(scheduler_t* sched, transfer_ctx_t* ctx, unsigned int flags, transfer_cb_t done_cb, void* user_arg);
 int scheduler_cancel(scheduler_t* sched, transfer_ctx_t* ctx);
 int scheduler_status(scheduler_t* sched, transfer_ctx_t* ctx, int* out_status);
 
 int scheduler_set_host_limits(scheduler_t* sched, const char* host, const scheduler_host_limits_t* limits);
 int scheduler_set_global_params(scheduler_t* sched, const scheduler_params_t* params);
+
+/* Timer/delay functionality */
+int scheduler_delay(scheduler_t* sched, double seconds, scheduler_timer_cb_t callback, void* user_arg);
+int scheduler_cancel_delay(scheduler_t* sched, void* user_arg);
 
 #endif /* WGET_SCHEDULER_H */

@@ -12,10 +12,7 @@
 #include "retr.h"
 #include "utils.h"
 
-char* fd_read_hunk(int fd WGET_ATTR_UNUSED,
-                   hunk_terminator_t terminator WGET_ATTR_UNUSED,
-                   long initial WGET_ATTR_UNUSED,
-                   long limit WGET_ATTR_UNUSED) {
+char* fd_read_hunk(int fd WGET_ATTR_UNUSED, hunk_terminator_t terminator WGET_ATTR_UNUSED, long initial WGET_ATTR_UNUSED, long limit WGET_ATTR_UNUSED) {
   errno = ENOSYS;
   return NULL;
 }

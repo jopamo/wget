@@ -210,8 +210,8 @@ static char* digest_authentication_encode(const char* au, const char* user, cons
 
     dump_hash(response_digest, hash);
 
-    res_size = strlen(user) + strlen(realm) + strlen(nonce) + strlen(path) + 2 * MD5_DIGEST_SIZE + (opaque ? strlen(opaque) : 0) + (algorithm ? strlen(algorithm) : 0)
-               + (qop ? 128 : 0) + strlen(cnonce) + 128;
+    res_size = strlen(user) + strlen(realm) + strlen(nonce) + strlen(path) + 2 * MD5_DIGEST_SIZE + (opaque ? strlen(opaque) : 0) + (algorithm ? strlen(algorithm) : 0) + (qop ? 128 : 0) +
+               strlen(cnonce) + 128;
 
     res = xmalloc(res_size);
 
@@ -264,14 +264,7 @@ bool http_auth_known_scheme(const char* hdrbeg, const char* hdrend) {
 
 #undef STARTS
 
-char* http_auth_create_authorization_line(const char* au,
-                                          const char* user,
-                                          const char* passwd,
-                                          const char* method,
-                                          const char* path,
-                                          struct ntlmdata* ntlm_state,
-                                          bool* finished,
-                                          uerr_t* auth_err) {
+char* http_auth_create_authorization_line(const char* au, const char* user, const char* passwd, const char* method, const char* path, struct ntlmdata* ntlm_state, bool* finished, uerr_t* auth_err) {
 #ifndef ENABLE_NTLM
   (void)ntlm_state;
 #endif

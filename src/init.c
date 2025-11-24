@@ -361,7 +361,6 @@ void defaults(void) {
      bit pattern will be the least of the implementors' worries.  */
   xzero(opt);
 
-
   opt.cookies = true;
   opt.verbose = -1;
   opt.ntry = 20;
@@ -1791,10 +1790,9 @@ const char* test_cmd_spec_restrict_file_names(void) {
     fprintf (stderr, "opt.restrict_files_case: %d\n", opt.restrict_files_case); fflush (stderr);
     fprintf (stderr, "opt.restrict_files_nonascii: %d\n", opt.restrict_files_nonascii); fflush (stderr);
     */
-    mu_assert("test_cmd_spec_restrict_file_names: wrong result",
-              res == test_array[i].result && opt.restrict_files_ctrl == test_array[i].expected_restrict_files_ctrl &&
-                  (int)opt.restrict_files_case == test_array[i].expected_restrict_files_case &&
-                  opt.restrict_files_nonascii == test_array[i].expected_restrict_files_nonascii);
+    mu_assert("test_cmd_spec_restrict_file_names: wrong result", res == test_array[i].result && opt.restrict_files_ctrl == test_array[i].expected_restrict_files_ctrl &&
+                                                                     (int)opt.restrict_files_case == test_array[i].expected_restrict_files_case &&
+                                                                     opt.restrict_files_nonascii == test_array[i].expected_restrict_files_nonascii);
   }
 
   return NULL;

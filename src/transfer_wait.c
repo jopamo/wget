@@ -105,12 +105,7 @@ static void transfer_io_wait_timer_cb(EV_P_ ev_timer* w, int revents WGET_ATTR_U
   transfer_io_wait_complete(waiter, 0, ETIMEDOUT);
 }
 
-transfer_io_waiter_t* transfer_io_wait_schedule(transfer_ctx_t* ctx,
-                                                int fd,
-                                                int wait_for,
-                                                double maxtime,
-                                                transfer_io_wait_cb cb,
-                                                void* user_data) {
+transfer_io_waiter_t* transfer_io_wait_schedule(transfer_ctx_t* ctx, int fd, int wait_for, double maxtime, transfer_io_wait_cb cb, void* user_data) {
   if (fd < 0) {
     errno = EBADF;
     return NULL;
@@ -229,8 +224,7 @@ int transfer_io_wait_blocking(int fd, double maxtime, int wait_for) {
   wget_cond_init(&bridge.cond);
 #endif
 
-  transfer_io_waiter_t* waiter =
-      transfer_io_wait_schedule(NULL, fd, wait_for, maxtime, transfer_io_wait_sync_cb, &bridge);
+  transfer_io_waiter_t* waiter = transfer_io_wait_schedule(NULL, fd, wait_for, maxtime, transfer_io_wait_sync_cb, &bridge);
   if (!waiter) {
 #if WGET_EVLOOP_CONTINUOUS
     wget_cond_destroy(&bridge.cond);

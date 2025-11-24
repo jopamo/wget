@@ -69,11 +69,11 @@ static void test_http_stat_message_helpers(void) {
 
 static void test_http_stat_capture_headers(void) {
   static const char* raw =
-    "HTTP/1.1 302 Found\r\n"
-    "Location: https://example.com/new\r\n"
-    "X-Archive-Orig-last-modified: Tue, 15 Nov 1994 08:12:31 GMT\r\n"
-    "Content-Encoding: gzip\r\n"
-    "\r\n";
+      "HTTP/1.1 302 Found\r\n"
+      "Location: https://example.com/new\r\n"
+      "X-Archive-Orig-last-modified: Tue, 15 Nov 1994 08:12:31 GMT\r\n"
+      "Content-Encoding: gzip\r\n"
+      "\r\n";
 
   struct http_response* resp = parse_response(raw);
   struct http_stat hs;

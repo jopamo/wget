@@ -72,16 +72,7 @@ int http_body_download(struct http_stat* hs,
   hs->len = hs->restval;
   hs->rd_size = 0;
 
-  hs->res = fd_read_body(hs->local_file,
-                         sock,
-                         fp,
-                         contlen != -1 ? contlen : 0,
-                         hs->restval,
-                         &hs->rd_size,
-                         &hs->len,
-                         &hs->dltime,
-                         flags,
-                         warc_tmp);
+  hs->res = fd_read_body(hs->local_file, sock, fp, contlen != -1 ? contlen : 0, hs->restval, &hs->rd_size, &hs->len, &hs->dltime, flags, warc_tmp);
   if (hs->res >= 0) {
     if (warc_tmp != NULL) {
       bool r = warc_write_response_record(url, warc_timestamp_str, warc_request_uuid, warc_ip, warc_tmp, warc_payload_offset, type, statcode, hs->newloc);

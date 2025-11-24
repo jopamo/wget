@@ -64,7 +64,6 @@
 
 #include <fcntl.h>
 
-
 /* Application-wide SSL context.  This is common to all SSL
    connections.  */
 static SSL_CTX* ssl_ctx;

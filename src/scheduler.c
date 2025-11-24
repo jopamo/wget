@@ -12,6 +12,7 @@
 #include "transfer.h"
 #include "utils.h"
 #include "xalloc.h"
+#include "ev.h"
 
 struct scheduler_transfer {
   struct scheduler_transfer* next;
@@ -28,6 +29,14 @@ struct scheduler_host_limit_entry {
   scheduler_host_limits_t limits;
 };
 
+struct scheduler_timer {
+  struct scheduler_timer* next;
+  ev_timer timer;
+  scheduler_timer_cb_t callback;
+  void* user_arg;
+  bool active;
+};
+
 struct scheduler {
   struct ev_loop* loop;
   size_t max_concurrent;
@@ -35,6 +44,7 @@ struct scheduler {
   size_t queued;
   struct scheduler_transfer* queue_head;
   struct scheduler_transfer* queue_tail;
+  struct scheduler_timer* timers;
   bool shutting_down;
   scheduler_params_t params;
   bool have_params;
@@ -82,16 +92,20 @@ int scheduler_destroy(scheduler_t* sched, bool wait_for_completion WGET_ATTR_UNU
     scheduler_cancel_queued(sched, transfer, SCHED_ERR_SHUTDOWN);
   }
 
+  /* Clean up any active timers */
+  while (sched->timers) {
+    struct scheduler_timer* timer = sched->timers;
+    sched->timers = timer->next;
+    ev_timer_stop(sched->loop, &timer->timer);
+    xfree(timer);
+  }
+
   scheduler_clear_host_limits(sched);
   xfree(sched);
   return SCHED_OK;
 }
 
-int scheduler_enqueue(scheduler_t* sched,
-                      transfer_ctx_t* ctx,
-                      unsigned int flags,
-                      transfer_cb_t done_cb,
-                      void* user_arg) {
+int scheduler_enqueue(scheduler_t* sched, transfer_ctx_t* ctx, unsigned int flags, transfer_cb_t done_cb, void* user_arg) {
   struct scheduler_transfer* transfer;
   bool high_priority;
 
@@ -317,4 +331,71 @@ static void scheduler_clear_host_limits(struct scheduler* sched) {
     entry = next;
   }
   sched->host_limits = NULL;
+}
+
+/* Timer callback function */
+static void scheduler_timer_cb(EV_P_ ev_timer* w, int revents WGET_ATTR_UNUSED) {
+  struct scheduler_timer* timer = w->data;
+
+  if (timer->active && timer->callback) {
+    timer->active = false;
+    timer->callback(timer->user_arg);
+  }
+}
+
+/* Timer management functions */
+static void scheduler_timer_remove(scheduler_t* sched, struct scheduler_timer* timer) {
+  struct scheduler_timer** prev = &sched->timers;
+  struct scheduler_timer* current = sched->timers;
+
+  while (current) {
+    if (current == timer) {
+      *prev = current->next;
+      ev_timer_stop(sched->loop, &timer->timer);
+      xfree(timer);
+      return;
+    }
+    prev = &current->next;
+    current = current->next;
+  }
+}
+
+int scheduler_delay(scheduler_t* sched, double seconds, scheduler_timer_cb_t callback, void* user_arg) {
+  struct scheduler_timer* timer;
+
+  if (!sched || seconds <= 0 || !callback)
+    return SCHED_ERR_INVALID;
+  if (sched->shutting_down)
+    return SCHED_ERR_SHUTDOWN;
+
+  timer = xcalloc(1, sizeof(*timer));
+  timer->callback = callback;
+  timer->user_arg = user_arg;
+  timer->active = true;
+
+  ev_timer_init(&timer->timer, scheduler_timer_cb, seconds, 0);
+  timer->timer.data = timer;
+  ev_timer_start(sched->loop, &timer->timer);
+
+  timer->next = sched->timers;
+  sched->timers = timer;
+
+  return SCHED_OK;
+}
+
+int scheduler_cancel_delay(scheduler_t* sched, void* user_arg) {
+  struct scheduler_timer* timer = sched->timers;
+
+  if (!sched || !user_arg)
+    return SCHED_ERR_INVALID;
+
+  while (timer) {
+    if (timer->user_arg == user_arg && timer->active) {
+      scheduler_timer_remove(sched, timer);
+      return SCHED_OK;
+    }
+    timer = timer->next;
+  }
+
+  return SCHED_ERR_INVALID;
 }

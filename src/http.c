@@ -156,18 +156,11 @@ static int body_file_send(int sock, const char* file_name, wgint promised_size, 
   return 0;
 }
 
-
 /* The maximum size of a single HTTP response we care to read.  Rather
    than being a limit of the reader implementation, this limit
    prevents Wget from slurping all available memory upon encountering
    malicious or buggy server output, thus protecting the user.  Define
    it to 0 to remove the limit.  */
-
-
-
-
-
-
 
 /* Parse the `Content-Range' header and extract the information it
    contains.  Returns true if successful, false otherwise.  */
@@ -1446,7 +1439,6 @@ static uerr_t open_output_stream(struct http_stat* hs, int count, FILE** fp) {
       else {
         *fp = fopen(hs->local_file, "wb");
       }
-
     }
     else {
       *fp = fopen_excl(hs->local_file, true);
@@ -1493,8 +1485,6 @@ static void set_content_type(int* dt, const char* type) {
   else
     *dt &= ~TEXTXML;
 }
-
-
 
 /* Retrieve a document through HTTP protocol.  It recognizes status
    code, and correctly handles redirections.  It closes the network

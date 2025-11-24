@@ -358,12 +358,7 @@ void http_stat_record_status(struct http_stat* hs, int statcode, const char* mes
     hs->message = xstrdup(message);
 }
 
-void http_stat_capture_headers(struct http_stat* hs,
-                               const struct http_response* resp,
-                               const struct url* u,
-                               const char* content_type,
-                               char* scratch,
-                               size_t scratch_size) {
+void http_stat_capture_headers(struct http_stat* hs, const struct http_response* resp, const struct url* u, const char* content_type, char* scratch, size_t scratch_size) {
   if (!hs || !resp)
     return;
 

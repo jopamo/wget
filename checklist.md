@@ -38,12 +38,12 @@ Your original content is preserved conceptually but reduced to **essential, acti
   * Convert connect/poll logic to scheduler-driven async continuations  
   * Each waiting path becomes “register watcher → return → resume on callback”
 
-* [ ] Remove `fd_read_body()` synchronous read path  
+* [x] Remove `fd_read_body()` synchronous read path  
   * Move all HTTP body consumption into async transfer state machine callbacks  
   * Delete wrapper after all remaining consumers are async
 
-* [ ] Convert `sleep_between_retrievals()` to purely timer-driven throttling  
-  * Implement via scheduler + `ev_timer`  
+* [x] Convert `sleep_between_retrievals()` to purely timer-driven throttling
+  * Implement via scheduler + `ev_timer`
   * No stalls in main loop or worker threads
 
 ---

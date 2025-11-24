@@ -28,12 +28,7 @@
 
 struct request;
 
-enum rp {
-  rel_none,
-  rel_name,
-  rel_value,
-  rel_both
-};
+enum rp { rel_none, rel_name, rel_value, rel_both };
 
 struct request* request_new(const char* method, char* arg);
 const char* request_method(const struct request* req);

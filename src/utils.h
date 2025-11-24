@@ -175,7 +175,6 @@ size_t strlcpy(char* restrict dst, const char* restrict src, size_t size);
 
 void wg_hex_to_string(char* str_buffer, const char* hex_buffer, size_t hex_len);
 
-
 #ifdef HAVE_SSL
 /* Check pinned public key. */
 bool wg_pin_peer_pubkey(const char* pinnedpubkey, const char* pubkey, size_t pubkeylen);

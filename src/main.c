@@ -47,7 +47,6 @@
 #define main main_wget
 #endif
 
-
 #ifndef PATH_SEPARATOR
 #define PATH_SEPARATOR '/'
 #endif
@@ -617,7 +616,7 @@ Download:\n"),
        --user=USER                 set the HTTP user to USER\n"),
                                N_("\
        --password=PASS             set the HTTP password to PASS\n"),
-       N_("\
+                               N_("\
        --ask-password              prompt for passwords\n"),
                                N_("\
        --use-askpass=COMMAND       specify credential handler for requesting \n\

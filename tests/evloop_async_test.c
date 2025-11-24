@@ -46,10 +46,10 @@ static void* worker_thread(void* arg) {
 
 int main(void) {
   struct async_state state = {
-    .posted = ATOMIC_VAR_INIT(0),
-    .executed = ATOMIC_VAR_INIT(0),
-    .lock = WGET_MUTEX_INITIALIZER,
-    .cond = WGET_COND_INITIALIZER,
+      .posted = ATOMIC_VAR_INIT(0),
+      .executed = ATOMIC_VAR_INIT(0),
+      .lock = WGET_MUTEX_INITIALIZER,
+      .cond = WGET_COND_INITIALIZER,
   };
   const int expected = MAIN_THREAD_POSTS + WORKER_THREAD_POSTS;
 

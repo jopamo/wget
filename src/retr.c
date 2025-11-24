@@ -28,6 +28,7 @@
 #include "host.h"
 #include "connect.h"
 #include "convert.h"
+#include "scheduler.h"
 #include "ptimer.h"
 #include "html-url.h"
 #include "iri.h"
@@ -59,11 +60,7 @@ struct bandwidth_limiter {
   double sleep_adjust;
 };
 
-enum bandwidth_plan {
-  BANDWIDTH_PLAN_NONE = 0,
-  BANDWIDTH_PLAN_SLEEP,
-  BANDWIDTH_PLAN_DEFER
-};
+enum bandwidth_plan { BANDWIDTH_PLAN_NONE = 0, BANDWIDTH_PLAN_SLEEP, BANDWIDTH_PLAN_DEFER };
 
 static void bandwidth_limiter_reset(struct bandwidth_limiter* limiter) {
   if (!limiter)
@@ -118,7 +115,6 @@ static void bandwidth_limiter_commit(struct bandwidth_limiter* limiter, struct p
     limiter->sleep_adjust = -0.5;
 }
 
-
 #if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
 static voidpf zalloc(voidpf opaque, unsigned int items, unsigned int size) {
   (void)opaque;
@@ -135,7 +131,6 @@ static void zfree(voidpf opaque, voidpf address) {
 /* Limit the bandwidth by pausing the download for an amount of time.
    BYTES is the number of bytes received from the network, and TIMER
    is the timer that started at the beginning of download.  */
-
 
 /* Write data in BUF to OUT.  However, if *SKIP is non-zero, skip that
    amount of data and decrease SKIP.  Increment *TOTAL by the amount
@@ -220,14 +215,7 @@ static int write_data(FILE* out, FILE* out2, const char* buf, int bufsize, wgint
 
 typedef void (*retr_body_done_cb)(int status, wgint qtyread, wgint qtywritten, double elapsed, void* user_data);
 
-enum retr_chunk_state {
-  RETR_CHUNK_STATE_NONE = 0,
-  RETR_CHUNK_STATE_HEADER,
-  RETR_CHUNK_STATE_DATA,
-  RETR_CHUNK_STATE_DATA_CRLF,
-  RETR_CHUNK_STATE_FINAL_CRLF,
-  RETR_CHUNK_STATE_DONE
-};
+enum retr_chunk_state { RETR_CHUNK_STATE_NONE = 0, RETR_CHUNK_STATE_HEADER, RETR_CHUNK_STATE_DATA, RETR_CHUNK_STATE_DATA_CRLF, RETR_CHUNK_STATE_FINAL_CRLF, RETR_CHUNK_STATE_DONE };
 
 struct retr_async_ctx {
   struct ev_loop* loop;
@@ -924,7 +912,7 @@ static void retr_async_ctx_start(struct retr_async_ctx* ctx) {
   wget_ev_loop_transfer_ref();
 }
 
-static int retr_body_start_async(struct ev_loop* loop,
+int retr_body_start_async(struct ev_loop* loop,
                           const char* downloaded_filename,
                           int fd,
                           FILE* out,
@@ -937,91 +925,12 @@ static int retr_body_start_async(struct ev_loop* loop,
                           FILE* out2,
                           retr_body_done_cb done_cb,
                           void* user_data) {
-  struct retr_async_ctx* ctx;
-
-  if (!loop || fd < 0)
-    return -1;
-
-  ctx = retr_async_ctx_create(loop, downloaded_filename, fd, out, toread, startpos, qtyread, qtywritten, elapsed, flags, out2, done_cb, user_data);
+  struct retr_async_ctx* ctx = retr_async_ctx_create(loop, downloaded_filename, fd, out, toread, startpos, qtyread, qtywritten, elapsed, flags, out2, done_cb, user_data);
   if (!ctx)
     return -1;
 
-  ctx->io_watcher.data = ctx;
-  ctx->timeout_watcher.data = ctx;
-  ctx->throttle_watcher.data = ctx;
-  ctx->progress_watcher.data = ctx;
-
   retr_async_ctx_start(ctx);
   return 0;
-}
-struct retr_body_sync_bridge {
-  int status;
-#if WGET_EVLOOP_CONTINUOUS
-  wget_mutex_t lock;
-  wget_cond_t cond;
-  bool done;
-#endif
-};
-
-static void retr_body_sync_cb(int status, wgint qtyread WGET_ATTR_UNUSED, wgint qtywritten WGET_ATTR_UNUSED, double elapsed WGET_ATTR_UNUSED, void* user_data) {
-  struct retr_body_sync_bridge* bridge = user_data;
-#if WGET_EVLOOP_CONTINUOUS
-  wget_mutex_lock(&bridge->lock);
-  bridge->status = status;
-  bridge->done = true;
-  wget_cond_broadcast(&bridge->cond);
-  wget_mutex_unlock(&bridge->lock);
-#else
-  bridge->status = status;
-#endif
-}
-
-/* LEGACY_BLOCKING: drives one transfer to completion before returning. */
-int fd_read_body(const char* downloaded_filename,
-                 int fd,
-                 FILE* out,
-                 wgint toread,
-                 wgint startpos,
-                 wgint* qtyread,
-                 wgint* qtywritten,
-                 double* elapsed,
-                 int flags,
-                 FILE* out2) {
-  struct ev_loop* loop = wget_ev_loop_get();
-  wgint local_read = 0;
-  wgint local_written = 0;
-  double local_elapsed = 0.0;
-  struct retr_body_sync_bridge bridge = {0};
-  wgint* qtyread_ptr = qtyread ? qtyread : &local_read;
-  wgint* qtywritten_ptr = qtywritten ? qtywritten : &local_written;
-  double* elapsed_ptr = elapsed ? elapsed : &local_elapsed;
-
-#if WGET_EVLOOP_CONTINUOUS
-  wget_mutex_init(&bridge.lock);
-  wget_cond_init(&bridge.cond);
-  bridge.done = false;
-#endif
-
-  if (retr_body_start_async(loop, downloaded_filename, fd, out, toread, startpos, qtyread_ptr, qtywritten_ptr, elapsed_ptr, flags, out2, retr_body_sync_cb, &bridge) < 0) {
-#if WGET_EVLOOP_CONTINUOUS
-    wget_cond_destroy(&bridge.cond);
-    wget_mutex_destroy(&bridge.lock);
-#endif
-    return -1;
-  }
-
-#if WGET_EVLOOP_CONTINUOUS
-  wget_mutex_lock(&bridge.lock);
-  while (!bridge.done)
-    wget_cond_wait(&bridge.cond, &bridge.lock);
-  wget_mutex_unlock(&bridge.lock);
-  wget_cond_destroy(&bridge.cond);
-  wget_mutex_destroy(&bridge.lock);
-  return bridge.status;
-#else
-  wget_ev_loop_run_transfers();
-  return bridge.status;
-#endif
 }
 
 /* Read a hunk of data from FD, up until a terminator.  The hunk is
@@ -1271,6 +1180,324 @@ static char* getproxy(struct url*);
 /* #### This function should be rewritten so it doesn't return from
    multiple points. */
 
+static void retrieve_url_http_loop_cb(struct http_transaction_ctx* http_ctx, uerr_t status);
+static struct retrieve_url_ctx* g_current_ctx = NULL;
+static uerr_t g_async_result = -1;
+static bool g_finished = false;
+
+static void blocking_final_cb_for_retrieve_url(struct retrieve_url_ctx* ctx) {
+  g_async_result = ctx->result;
+  g_finished = true;
+}
+
+static void retrieve_url_http_loop_cb(struct http_transaction_ctx* http_ctx, uerr_t status) {
+  struct retrieve_url_ctx* ctx = (struct retrieve_url_ctx*)http_ctx->tctx->user_data;
+  assert(ctx != NULL);
+
+  (void)status;
+
+  // Transfer results from http_ctx to retrieve_url_ctx
+  if (http_ctx->newloc && *http_ctx->newloc) {
+    if (*ctx->newloc)
+      xfree(*ctx->newloc);
+    *ctx->newloc = xstrdup(*http_ctx->newloc);
+  }
+  if (http_ctx->local_file && *http_ctx->local_file) {
+    if (*ctx->local_file)
+      xfree(*ctx->local_file);
+    *ctx->local_file = xstrdup(*http_ctx->local_file);
+  }
+  if (ctx->dt && http_ctx->dt)
+    *ctx->dt = *http_ctx->dt;
+  ctx->result = http_ctx->retval;
+
+  // Cleanup http_ctx as it's no longer needed
+  http_loop_cleanup(http_ctx);
+
+  // Continue the retrieve_url state machine
+  retrieve_url_continue_async(ctx, ctx->result);
+}
+
+struct retrieve_url_ctx* retrieve_url_start_async(struct url* u,
+                                                  const char* url_str,
+                                                  char** newloc,
+                                                  char** file,
+                                                  const char* referer,
+                                                  int* dt,
+                                                  bool recursive,
+                                                  struct iri* iri,
+                                                  bool initial_url_parsed,
+                                                  struct transfer_context* tctx,
+                                                  void (*final_cb)(struct retrieve_url_ctx* ctx)) {
+  (void)recursive;
+  struct retrieve_url_ctx* ctx = xcalloc(1, sizeof(struct retrieve_url_ctx));
+  if (!ctx)
+    return NULL;
+
+  ctx->u = u;
+  ctx->original_url = u;  // For now, original_url is the same as u. It might change during redirects.
+  ctx->url = xstrdup(url_str);
+  ctx->newloc = newloc;
+  ctx->local_file = file;
+  ctx->referer = referer;
+  ctx->dt = dt;
+  ctx->iri = iri;
+  ctx->initial_url_parsed = initial_url_parsed;
+  ctx->tctx = tctx;
+  ctx->final_cb = final_cb;
+  ctx->state = RURL_STATE_INIT;
+  ctx->redirect_count = 0;
+  ctx->free_orig_parsed_url = false;
+
+  if (ctx->tctx) {
+    if (!ctx->tctx->has_options)
+      transfer_context_snapshot_options(ctx->tctx, &opt);
+    if (!ctx->tctx->requested_uri && ctx->url)
+      transfer_context_set_requested_uri(ctx->tctx, ctx->url);
+    transfer_context_bind_loop(ctx->tctx, wget_ev_loop_get());
+    transfer_context_set_state(ctx->tctx, TRANSFER_STATE_TRANSFERRING);
+    ctx->tctx->user_data = ctx;  // Link transfer_context to retrieve_url_ctx
+  }
+
+  if (!ctx->dt) {
+    // If dt is NULL, use local storage.
+    ctx->dt = xcalloc(1, sizeof(int));
+    *ctx->dt = 0;
+  }
+  if (ctx->newloc)
+    *ctx->newloc = NULL;
+  if (ctx->local_file)
+    *ctx->local_file = NULL;
+
+  retrieve_url_continue_async(ctx, RETROK);
+  return ctx;
+}
+
+static void retrieve_url_cleanup(struct retrieve_url_ctx* ctx) {
+  if (!ctx)
+    return;
+
+  xfree(ctx->url);
+  xfree(ctx->proxy);
+  if (!ctx->dt_passed_in) {  // Only free if we allocated it
+    xfree(ctx->dt);
+  }
+  if (ctx->free_orig_parsed_url && ctx->original_url) {
+    url_free(ctx->original_url);
+  }
+  if (ctx->u != ctx->original_url)
+    url_free(ctx->u);
+  iri_free(ctx->iri);
+  xfree(ctx);
+}
+
+void retrieve_url_continue_async(struct retrieve_url_ctx* ctx, uerr_t prev_op_status) {
+  // Check if a previous operation failed, and if so, transition to FAILED state
+  if (prev_op_status != RETROK) {
+    ctx->result = prev_op_status;
+    ctx->state = RURL_STATE_FAILED;
+  }
+
+  // State machine loop
+  while (ctx->state != RURL_STATE_COMPLETED && ctx->state != RURL_STATE_FAILED) {
+    switch (ctx->state) {
+      case RURL_STATE_INIT: {
+        // This block handles the initial setup and proxy parsing from the original retrieve_url
+        char* proxy_str = getproxy(ctx->u);
+        if (proxy_str) {
+          ctx->proxy = proxy_str;
+          struct iri* pi = iri_new();
+          set_uri_encoding(pi, opt.locale, true);
+          pi->utf8_encode = false;
+
+          ctx->proxy_url = url_parse(ctx->proxy, &ctx->up_error_code, pi, true);
+          if (!ctx->proxy_url) {
+            logprintf(LOG_NOTQUIET, _("Error parsing proxy URL %s: %s.\n"), ctx->proxy, url_error(ctx->up_error_code));
+            ctx->result = PROXERR;
+            ctx->state = RURL_STATE_FAILED;
+            iri_free(pi);
+            break;
+          }
+          if (ctx->proxy_url->scheme != SCHEME_HTTP && ctx->proxy_url->scheme != ctx->u->scheme) {
+            logprintf(LOG_NOTQUIET, _("Error in proxy URL %s: Must be HTTP.\n"), ctx->proxy);
+            ctx->result = PROXERR;
+            ctx->state = RURL_STATE_FAILED;
+            iri_free(pi);
+            break;
+          }
+          iri_free(pi);
+        }
+
+        if (ctx->u->scheme == SCHEME_HTTP
+#ifdef HAVE_SSL
+            || ctx->u->scheme == SCHEME_HTTPS
+#endif
+            || (ctx->proxy_url && ctx->proxy_url->scheme == SCHEME_HTTP)) {
+#ifdef HAVE_HSTS
+#ifdef TESTING
+          hsts_store_t hsts_store = NULL;
+#else
+          extern hsts_store_t hsts_store;
+#endif
+
+          if (opt.hsts && hsts_store) {
+            if (hsts_match(hsts_store, ctx->u))
+              logprintf(LOG_VERBOSE, "URL transformed to HTTPS due to an HSTS policy\n");
+          }
+#endif
+          // Proceed to HTTP loop
+          ctx->state = RURL_STATE_HTTP_LOOP;
+        }
+        else {
+          logprintf(LOG_NOTQUIET, _("Unsupported URL scheme in %s.\n"), quote(ctx->url));
+          ctx->result = URLERROR;
+          ctx->state = RURL_STATE_FAILED;
+          break;
+        }
+        // Explicit fallthrough to HTTP_LOOP state
+        // fall through
+        __attribute__((fallthrough));
+      }
+
+      case RURL_STATE_HTTP_LOOP: {
+        // This is where http_loop_start_async is called
+        // The http_loop_cb will be called when http_loop_start_async completes
+        ctx->http_ctx = (struct http_transaction_ctx*)http_loop_start_async(ctx->u, ctx->original_url, ctx->newloc, ctx->local_file, ctx->referer, ctx->dt, ctx->proxy_url, ctx->iri, ctx->tctx,
+                                                                            retrieve_url_http_loop_cb);
+        if (!ctx->http_ctx) {
+          ctx->result = FWRITEERR;  // Or appropriate error
+          ctx->state = RURL_STATE_FAILED;
+          break;
+        }
+        // Return from here; the state machine will resume when retrieve_url_http_loop_cb is called.
+        return;
+      }
+
+      case RURL_STATE_REDIRECT: {
+        bool location_changed = (ctx->result == NEWLOCATION || ctx->result == NEWLOCATION_KEEP_POST);
+        if (location_changed) {
+          char* construced_newloc;
+          struct url* newloc_parsed;
+
+          assert(*ctx->newloc != NULL);
+
+          if (*ctx->local_file) {
+            xfree(*ctx->local_file);
+            *ctx->local_file = NULL;
+          }
+
+          construced_newloc = uri_merge(ctx->url, *ctx->newloc ? *ctx->newloc : "");
+          xfree(*ctx->newloc);
+          *ctx->newloc = construced_newloc;
+
+#ifdef ENABLE_IRI
+          ctx->iri->utf8_encode = opt.enable_iri;
+          if (opt.encoding_remote)
+            set_uri_encoding(ctx->iri, opt.encoding_remote, true);
+          set_content_encoding(ctx->iri, NULL);
+          xfree(ctx->iri->orig_url);
+#endif
+
+          newloc_parsed = url_parse(*ctx->newloc, &ctx->up_error_code, ctx->iri, true);
+          if (!newloc_parsed) {
+            logprintf(LOG_NOTQUIET, "%s: %s.\n", escnonprint_uri(*ctx->newloc), url_error(ctx->up_error_code));
+            ctx->result = WRONGCODE;
+            ctx->state = RURL_STATE_FAILED;
+            break;
+          }
+
+          xfree(*ctx->newloc);
+          *ctx->newloc = xstrdup(newloc_parsed->url);
+
+          if (++ctx->redirect_count > opt.max_redirect) {
+            logprintf(LOG_NOTQUIET, _("%d redirections exceeded.\n"), opt.max_redirect);
+            url_free(newloc_parsed);
+            ctx->result = WRONGCODE;
+            ctx->state = RURL_STATE_FAILED;
+            break;
+          }
+
+          xfree(ctx->url);
+          ctx->url = *ctx->newloc;
+          if (ctx->u != ctx->original_url) {
+            url_free(ctx->u);
+          }
+          ctx->u = newloc_parsed;
+
+          // Re-evaluate proxy and method for the new URL
+          // This implicitly re-enters the RURL_STATE_INIT logic for the new URL
+          ctx->state = RURL_STATE_INIT;
+          continue;  // Loop back to INIT with the new URL
+        }
+        else {
+          xfree(*ctx->newloc);
+          *ctx->newloc = NULL;  // Ensure newloc is NULL if not redirected
+        }
+
+        // Try to not encode in UTF-8 if fetching failed and IRI is enabled
+        if (!(*ctx->dt & RETROKF) && ctx->iri->utf8_encode) {
+          ctx->iri->utf8_encode = false;
+          if (ctx->u != ctx->original_url) {
+            url_free(ctx->u);
+          }
+          ctx->u = url_parse(ctx->url, NULL, ctx->iri, true);
+          if (ctx->u) {
+            if (strcmp(ctx->u->url, ctx->original_url->url)) {
+              DEBUGP(("[IRI fallbacking to non-utf8 for %s\n", quote(ctx->url)));
+              xfree(ctx->url);
+              ctx->url = xstrdup(ctx->u->url);
+              // Restart process with fallback URL
+              ctx->state = RURL_STATE_INIT;
+              continue;  // Loop back to INIT with the fallback URL
+            }
+          }
+        }
+        ctx->state = RURL_STATE_COMPLETED;  // No more redirects or fallbacks, complete.
+        break;
+      }
+
+      case RURL_STATE_COMPLETED: {
+        if (*ctx->local_file && ctx->u && (*ctx->dt & RETROKF || opt.content_on_error)) {
+          register_download(ctx->u->url, *ctx->local_file);
+
+          if (ctx->redirect_count && 0 != strcmp(ctx->original_url->url, ctx->u->url))
+            register_redirection(ctx->original_url->url, ctx->u->url);
+
+          if (*ctx->dt & TEXTHTML)
+            register_html(*ctx->local_file);
+
+          if (*ctx->dt & TEXTCSS)
+            register_css(*ctx->local_file);
+        }
+
+        if (ctx->tctx)
+          transfer_context_set_local_file(ctx->tctx, *ctx->local_file);
+
+        if (ctx->final_cb)
+          ctx->final_cb(ctx);
+
+        if (ctx->tctx) {
+          transfer_context_set_state(ctx->tctx, ctx->result == RETROK ? TRANSFER_STATE_COMPLETED : TRANSFER_STATE_FAILED);
+        }
+        retrieve_url_cleanup(ctx);
+        return;  // Exit state machine
+      }
+
+      case RURL_STATE_FAILED: {
+        if (ctx->tctx) {
+          transfer_context_set_state(ctx->tctx, TRANSFER_STATE_FAILED);
+        }
+        if (ctx->final_cb)
+          ctx->final_cb(ctx);
+        retrieve_url_cleanup(ctx);
+        return;  // Exit state machine
+      }
+    }
+  }
+}
+
+static void blocking_final_cb_for_retrieve_url(struct retrieve_url_ctx* ctx);
+
 uerr_t retrieve_url(struct url* orig_parsed,
                     const char* origurl,
                     char** file,
@@ -1281,411 +1508,391 @@ uerr_t retrieve_url(struct url* orig_parsed,
                     struct iri* iri,
                     bool register_status,
                     struct transfer_context* tctx) {
-  (void)recursive;
-  uerr_t result;
-  char* url;
-  bool location_changed;
-  bool iri_fallbacked = 0;
-  int dummy;
-  char *mynewloc, *proxy;
-  struct url *u = orig_parsed, *proxy_url;
-  int up_error_code; /* url parse error code */
-  char* local_file = NULL;
-  int redirection_count = 0;
+  // This is a blocking wrapper for the asynchronous retrieve_url_start_async
+  // It should only be used in contexts where synchronous behavior is absolutely required
+  // and there's no event loop available to drive the async operation.
+  // For new code, prefer retrieve_url_start_async directly.
 
-  bool method_suspended = false;
-  char* saved_body_data = NULL;
-  char* saved_method = NULL;
-  char* saved_body_file_name = NULL;
+  struct ev_loop* loop = EV_DEFAULT;  // Get the default event loop
+  g_async_result = -1;
+  g_finished = false;
 
-  if (tctx) {
-    if (!tctx->has_options)
-      transfer_context_snapshot_options(tctx, &opt);
-    if (!tctx->requested_uri && origurl)
-      transfer_context_set_requested_uri(tctx, origurl);
-    transfer_context_bind_loop(tctx, wget_ev_loop_get());
-    transfer_context_set_state(tctx, TRANSFER_STATE_TRANSFERRING);
+  struct transfer_context local_tctx;
+  if (!tctx) {
+    transfer_context_prepare(&local_tctx, &opt, origurl);
+    tctx = &local_tctx;
   }
 
-  /* If dt is NULL, use local storage.  */
-  if (!dt) {
-    dt = &dummy;
-    dummy = 0;
-  }
-  url = xstrdup(origurl);
-  if (newloc)
-    *newloc = NULL;
-  if (file)
-    *file = NULL;
-
-  if (!refurl)
-    refurl = opt.referer;
-
-redirected:
-  /* (also for IRI fallbacking) */
-
-  result = NOCONERROR;
-  mynewloc = NULL;
-  xfree(local_file);
-  proxy_url = NULL;
-
-  proxy = getproxy(u);
-  if (proxy) {
-    struct iri* pi = iri_new();
-    set_uri_encoding(pi, opt.locale, true);
-    pi->utf8_encode = false;
-
-    /* Parse the proxy URL.  */
-    proxy_url = url_parse(proxy, &up_error_code, pi, true);
-    if (!proxy_url) {
-      logprintf(LOG_NOTQUIET, _("Error parsing proxy URL %s: %s.\n"), proxy, url_error(up_error_code));
-      xfree(url);
-      xfree(proxy);
-      iri_free(pi);
-      RESTORE_METHOD;
-      result = PROXERR;
-      if (orig_parsed != u)
-        url_free(u);
-      goto bail;
-    }
-    if (proxy_url->scheme != SCHEME_HTTP && proxy_url->scheme != u->scheme) {
-      logprintf(LOG_NOTQUIET, _("Error in proxy URL %s: Must be HTTP.\n"), proxy);
-      url_free(proxy_url);
-      xfree(url);
-      xfree(proxy);
-      iri_free(pi);
-      RESTORE_METHOD;
-      result = PROXERR;
-      if (orig_parsed != u)
-        url_free(u);
-      goto bail;
-    }
-    iri_free(pi);
-    xfree(proxy);
+  struct retrieve_url_ctx* ctx = retrieve_url_start_async(orig_parsed, origurl, newloc, file, refurl, dt, recursive, iri, register_status, tctx, blocking_final_cb_for_retrieve_url);
+  if (!ctx) {
+    if (!orig_parsed)
+      url_free(orig_parsed);
+    if (!dt)
+      xfree(dt);
+    if (!tctx)
+      transfer_context_free(&local_tctx);
+    return FWRITEERR;  // Or appropriate error
   }
 
-  if (u->scheme == SCHEME_HTTP
-#ifdef HAVE_SSL
-      || u->scheme == SCHEME_HTTPS
-#endif
-      || (proxy_url && proxy_url->scheme == SCHEME_HTTP)) {
-#ifdef HAVE_HSTS
-#ifdef TESTING
-    /* we don't link against main.o when we're testing */
-    hsts_store_t hsts_store = NULL;
-#else
-    extern hsts_store_t hsts_store;
-#endif
+  g_current_ctx = ctx;
 
-    if (opt.hsts && hsts_store) {
-      if (hsts_match(hsts_store, u))
-        logprintf(LOG_VERBOSE, "URL transformed to HTTPS due to an HSTS policy\n");
-    }
-#endif
-    result = http_loop(u, orig_parsed, &mynewloc, &local_file, refurl, dt, proxy_url, iri, tctx);
-  }
-  else {
-    logprintf(LOG_NOTQUIET, _("Unsupported URL scheme in %s.\n"), quote(url));
-    result = URLERROR;
+  // Run the event loop until the async operation is finished
+  while (!g_finished) {
+    ev_run(loop, EVRUN_ONCE);
   }
 
-  if (proxy_url) {
-    url_free(proxy_url);
-    proxy_url = NULL;
-  }
-
-  location_changed = (result == NEWLOCATION || result == NEWLOCATION_KEEP_POST);
-  if (location_changed) {
-    char* construced_newloc;
-    struct url* newloc_parsed;
-
-    assert(mynewloc != NULL);
-
-    xfree(local_file);
-
-    /* The HTTP specs only allow absolute URLs to appear in
-       redirects, but a ton of boneheaded webservers and CGIs out
-       there break the rules and use relative URLs, and popular
-       browsers are lenient about this, so wget should be too. */
-    construced_newloc = uri_merge(url, mynewloc ? mynewloc : "");
-    xfree(mynewloc);
-    mynewloc = construced_newloc;
-
-#ifdef ENABLE_IRI
-    /* Reset UTF-8 encoding state, set the URI encoding and reset
-       the content encoding. */
-    iri->utf8_encode = opt.enable_iri;
-    if (opt.encoding_remote)
-      set_uri_encoding(iri, opt.encoding_remote, true);
-    set_content_encoding(iri, NULL);
-    xfree(iri->orig_url);
-#endif
-
-    /* Now, see if this new location makes sense. */
-    newloc_parsed = url_parse(mynewloc, &up_error_code, iri, true);
-    if (!newloc_parsed) {
-      logprintf(LOG_NOTQUIET, "%s: %s.\n", escnonprint_uri(mynewloc), url_error(up_error_code));
-      if (orig_parsed != u) {
-        url_free(u);
-      }
-      xfree(url);
-      xfree(mynewloc);
-      RESTORE_METHOD;
-      goto bail;
-    }
-
-    /* Now mynewloc will become newloc_parsed->url, because if the
-       Location contained relative paths like .././something, we
-       don't want that propagating as url.  */
-    xfree(mynewloc);
-    mynewloc = xstrdup(newloc_parsed->url);
-
-    /* Check for max. number of redirections.  */
-    if (++redirection_count > opt.max_redirect) {
-      logprintf(LOG_NOTQUIET, _("%d redirections exceeded.\n"), opt.max_redirect);
-      url_free(newloc_parsed);
-      if (orig_parsed != u) {
-        url_free(u);
-      }
-      xfree(url);
-      xfree(mynewloc);
-      RESTORE_METHOD;
-      result = WRONGCODE;
-      goto bail;
-    }
-
-    xfree(url);
-    url = mynewloc;
-    if (orig_parsed != u) {
-      url_free(u);
-    }
-    u = newloc_parsed;
-
-    /* If we're being redirected from POST, and we received a
-       redirect code different than 307, we don't want to POST
-       again.  Many requests answer POST with a redirection to an
-       index page; that redirection is clearly a GET.  We "suspend"
-       POST data for the duration of the redirections, and restore
-       it when we're done.
-
-       RFC2616 HTTP/1.1 introduces code 307 Temporary Redirect
-       specifically to preserve the method of the request.
-   */
-    if (result != NEWLOCATION_KEEP_POST && !method_suspended)
-      SUSPEND_METHOD;
-
-    goto redirected;
-  }
-  else {
-    xfree(mynewloc);
-  }
-
-  /* Try to not encode in UTF-8 if fetching failed */
-  if (!(*dt & RETROKF) && iri->utf8_encode) {
-    iri->utf8_encode = false;
-    if (orig_parsed != u) {
-      url_free(u);
-    }
-    u = url_parse(origurl, NULL, iri, true);
-    if (u) {
-      if (strcmp(u->url, orig_parsed->url)) {
-        DEBUGP(("[IRI fallbacking to non-utf8 for %s\n", quote(url)));
-        xfree(url);
-        url = xstrdup(u->url);
-        iri_fallbacked = 1;
-        goto redirected;
-      }
-      else
-        DEBUGP(("[Needn't fallback to non-utf8 for %s\n", quote(url)));
-    }
-    else
-      DEBUGP(("[Couldn't fallback to non-utf8 for %s\n", quote(url)));
-  }
-
-  if (local_file && u && (*dt & RETROKF || opt.content_on_error)) {
-    register_download(u->url, local_file);
-
-    if (!opt.spider && redirection_count && 0 != strcmp(origurl, u->url))
-      register_redirection(origurl, u->url);
-
-    if (*dt & TEXTHTML)
-      register_html(local_file);
-
-    if (*dt & TEXTCSS)
-      register_css(local_file);
-  }
-
-  if (tctx)
-    transfer_context_set_local_file(tctx, local_file);
-
-  if (file)
-    *file = local_file ? local_file : NULL;
-  else
-    xfree(local_file);
-
-  if (orig_parsed != u)
-    url_free(u);
-
-  if (redirection_count || iri_fallbacked) {
-    if (newloc)
-      *newloc = url;
-    else
-      xfree(url);
-  }
-  else {
-    if (newloc)
-      *newloc = NULL;
-    xfree(url);
-  }
-
-  RESTORE_METHOD;
-
-bail:
-  if (tctx) {
-    transfer_context_set_state(tctx, result == RETROK ? TRANSFER_STATE_COMPLETED : TRANSFER_STATE_FAILED);
+  if (!tctx) {
+    transfer_context_free(&local_tctx);
   }
   if (register_status)
-    inform_exit_status(result);
+    inform_exit_status(g_async_result);
 
-  return result;
+  return g_async_result;
 }
 
-static uerr_t retrieve_from_url_list(struct urlpos* url_list, int* count, struct iri* iri) {
-  struct urlpos* cur_url;
-  uerr_t status;
+static void retrieve_from_url_list_item_cb(struct retrieve_url_ctx* rurl_ctx) {
+  struct retrieve_from_url_list_ctx* ctx = (struct retrieve_from_url_list_ctx*)rurl_ctx->tctx->user_data;
+  assert(ctx != NULL);
 
-#ifndef ENABLE_IRI
-  (void)iri;
-#endif
-
-  status = RETROK; /* Suppose everything is OK.  */
-
-  for (cur_url = url_list; cur_url; cur_url = cur_url->next, ++*count) {
-    char *filename = NULL, *new_file = NULL;
-    int dt = 0;
-    struct iri* tmpiri;
-    struct url* parsed_url;
-
-    if (cur_url->ignore_when_downloading)
-      continue;
-
-    if (opt.quota && total_downloaded_bytes > opt.quota) {
-      status = QUOTEXC;
-      break;
-    }
-
-    tmpiri = iri_dup(iri);
-    parsed_url = url_parse(cur_url->url->url, NULL, tmpiri, true);
-
-    if (opt.recursive || opt.page_requisites) {
-      status = retrieve_tree(parsed_url ? parsed_url : cur_url->url, tmpiri);
-    }
-    else {
-      struct transfer_context tctx;
-      transfer_context_prepare(&tctx, &opt, cur_url->url->url);
-      status = retrieve_url(parsed_url ? parsed_url : cur_url->url, cur_url->url->url, &filename, &new_file, NULL, &dt, opt.recursive, tmpiri, true, &tctx);
-      transfer_context_free(&tctx);
-    }
-
-    if (parsed_url)
-      url_free(parsed_url);
-
-    if (filename && opt.delete_after && file_exists_p(filename, NULL)) {
-      DEBUGP(
-          ("\
-Removing file due to --delete-after in retrieve_from_file():\n"));
-      logprintf(LOG_VERBOSE, _("Removing %s.\n"), filename);
-      if (unlink(filename))
-        logprintf(LOG_NOTQUIET, "Failed to unlink %s: (%d) %s\n", filename, errno, strerror(errno));
-      dt &= ~RETROKF;
-    }
-
-    xfree(new_file);
-    xfree(filename);
-    iri_free(tmpiri);
+  ctx->result = rurl_ctx->result;
+  if (*rurl_ctx->dt & RETROKF) {
+    // Increment count only on successful retrieval
+    if (ctx->count)
+      (*ctx->count)++;
   }
-  return status;
+
+  // Handle filename cleanup from retrieve_url
+  if (*rurl_ctx->local_file && opt.delete_after && file_exists_p(*rurl_ctx->local_file, NULL)) {
+    DEBUGP(("\nRemoving file due to --delete-after in retrieve_from_url_list_item_cb():\n"));
+    logprintf(LOG_VERBOSE, _("Removing %s.\n"), *rurl_ctx->local_file);
+    if (unlink(*rurl_ctx->local_file))
+      logprintf(LOG_NOTQUIET, "Failed to unlink %s: (%d) %s\n", *rurl_ctx->local_file, errno, strerror(errno));
+  }
+  xfree(*rurl_ctx->local_file);
+  xfree(*rurl_ctx->newloc);
+
+  // Free the retrieve_url_ctx
+  retrieve_url_cleanup(rurl_ctx);
+  ctx->rurl_ctx = NULL;
+
+  // Continue to the next URL in the list
+  retrieve_from_url_list_continue_async(ctx, ctx->result);
 }
 
-/* Find the URLs in the file and call retrieve_url() for each of them.
-   If HTML is true, treat the file as HTML, and construct the URLs
-   accordingly.
+static void retrieve_from_url_list_cleanup(struct retrieve_from_url_list_ctx* ctx) {
+  if (!ctx)
+    return;
+  // Note: url_list and iri are managed by the caller (retrieve_from_file or main)
+  // We only free the context itself.
+  xfree(ctx);
+}
 
-   If opt.recursive is set, call retrieve_tree() for each file.  */
+struct retrieve_from_url_list_ctx* retrieve_from_url_list_start_async(struct urlpos* url_list, int* count, struct iri* iri, void (*final_cb)(struct retrieve_from_url_list_ctx* ctx)) {
+  struct retrieve_from_url_list_ctx* ctx = xcalloc(1, sizeof(struct retrieve_from_url_list_ctx));
+  if (!ctx)
+    return NULL;
+
+  ctx->url_list = url_list;
+  ctx->current_url_pos = url_list;
+  ctx->count = count;
+  ctx->iri = iri;
+  ctx->final_cb = final_cb;
+  ctx->state = RURL_LIST_STATE_INIT;
+  ctx->result = RETROK;
+
+  retrieve_from_url_list_continue_async(ctx, RETROK);
+  return ctx;
+}
+
+void retrieve_from_url_list_continue_async(struct retrieve_from_url_list_ctx* ctx, uerr_t prev_op_status) {
+  if (prev_op_status != RETROK) {
+    ctx->result = prev_op_status;
+    ctx->state = RURL_LIST_STATE_FAILED;
+  }
+
+  while (ctx->state != RURL_LIST_STATE_COMPLETED && ctx->state != RURL_LIST_STATE_FAILED) {
+    switch (ctx->state) {
+      case RURL_LIST_STATE_INIT:
+      case RURL_LIST_STATE_RETRIEVING_URL: {
+        if (ctx->current_url_pos) {
+          if (opt.quota && total_downloaded_bytes > opt.quota) {
+            ctx->result = QUOTEXC;
+            ctx->state = RURL_LIST_STATE_FAILED;
+            break;
+          }
+          if (ctx->current_url_pos->ignore_when_downloading) {
+            ctx->current_url_pos = ctx->current_url_pos->next;
+            ctx->state = RURL_LIST_STATE_INIT;  // Continue with next URL
+            continue;
+          }
+
+          struct iri* tmpiri = iri_dup(ctx->iri);
+          struct url* parsed_url = url_parse(ctx->current_url_pos->url->url, NULL, tmpiri, true);
+
+          // We pass ctx itself as user_data to transfer_context, so it can be retrieved in the http_loop_cb
+          struct transfer_context* tctx = xcalloc(1, sizeof(struct transfer_context));  // Needs to be freed in the callback
+          transfer_context_prepare(tctx, &opt, ctx->current_url_pos->url->url);
+          tctx->user_data = ctx;  // Link to retrieve_from_url_list_ctx
+
+          // retrieve_url_start_async expects a pointer to char* for newloc and file, so we need local vars
+          // that will be updated by retrieve_url and then freed or passed to higher level.
+          char* filename_for_rurl = NULL;
+          char* newloc_for_rurl = NULL;
+          int* dt_for_rurl = xcalloc(1, sizeof(int));
+
+          ctx->rurl_ctx = retrieve_url_start_async(parsed_url ? parsed_url : ctx->current_url_pos->url, ctx->current_url_pos->url->url, &newloc_for_rurl, &filename_for_rurl,
+                                                   NULL,  // refurl
+                                                   dt_for_rurl, opt.recursive, tmpiri,
+                                                   true,  // initial_url_parsed (always true here as we parse it)
+                                                   tctx, retrieve_from_url_list_item_cb);
+          if (!ctx->rurl_ctx) {
+            ctx->result = FWRITEERR;  // Or appropriate error
+            ctx->state = RURL_LIST_STATE_FAILED;
+            xfree(dt_for_rurl);
+            iri_free(tmpiri);
+            xfree(tctx);
+            break;
+          }
+          ctx->current_url_pos = ctx->current_url_pos->next;
+          ctx->state = RURL_LIST_STATE_RETRIEVING_URL;  // Wait for the current URL retrieval to complete
+          return;                                       // Yield control to event loop
+        }
+        else {
+          ctx->state = RURL_LIST_STATE_COMPLETED;
+          break;
+        }
+      }
+
+      case RURL_LIST_STATE_COMPLETED: {
+        if (ctx->final_cb)
+          ctx->final_cb(ctx);
+        retrieve_from_url_list_cleanup(ctx);
+        return;
+      }
+      case RURL_LIST_STATE_FAILED: {
+        if (ctx->final_cb)
+          ctx->final_cb(ctx);
+        retrieve_from_url_list_cleanup(ctx);
+        return;
+      }
+    }
+  }
+}
+
+// retrieve_from_file async functions
+static void retrieve_from_file_rurl_cb(struct retrieve_url_ctx* rurl_ctx) {
+  struct retrieve_from_file_ctx* ctx = (struct retrieve_from_file_ctx*)rurl_ctx->tctx->user_data;
+  assert(ctx != NULL);
+
+  ctx->result = rurl_ctx->result;
+  ctx->url_file_downloaded = *rurl_ctx->local_file;  // Take ownership
+  if (*rurl_ctx->dt & TEXTHTML)
+    ctx->html = true;
+
+  retrieve_url_cleanup(rurl_ctx);
+  ctx->rurl_file_ctx = NULL;
+
+  retrieve_from_file_continue_async(ctx, ctx->result);
+}
+
+static void retrieve_from_file_rurl_list_cb(struct retrieve_from_url_list_ctx* rurl_list_ctx) {
+  struct retrieve_from_file_ctx* ctx = (struct retrieve_from_file_ctx*)rurl_list_ctx->iri->user_data;  // This is a hack, need better way
+  assert(ctx != NULL);
+
+  ctx->result = rurl_list_ctx->result;
+  retrieve_from_url_list_cleanup(rurl_list_ctx);
+  ctx->rurl_list_ctx = NULL;
+
+  retrieve_from_file_continue_async(ctx, ctx->result);
+}
+
+static void retrieve_from_file_cleanup(struct retrieve_from_file_ctx* ctx) {
+  if (!ctx)
+    return;
+  xfree(ctx->url_file_downloaded);
+  if (ctx->url_parsed)
+    url_free(ctx->url_parsed);
+  iri_free(ctx->iri);
+  xfree(ctx);
+}
+
+struct retrieve_from_file_ctx* retrieve_from_file_start_async(const char* file, bool html, int* count, void (*final_cb)(struct retrieve_from_file_ctx* ctx)) {
+  struct retrieve_from_file_ctx* ctx = xcalloc(1, sizeof(struct retrieve_from_file_ctx));
+  if (!ctx)
+    return NULL;
+
+  ctx->file = file;
+  ctx->html = html;
+  ctx->count = count;
+  ctx->final_cb = final_cb;
+  ctx->state = RFILE_STATE_INIT;
+  ctx->result = RETROK;
+  ctx->iri = iri_new();
+  ctx->iri->user_data = ctx;  // Hack to pass ctx to retrieve_from_url_list_cb
+
+  // Reset count
+  if (ctx->count)
+    *ctx->count = 0;
+
+  // sXXXav : Assume filename and links in the file are in the locale
+  set_uri_encoding(ctx->iri, opt.locale, true);
+  set_content_encoding(ctx->iri, opt.locale);
+
+  retrieve_from_file_continue_async(ctx, RETROK);
+  return ctx;
+}
+
+void retrieve_from_file_continue_async(struct retrieve_from_file_ctx* ctx, uerr_t prev_op_status) {
+  if (prev_op_status != RETROK) {
+    ctx->result = prev_op_status;
+    ctx->state = RFILE_STATE_FAILED;
+  }
+
+  while (ctx->state != RFILE_STATE_COMPLETED && ctx->state != RFILE_STATE_FAILED) {
+    switch (ctx->state) {
+      case RFILE_STATE_INIT: {
+        ctx->is_url_input_file = url_valid_scheme(ctx->file);
+        if (ctx->is_url_input_file) {
+          ctx->url_parsed = url_parse(ctx->file, &ctx->up_error_code, ctx->iri, true);
+          if (!ctx->url_parsed) {
+            logprintf(LOG_NOTQUIET, "%s: %s.\n", ctx->file, url_error(ctx->up_error_code));
+            ctx->result = URLERROR;
+            ctx->state = RFILE_STATE_FAILED;
+            break;
+          }
+
+          if (!opt.base_href)
+            opt.base_href = xstrdup(ctx->file);
+
+          struct transfer_context* tctx = xcalloc(1, sizeof(struct transfer_context));
+          transfer_context_prepare(tctx, &opt, ctx->file);
+          tctx->user_data = ctx;  // Link to retrieve_from_file_ctx
+
+          char* local_file_for_rurl = NULL;
+          char* newloc_for_rurl = NULL;
+          int* dt_for_rurl = xcalloc(1, sizeof(int));
+
+          ctx->rurl_file_ctx = retrieve_url_start_async(ctx->url_parsed, ctx->file, &newloc_for_rurl, &local_file_for_rurl, NULL, dt_for_rurl,
+                                                        false,  // recursive
+                                                        ctx->iri,
+                                                        true,  // initial_url_parsed
+                                                        tctx, retrieve_from_file_rurl_cb);
+          if (!ctx->rurl_file_ctx) {
+            ctx->result = FWRITEERR;
+            ctx->state = RFILE_STATE_FAILED;
+            xfree(dt_for_rurl);
+            xfree(tctx);
+            break;
+          }
+          ctx->input_file = local_file_for_rurl;
+          ctx->state = RFILE_STATE_FETCH_URL_FILE;
+          return;  // Yield
+        }
+        else {
+          ctx->input_file = (char*)ctx->file;
+          ctx->state = RFILE_STATE_GET_URLS_FROM_FILE;
+          continue;  // Fall through
+        }
+      }
+
+      case RFILE_STATE_FETCH_URL_FILE: {
+        // If we reached here, the file download for the input URL is complete.
+        // Check result from rurl_file_ctx
+        if (ctx->result != RETROK || !ctx->url_file_downloaded) {
+          ctx->state = RFILE_STATE_FAILED;
+          break;
+        }
+        ctx->input_file = ctx->url_file_downloaded;
+        ctx->state = RFILE_STATE_GET_URLS_FROM_FILE;
+        // Explicit fallthrough to GET_URLS_FROM_FILE
+        // fall through
+        __attribute__((fallthrough));
+      }
+
+      case RFILE_STATE_GET_URLS_FROM_FILE: {
+        struct urlpos* url_list;
+        // The original logic had a do-while loop for read_again.
+        // This needs to be managed by re-entering this state or a new sub-state.
+        url_list = (ctx->html ? get_urls_html(ctx->input_file, NULL, NULL, ctx->iri) : get_urls_file(ctx->input_file, &ctx->read_again));
+
+        if (!url_list && ctx->read_again) {
+          // If no URLs but read_again is true, means get_urls_file wants to be called again
+          // This should ideally not happen or signify an empty file that needs re-reading.
+          // For now, assume it means we are done.
+          ctx->state = RFILE_STATE_COMPLETED;
+          break;
+        }
+
+        ctx->rurl_list_ctx = retrieve_from_url_list_start_async(url_list, ctx->count, ctx->iri, retrieve_from_file_rurl_list_cb);
+        if (!ctx->rurl_list_ctx) {
+          ctx->result = FWRITEERR;  // Or appropriate error
+          ctx->state = RFILE_STATE_FAILED;
+          if (url_list)
+            free_urlpos(url_list);
+          break;
+        }
+        ctx->state = RFILE_STATE_RETRIEVING_URL_LIST;
+        return;  // Yield
+      }
+
+      case RFILE_STATE_RETRIEVING_URL_LIST: {
+        // If we reached here, the URL list retrieval is complete.
+        // The result is already in ctx->result from retrieve_from_file_rurl_list_cb.
+        if (ctx->read_again) {
+          // If read_again is true, we need to go back and get URLs from file again
+          ctx->state = RFILE_STATE_GET_URLS_FROM_FILE;
+          continue;
+        }
+        else {
+          ctx->state = RFILE_STATE_COMPLETED;
+          break;
+        }
+      }
+
+      case RFILE_STATE_COMPLETED: {
+        xfree(ctx->input_file);
+        // Note: url_list is freed by retrieve_from_url_list_cleanup
+        if (ctx->final_cb)
+          ctx->final_cb(ctx);
+        retrieve_from_file_cleanup(ctx);
+        return;
+      }
+      case RFILE_STATE_FAILED: {
+        if (ctx->final_cb)
+          ctx->final_cb(ctx);
+        retrieve_from_file_cleanup(ctx);
+        return;
+      }
+    }
+  }
+}
+
+static uerr_t g_async_result_rurl_list WGET_ATTR_UNUSED = RETROK;
+static bool g_finished_rurl_list WGET_ATTR_UNUSED = false;
+
+static uerr_t g_async_result_rfile = RETROK;
+static bool g_finished_rfile = false;
+
+static void blocking_final_cb_for_retrieve_from_file(struct retrieve_from_file_ctx* ctx) {
+  g_async_result_rfile = ctx->result;
+  g_finished_rfile = true;
+}
 
 uerr_t retrieve_from_file(const char* file, bool html, int* count) {
-  uerr_t status;
-  struct urlpos* url_list;
-  struct iri* iri = iri_new();
+  // Blocking wrapper for retrieve_from_file_start_async
+  g_async_result_rfile = RETROK;
+  g_finished_rfile = false;
 
-  char *input_file, *url_file = NULL;
-  const char* url = file;
-
-  *count = 0; /* Reset the URL count.  */
-
-  /* sXXXav : Assume filename and links in the file are in the locale */
-  set_uri_encoding(iri, opt.locale, true);
-  set_content_encoding(iri, opt.locale);
-
-  if (url_valid_scheme(url)) {
-    int dt, url_err;
-    struct url* url_parsed = url_parse(url, &url_err, iri, true);
-    if (!url_parsed) {
-      logprintf(LOG_NOTQUIET, "%s: %s.\n", url, url_error(url_err));
-      iri_free(iri);
-      return URLERROR;
-    }
-
-    if (!opt.base_href)
-      opt.base_href = xstrdup(url);
-
-    {
-      struct transfer_context tctx;
-      transfer_context_prepare(&tctx, &opt, url);
-      status = retrieve_url(url_parsed, url, &url_file, NULL, NULL, &dt, false, iri, true, &tctx);
-      transfer_context_free(&tctx);
-    }
-    url_free(url_parsed);
-
-    if (!url_file || (status != RETROK)) {
-      iri_free(iri);
-      return status;
-    }
-
-    if (dt & TEXTHTML)
-      html = true;
-
-#ifdef ENABLE_IRI
-    /* If we have a found a content encoding, use it.
-     * ( == is okay, because we're checking for identical object) */
-    if (iri->content_encoding != opt.locale)
-      set_uri_encoding(iri, iri->content_encoding, false);
-#endif
-
-    /* Reset UTF-8 encode status */
-    iri->utf8_encode = opt.enable_iri;
-    xfree(iri->orig_url);
-
-    input_file = url_file;
+  struct retrieve_from_file_ctx* ctx = retrieve_from_file_start_async(file, html, count, blocking_final_cb_for_retrieve_from_file);
+  if (!ctx) {
+    return FWRITEERR;
   }
-  else
-    input_file = (char*)file;
 
-  bool read_again = false;
-  do {
-    url_list = (html ? get_urls_html(input_file, NULL, NULL, iri) : get_urls_file(input_file, &read_again));
+  while (!g_finished_rfile) {
+    ev_run(EV_DEFAULT, EVRUN_ONCE);
+  }
 
-    status = retrieve_from_url_list(url_list, count, iri);
-  } while (read_again);
-
-  xfree(url_file);
-
-  /* Free the linked list of URL-s.  */
-  free_urlpos(url_list);
-
-  iri_free(iri);
-
-  return status;
+  return g_async_result_rfile;
 }
 
 /* Print `giving up', or `retrying', depending on the impending
@@ -1732,6 +1939,65 @@ void sleep_between_retrievals(int count) {
       wget_ev_sleep(waitsecs);
     }
   }
+}
+
+/* Async version using scheduler timers */
+typedef struct {
+  scheduler_timer_cb_t callback;
+  void* user_arg;
+} sleep_callback_data_t;
+
+static void sleep_between_retrievals_async_cb(void* user_arg) {
+  sleep_callback_data_t* data = user_arg;
+  if (data && data->callback) {
+    data->callback(data->user_arg);
+  }
+  xfree(data);
+}
+
+int sleep_between_retrievals_async(scheduler_t* sched, int count, scheduler_timer_cb_t callback, void* user_arg) {
+  static bool first_retrieval = true;
+  double wait_seconds = 0;
+
+  if (first_retrieval) {
+    /* Don't sleep before the very first retrieval. */
+    first_retrieval = false;
+    return SCHED_ERR_INVALID; /* No sleep needed */
+  }
+
+  if (opt.waitretry && count > 1) {
+    /* If opt.waitretry is specified and this is a retry, wait for
+       COUNT-1 number of seconds, or for opt.waitretry seconds.  */
+    if (count <= opt.waitretry)
+      wait_seconds = count - 1;
+    else
+      wait_seconds = opt.waitretry;
+  }
+  else if (opt.wait) {
+    if (!opt.random_wait || count > 1) {
+      /* If random-wait is not specified, or if we are sleeping
+         between retries of the same download, sleep the fixed
+         interval.  */
+      wait_seconds = opt.wait;
+    }
+    else {
+      /* Sleep a random amount of time averaging in opt.wait
+         seconds.  The sleeping amount ranges from 0.5*opt.wait to
+         1.5*opt.wait.  */
+      wait_seconds = (0.5 + random_float()) * opt.wait;
+      DEBUGP(("sleep_between_retrievals_async: avg=%f,sleep=%f\n", opt.wait, wait_seconds));
+    }
+  }
+
+  if (wait_seconds > 0) {
+    sleep_callback_data_t* data = xcalloc(1, sizeof(*data));
+    data->callback = callback;
+    data->user_arg = user_arg;
+
+    return scheduler_delay(sched, wait_seconds, sleep_between_retrievals_async_cb, data);
+  }
+
+  return SCHED_ERR_INVALID; /* No sleep needed */
 }
 
 /* Free the linked list of urlpos.  */

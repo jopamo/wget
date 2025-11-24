@@ -121,7 +121,6 @@ _Noreturn static void memfatal(const char* context, long attempted_size) {
   exit(WGET_EXIT_GENERIC_ERROR);
 }
 
-
 /* Utility function: like xstrdup(), but also lowercases S.  */
 
 char* xstrdup_lower(const char* s) {
@@ -1820,7 +1819,7 @@ bool run_with_timeout(double timeout, void (*fun)(void*), void* arg) {
   return false;
 }
 
-#else /* not USE_SIGNAL_TIMEOUT */
+#else  /* not USE_SIGNAL_TIMEOUT */
 
 bool run_with_timeout(double timeout, void (*fun)(void*), void* arg) {
   fun(arg);

@@ -63,9 +63,9 @@ struct options {
   char* dir_prefix;          /* The top of directory tree */
   char* lfilename;           /* Log filename */
   char* input_filename;      /* Input filename */
-  char* choose_config; /* Specified config file */
-  bool noconfig;       /* Ignore all config files? */
-  bool force_html;     /* Is the input file an HTML file? */
+  char* choose_config;       /* Specified config file */
+  bool noconfig;             /* Ignore all config files? */
+  bool force_html;           /* Is the input file an HTML file? */
 
   char* default_page; /* Alternative default page (index file) */
 
@@ -100,8 +100,8 @@ struct options {
   char** exclude_domains;
   bool dns_cache; /* whether we cache DNS lookups. */
 
-  char** follow_tags; /* List of HTML tags to recursively follow. */
-  char** ignore_tags; /* List of HTML tags to ignore if recursing. */
+  char** follow_tags;            /* List of HTML tags to recursively follow. */
+  char** ignore_tags;            /* List of HTML tags to ignore if recursing. */
   char* output_document;         /* The output file to which the
                                     documents will be printed.  */
   char* warc_filename;           /* WARC output filename */
