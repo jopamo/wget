@@ -24,6 +24,7 @@
 #include "recur.h"
 #include "host.h"
 #include "evloop.h"
+#include "threading.h"
 #include "url.h"
 #include "progress.h" /* for progress_handle_sigwinch */
 #include "signals.h"
@@ -1272,6 +1273,8 @@ int main(int argc, char** argv) {
   program_name = argv[0];
 
   wget_ev_loop_init();
+  wget_worker_pool_init(0);
+  atexit(wget_worker_pool_shutdown);
 
   i18n_initialize();
 

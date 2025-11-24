@@ -40,6 +40,7 @@
 #include <ev.h>
 #include "evhelpers.h"
 #include "evloop.h"
+#include "threading.h"
 
 #define FD_READ_LINE_MAX 4096
 
@@ -133,6 +134,7 @@ static void zfree(voidpf opaque, voidpf address) {
   (void)opaque;
   xfree(address);
 }
+
 #endif
 
 /* Limit the bandwidth by pausing the download for an amount of time.
@@ -271,6 +273,8 @@ struct retr_async_ctx {
   bool finished;
   int result;
   int error_no;
+  bool cpu_paused;
+  bool cpu_job_pending;
 
   wgint sum_read;
   wgint sum_written;
@@ -309,7 +313,8 @@ struct retr_async_ctx {
 static void retr_async_stop_watchers(struct retr_async_ctx* ctx) {
   if (!ctx || !ctx->loop)
     return;
-  ev_io_stop(ctx->loop, &ctx->io_watcher);
+  if (ev_is_active(&ctx->io_watcher))
+    ev_io_stop(ctx->loop, &ctx->io_watcher);
   if (ctx->timeout_active) {
     ev_timer_stop(ctx->loop, &ctx->timeout_watcher);
     ctx->timeout_active = false;
@@ -325,6 +330,8 @@ static void retr_async_stop_watchers(struct retr_async_ctx* ctx) {
 }
 
 static void retr_async_finish(struct retr_async_ctx* ctx, int status);
+static void retr_async_fail(struct retr_async_ctx* ctx, int status);
+static void retr_async_maybe_throttle(struct retr_async_ctx* ctx, wgint bytes);
 
 static void retr_async_reset_timeout(struct retr_async_ctx* ctx) {
   if (!ctx || !ctx->timeout_active)
@@ -348,6 +355,163 @@ static void retr_async_start_progress_timer(struct retr_async_ctx* ctx) {
   ctx->progress_active = true;
   ev_timer_start(ctx->loop, &ctx->progress_watcher);
 }
+
+static void retr_async_pause_io(struct retr_async_ctx* ctx) {
+  if (!ctx || !ctx->loop || ctx->finished || ctx->cpu_paused)
+    return;
+  if (ev_is_active(&ctx->io_watcher))
+    ev_io_stop(ctx->loop, &ctx->io_watcher);
+  retr_async_reset_timeout(ctx);
+  ctx->cpu_paused = true;
+}
+
+static void retr_async_resume_io(struct retr_async_ctx* ctx) {
+  if (!ctx || !ctx->loop || ctx->finished || !ctx->cpu_paused)
+    return;
+  ctx->cpu_paused = false;
+  if (ctx->throttle_active)
+    return;
+  if (!ev_is_active(&ctx->io_watcher))
+    ev_io_start(ctx->loop, &ctx->io_watcher);
+  retr_async_arm_timeout(ctx);
+}
+
+#if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
+struct retr_async_gzip_job {
+  struct retr_async_ctx* ctx;
+  char* data;
+  size_t len;
+  wgint bytes_read;
+  int status;
+  int error_no;
+};
+
+static int retr_async_process_gzip_chunk(struct retr_async_ctx* ctx, const char* buf, size_t len, int* error_no) {
+  int write_res;
+
+  if (ctx->out2) {
+    write_res = write_data(NULL, ctx->out2, buf, len, NULL, NULL);
+    if (write_res < 0) {
+      if (error_no)
+        *error_no = errno;
+      return write_res;
+    }
+  }
+
+  ctx->gzstream.avail_in = len;
+  ctx->gzstream.next_in = (unsigned char*)buf;
+
+  do {
+    ctx->gzstream.avail_out = ctx->gzbufsize;
+    ctx->gzstream.next_out = (unsigned char*)ctx->gzbuf;
+    int err = inflate(&ctx->gzstream, Z_NO_FLUSH);
+    if (err == Z_MEM_ERROR) {
+      if (error_no)
+        *error_no = ENOMEM;
+      return -1;
+    }
+    if (err == Z_NEED_DICT || err == Z_DATA_ERROR) {
+      if (error_no)
+        *error_no = EINVAL;
+      return -1;
+    }
+    unsigned int produced = ctx->gzbufsize - ctx->gzstream.avail_out;
+    if (produced > 0) {
+      write_res = write_data(ctx->out, NULL, ctx->gzbuf, produced, &ctx->skip, &ctx->sum_written);
+      if (write_res < 0) {
+        if (error_no)
+          *error_no = errno;
+        return write_res;
+      }
+    }
+    if (err == Z_STREAM_END)
+      break;
+  } while (ctx->gzstream.avail_out == 0);
+
+  return 0;
+}
+
+static void retr_async_gzip_job_work(void* arg) {
+  struct retr_async_gzip_job* job = arg;
+  int err_no = 0;
+  job->status = retr_async_process_gzip_chunk(job->ctx, job->data, job->len, &err_no);
+  job->error_no = err_no;
+  xfree(job->data);
+  job->data = NULL;
+}
+
+static void retr_async_gzip_job_complete(void* arg) {
+  struct retr_async_gzip_job* job = arg;
+  struct retr_async_ctx* ctx = job->ctx;
+
+  ctx->cpu_job_pending = false;
+
+  if (job->status < 0) {
+    ctx->error_no = job->error_no;
+    ctx->result = job->status;
+    retr_async_fail(ctx, ctx->result ? ctx->result : -1);
+    xfree(job);
+    return;
+  }
+
+  ctx->sum_read += job->bytes_read;
+  if (ctx->timer)
+    ptimer_measure(ctx->timer);
+  if (ctx->progress)
+    progress_update(ctx->progress, job->bytes_read, ctx->timer ? ptimer_read(ctx->timer) : 0);
+  retr_async_maybe_throttle(ctx, job->bytes_read);
+
+  if (ctx->exact && ctx->sum_read >= ctx->toread && !ctx->chunked)
+    retr_async_finish(ctx, ctx->result);
+  else
+    retr_async_resume_io(ctx);
+
+  xfree(job);
+}
+
+static bool retr_async_dispatch_gzip(struct retr_async_ctx* ctx, const char* buf, size_t len) {
+  if (!wget_worker_pool_available()) {
+    int err_no = 0;
+    int status = retr_async_process_gzip_chunk(ctx, buf, len, &err_no);
+    if (status < 0) {
+      ctx->error_no = err_no;
+      ctx->result = status;
+      return false;
+    }
+    return true;
+  }
+
+  struct retr_async_gzip_job* job = xcalloc(1, sizeof(*job));
+  job->ctx = ctx;
+  job->len = len;
+  job->bytes_read = len;
+  job->data = xmemdup(buf, len);
+  if (!job->data) {
+    xfree(job);
+    ctx->error_no = ENOMEM;
+    ctx->result = -1;
+    return false;
+  }
+
+  if (!wget_worker_pool_submit(retr_async_gzip_job_work, retr_async_gzip_job_complete, job)) {
+    int err_no = 0;
+    int status;
+    xfree(job->data);
+    xfree(job);
+    status = retr_async_process_gzip_chunk(ctx, buf, len, &err_no);
+    if (status < 0) {
+      ctx->error_no = err_no;
+      ctx->result = status;
+      return false;
+    }
+    return true;
+  }
+
+  retr_async_pause_io(ctx);
+  ctx->cpu_job_pending = true;
+  return true;
+}
+#endif
 
 static void retr_async_destroy_buffers(struct retr_async_ctx* ctx) {
   if (!ctx)
@@ -445,7 +609,8 @@ static void retr_async_maybe_throttle(struct retr_async_ctx* ctx, wgint bytes) {
   retr_async_reset_timeout(ctx);
   ev_timer_set(&ctx->throttle_watcher, delay, 0);
   ev_timer_start(ctx->loop, &ctx->throttle_watcher);
-  ev_io_stop(ctx->loop, &ctx->io_watcher);
+  if (ev_is_active(&ctx->io_watcher))
+    ev_io_stop(ctx->loop, &ctx->io_watcher);
 }
 
 static bool retr_async_write_payload(struct retr_async_ctx* ctx, const char* buf, size_t len);
@@ -465,8 +630,11 @@ static void retr_async_throttle_cb(EV_P_ ev_timer* w, int revents WGET_ATTR_UNUS
 
   ctx->throttle_active = false;
   bandwidth_limiter_commit(&ctx->limiter, ctx->timer, ctx->throttle_delay, actual);
-  ev_io_start(ctx->loop, &ctx->io_watcher);
-  retr_async_arm_timeout(ctx);
+  if (!ctx->cpu_paused) {
+    if (!ev_is_active(&ctx->io_watcher))
+      ev_io_start(ctx->loop, &ctx->io_watcher);
+    retr_async_arm_timeout(ctx);
+  }
 }
 
 static void retr_async_progress_cb(EV_P_ ev_timer* w, int revents WGET_ATTR_UNUSED) {
@@ -632,42 +800,10 @@ static bool retr_async_write_payload(struct retr_async_ctx* ctx, const char* buf
 
 #if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
   if (ctx->gzip_mode) {
-    if (ctx->out2) {
-      write_res = write_data(NULL, ctx->out2, buf, len, NULL, NULL);
-      if (write_res < 0) {
-        ctx->error_no = errno;
-        ctx->result = write_res;
-        return false;
-      }
-    }
-    ctx->gzstream.avail_in = len;
-    ctx->gzstream.next_in = (unsigned char*)buf;
-    do {
-      ctx->gzstream.avail_out = ctx->gzbufsize;
-      ctx->gzstream.next_out = (unsigned char*)ctx->gzbuf;
-      int err = inflate(&ctx->gzstream, Z_NO_FLUSH);
-      if (err == Z_MEM_ERROR) {
-        ctx->error_no = ENOMEM;
-        ctx->result = -1;
-        return false;
-      }
-      if (err == Z_NEED_DICT || err == Z_DATA_ERROR) {
-        ctx->error_no = EINVAL;
-        ctx->result = -1;
-        return false;
-      }
-      unsigned int produced = ctx->gzbufsize - ctx->gzstream.avail_out;
-      if (produced > 0) {
-        write_res = write_data(ctx->out, NULL, ctx->gzbuf, produced, &ctx->skip, &ctx->sum_written);
-        if (write_res < 0) {
-          ctx->error_no = errno;
-          ctx->result = write_res;
-          return false;
-        }
-      }
-      if (err == Z_STREAM_END)
-        break;
-    } while (ctx->gzstream.avail_out == 0);
+    if (!retr_async_dispatch_gzip(ctx, buf, len))
+      return false;
+    if (ctx->cpu_job_pending)
+      return true;
   }
   else
 #endif

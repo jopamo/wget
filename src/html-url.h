@@ -47,6 +47,7 @@ struct map_context {
   const char* document_file; /* File name of this document. */
   bool nofollow;             /* whether NOFOLLOW was specified in a
                                 <meta name=robots> tag. */
+  char* meta_charset;        /* charset discovered in meta tags. */
 
   struct urlpos* head; /* List of URLs that is being built. */
 };

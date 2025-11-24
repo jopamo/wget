@@ -74,4 +74,12 @@ wget_async_task_t* wget_async_mailbox_acquire_all(wget_async_mailbox_t* mailbox)
 wget_async_task_t* wget_async_mailbox_reverse(wget_async_task_t* head);
 bool wget_async_mailbox_is_empty(const wget_async_mailbox_t* mailbox);
 
+typedef void (*wget_worker_work_fn)(void*);
+typedef void (*wget_worker_complete_fn)(void*);
+
+bool wget_worker_pool_init(unsigned int desired_workers);
+void wget_worker_pool_shutdown(void);
+bool wget_worker_pool_submit(wget_worker_work_fn work, wget_worker_complete_fn complete, void* arg);
+bool wget_worker_pool_available(void);
+
 #endif /* WGET_THREADING_H */

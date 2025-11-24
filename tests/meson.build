@@ -109,3 +109,21 @@ evloop_async_test = executable(
 )
 
 test('evloop_async_post', evloop_async_test)
+
+worker_pool_sources = files(
+  'worker_pool_test.c',
+  'test_stubs.c',
+  '../src/threading.c',
+  '../src/evloop.c',
+  '../src/xalloc.c',
+)
+
+worker_pool_test = executable(
+  'worker_pool_test',
+  worker_pool_sources,
+  include_directories: test_includes,
+  dependencies: [libev_dep, threads_dep],
+  install: false,
+)
+
+test('worker_pool_dispatch', worker_pool_test)

@@ -20,6 +20,8 @@
 #include "html-url.h"
 #include "css-url.h"
 #include "c-strcase.h"
+#include "threading.h"
+#include "evloop.h"
 
 typedef void (*tag_handler_t)(int, struct taginfo*, struct map_context*);
 
@@ -146,10 +148,6 @@ static const char* additional_attributes[] = {
 
 static struct hash_table* interesting_tags;
 static struct hash_table* interesting_attributes;
-
-/* Will contains the (last) charset found in 'http-equiv=content-type'
-   meta tags  */
-static char* meta_charset;
 
 static void init_interesting(void) {
   /* Init the variables interesting_tags and interesting_attributes
@@ -527,8 +525,8 @@ static void tag_handle_meta(int tagid WGET_ATTR_UNUSED, struct taginfo* tag, str
     if (!mcharset)
       return;
 
-    xfree(meta_charset);
-    meta_charset = mcharset;
+    xfree(ctx->meta_charset);
+    ctx->meta_charset = mcharset;
   }
   else if (name && 0 == c_strcasecmp(name, "robots")) {
     /* Handle stuff like:
@@ -665,55 +663,93 @@ static void collect_tags_mapper(struct taginfo* tag, void* arg) {
   }
 }
 
-/* Analyze HTML tags FILE and construct a list of URLs referenced from
-   it.  It merges relative links in FILE with URL.  It is aware of
-   <base href=...> and does the right thing.  */
+struct html_parse_async_job {
+  const char* file;
+  const struct file_memory* fm;
+  const char* url;
+  struct iri* iri;
+  bool* meta_out;
+  struct urlpos* urls;
+  bool meta_nofollow;
+  bool done;
+};
 
-struct urlpos* get_urls_html_fm(const char* file, const struct file_memory* fm, const char* url, bool* meta_disallow_follow, struct iri* iri) {
+static struct urlpos* get_urls_html_fm_internal(const char* file, const struct file_memory* fm, const char* url, bool* meta_disallow_follow, struct iri* iri) {
   struct map_context ctx;
   int flags;
 
-  (void)iri;
-
+  memset(&ctx, 0, sizeof(ctx));
   ctx.text = fm->content;
-  ctx.head = NULL;
-  ctx.base = NULL;
   ctx.parent_base = url ? url : opt.base_href;
   ctx.document_file = file;
-  ctx.nofollow = false;
 
   if (!interesting_tags)
     init_interesting();
 
-  /* Specify MHT_TRIM_VALUES because of buggy HTML generators that
-     generate <a href=" foo"> instead of <a href="foo"> (browsers
-     ignore spaces as well.)  If you really mean space, use &32; or
-     %20.  MHT_TRIM_VALUES also causes squashing of embedded newlines,
-     e.g. in <img src="foo.[newline]html">.  Such newlines are also
-     ignored by IE and Mozilla and are presumably introduced by
-     writing HTML with editors that force word wrap.  */
   flags = MHT_TRIM_VALUES;
   if (opt.strict_comments)
     flags |= MHT_STRICT_COMMENTS;
 
-  /* the NULL here used to be interesting_tags */
   map_html_tags(fm->content, fm->length, collect_tags_mapper, &ctx, flags, NULL, interesting_attributes);
 
 #ifdef ENABLE_IRI
-  /* Meta charset is only valid if there was no HTTP header Content-Type charset. */
-  /* This is true for HTTP 1.0 and 1.1. */
-  if (iri && !iri->content_encoding && meta_charset)
-    set_content_encoding(iri, meta_charset);
+  if (iri && !iri->content_encoding && ctx.meta_charset)
+    set_content_encoding(iri, ctx.meta_charset);
+#else
+  (void)iri;
 #endif
-  xfree(meta_charset);
 
   DEBUGP(("nofollow in %s: %d\n", file, ctx.nofollow));
 
   if (meta_disallow_follow)
     *meta_disallow_follow = ctx.nofollow;
 
+  xfree(ctx.meta_charset);
   xfree(ctx.base);
   return ctx.head;
+}
+
+static void html_parse_async_work(void* arg) {
+  struct html_parse_async_job* job = arg;
+  job->urls = get_urls_html_fm_internal(job->file, job->fm, job->url, &job->meta_nofollow, job->iri);
+}
+
+static void html_parse_async_complete(void* arg) {
+  struct html_parse_async_job* job = arg;
+  if (job->meta_out)
+    *job->meta_out = job->meta_nofollow;
+  job->done = true;
+}
+
+static struct urlpos* get_urls_html_fm_async(const char* file, const struct file_memory* fm, const char* url, bool* meta_disallow_follow, struct iri* iri) {
+  struct html_parse_async_job job = {
+      .file = file,
+      .fm = fm,
+      .url = url,
+      .iri = iri,
+      .meta_out = meta_disallow_follow,
+      .urls = NULL,
+      .meta_nofollow = false,
+      .done = false,
+  };
+
+  if (!wget_worker_pool_submit(html_parse_async_work, html_parse_async_complete, &job))
+    return get_urls_html_fm_internal(file, fm, url, meta_disallow_follow, iri);
+
+  while (!job.done)
+    wget_ev_loop_run_once();
+
+  return job.urls;
+}
+
+/* Analyze HTML tags FILE and construct a list of URLs referenced from
+   it.  It merges relative links in FILE with URL.  It is aware of
+   <base href=...> and does the right thing.  */
+
+struct urlpos* get_urls_html_fm(const char* file, const struct file_memory* fm, const char* url, bool* meta_disallow_follow, struct iri* iri) {
+  if (!wget_worker_pool_available())
+    return get_urls_html_fm_internal(file, fm, url, meta_disallow_follow, iri);
+  return get_urls_html_fm_async(file, fm, url, meta_disallow_follow, iri);
 }
 
 struct urlpos* get_urls_html(const char* file, const char* url, bool* meta_disallow_follow, struct iri* iri) {

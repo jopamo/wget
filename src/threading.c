@@ -20,6 +20,12 @@
  */
 
 #include "threading.h"
+#include "evloop.h"
+#include "utils.h"
+
+#ifdef HAVE_UNISTD_H
+#include <unistd.h>
+#endif
 
 #if defined(WINDOWS)
 
@@ -144,3 +150,181 @@ bool wget_async_mailbox_is_empty(const wget_async_mailbox_t* mailbox) {
     return true;
   return atomic_load_explicit(&mailbox->head, memory_order_acquire) == (uintptr_t)NULL;
 }
+
+#if defined HAVE_PTHREAD_H && HAVE_PTHREAD_H
+
+typedef struct wget_worker_job {
+  struct wget_worker_job* next;
+  wget_worker_work_fn work;
+  wget_worker_complete_fn complete;
+  void* arg;
+} wget_worker_job_t;
+
+static struct {
+  pthread_t* threads;
+  size_t thread_count;
+  wget_worker_job_t* head;
+  wget_worker_job_t* tail;
+  pthread_mutex_t lock;
+  pthread_cond_t cond;
+  bool running;
+  bool initialized;
+} worker_pool = {
+    .threads = NULL,
+    .thread_count = 0,
+    .head = NULL,
+    .tail = NULL,
+    .lock = PTHREAD_MUTEX_INITIALIZER,
+    .cond = PTHREAD_COND_INITIALIZER,
+    .running = false,
+    .initialized = false,
+};
+
+static void wget_worker_job_complete_trampoline(void* arg) {
+  wget_worker_job_t* job = (wget_worker_job_t*)arg;
+  if (job->complete)
+    job->complete(job->arg);
+  xfree(job);
+}
+
+static void* wget_worker_thread_main(void* arg WGET_ATTR_UNUSED) {
+  while (1) {
+    wget_worker_job_t* job = NULL;
+    pthread_mutex_lock(&worker_pool.lock);
+    while (worker_pool.running && worker_pool.head == NULL)
+      pthread_cond_wait(&worker_pool.cond, &worker_pool.lock);
+    if (!worker_pool.running && worker_pool.head == NULL) {
+      pthread_mutex_unlock(&worker_pool.lock);
+      break;
+    }
+    job = worker_pool.head;
+    worker_pool.head = job ? job->next : NULL;
+    if (!worker_pool.head)
+      worker_pool.tail = NULL;
+    pthread_mutex_unlock(&worker_pool.lock);
+    if (!job)
+      continue;
+    if (job->work)
+      job->work(job->arg);
+    if (job->complete) {
+      if (!wget_ev_loop_post_async(wget_worker_job_complete_trampoline, job))
+        wget_worker_job_complete_trampoline(job);
+    }
+    else
+      xfree(job);
+  }
+  return NULL;
+}
+
+static unsigned int wget_worker_default_threads(unsigned int desired) {
+  if (desired)
+    return desired;
+  long cpus = 1;
+#ifdef _SC_NPROCESSORS_ONLN
+  cpus = sysconf(_SC_NPROCESSORS_ONLN);
+#endif
+  if (cpus < 1)
+    cpus = 1;
+  if (cpus > 32)
+    cpus = 32;
+  return (unsigned int)cpus;
+}
+
+bool wget_worker_pool_init(unsigned int desired_workers) {
+  if (worker_pool.initialized)
+    return true;
+
+  worker_pool.thread_count = wget_worker_default_threads(desired_workers);
+  worker_pool.threads = xcalloc(worker_pool.thread_count, sizeof(*worker_pool.threads));
+  worker_pool.running = true;
+
+  for (size_t i = 0; i < worker_pool.thread_count; ++i) {
+    if (pthread_create(&worker_pool.threads[i], NULL, wget_worker_thread_main, NULL) != 0) {
+      worker_pool.thread_count = i;
+      worker_pool.running = false;
+      goto fail;
+    }
+  }
+
+  worker_pool.initialized = true;
+  return true;
+
+fail:
+  for (size_t i = 0; i < worker_pool.thread_count; ++i)
+    pthread_join(worker_pool.threads[i], NULL);
+  xfree(worker_pool.threads);
+  worker_pool.threads = NULL;
+  worker_pool.thread_count = 0;
+  return false;
+}
+
+bool wget_worker_pool_available(void) {
+  return worker_pool.initialized;
+}
+
+bool wget_worker_pool_submit(wget_worker_work_fn work, wget_worker_complete_fn complete, void* arg) {
+  if (!worker_pool.initialized || !work)
+    return false;
+
+  wget_worker_job_t* job = xcalloc(1, sizeof(*job));
+  job->work = work;
+  job->complete = complete;
+  job->arg = arg;
+
+  pthread_mutex_lock(&worker_pool.lock);
+  if (worker_pool.tail)
+    worker_pool.tail->next = job;
+  else
+    worker_pool.head = job;
+  worker_pool.tail = job;
+  pthread_cond_signal(&worker_pool.cond);
+  pthread_mutex_unlock(&worker_pool.lock);
+
+  return true;
+}
+
+void wget_worker_pool_shutdown(void) {
+  if (!worker_pool.initialized)
+    return;
+
+  pthread_mutex_lock(&worker_pool.lock);
+  worker_pool.running = false;
+  pthread_cond_broadcast(&worker_pool.cond);
+  pthread_mutex_unlock(&worker_pool.lock);
+
+  for (size_t i = 0; i < worker_pool.thread_count; ++i)
+    pthread_join(worker_pool.threads[i], NULL);
+
+  pthread_mutex_lock(&worker_pool.lock);
+  while (worker_pool.head) {
+    wget_worker_job_t* job = worker_pool.head;
+    worker_pool.head = job->next;
+    xfree(job);
+  }
+  worker_pool.tail = NULL;
+  pthread_mutex_unlock(&worker_pool.lock);
+
+  xfree(worker_pool.threads);
+  worker_pool.threads = NULL;
+  worker_pool.thread_count = 0;
+  worker_pool.head = worker_pool.tail = NULL;
+  worker_pool.initialized = false;
+}
+
+#else
+
+bool wget_worker_pool_init(unsigned int desired_workers WGET_ATTR_UNUSED) {
+  return false;
+}
+
+void wget_worker_pool_shutdown(void) {}
+
+bool wget_worker_pool_submit(wget_worker_work_fn work WGET_ATTR_UNUSED, wget_worker_complete_fn complete WGET_ATTR_UNUSED, void* arg WGET_ATTR_UNUSED) {
+  return false;
+}
+
+bool wget_worker_pool_available(void) {
+  return false;
+}
+
+#endif
