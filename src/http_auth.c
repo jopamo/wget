@@ -12,8 +12,8 @@
 #include "c-ctype.h"
 #include "c-strcase.h"
 #include "hash.h"
-#include "http.h"
 #include "http_auth.h"
+#include "http-header.h"
 #include "http_request.h"
 #include "utils.h"
 
