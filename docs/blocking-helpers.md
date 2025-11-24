@@ -28,7 +28,6 @@ The refactor roadmap in `checklist.md` requires us to retire the synchronous hel
 *Call sites*:
 
 - `src/http.c:1549-1564` — HTTP response body download.
-- `src/ftp.c:1392-1446` — FTP data socket download.
 
 ## `wget_ev_loop_run_transfers` — `src/evloop.c:115`
 

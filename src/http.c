@@ -1799,13 +1799,7 @@ skip_content_type:
         case SCHEME_HTTPS:
           mres.type = xstrdup("https");
           break;
-        case SCHEME_FTPS:
-          mres.type = xstrdup("ftps");
-          break;
 #endif
-        case SCHEME_FTP:
-          mres.type = xstrdup("ftp");
-          break;
         default:
           DEBUGP(("Unsupported url scheme in %s. Skipping resource.\n", urlstr));
       }
@@ -2846,10 +2840,6 @@ uerr_t http_loop(const struct url* u, struct url* original_url, char** newloc, c
   if (opt.cookies)
     load_cookies();
 #endif
-
-  /* Warn on (likely bogus) wildcard usage in HTTP. */
-  if (opt.ftp_glob && has_wildcards_p(u->path))
-    logputs(LOG_VERBOSE, _("Warning: wildcards not supported in HTTP.\n"));
 
   /* Setup hstat struct. */
   xzero(hstat);

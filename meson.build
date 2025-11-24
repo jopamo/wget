@@ -28,9 +28,6 @@ conf.set('ENABLE_NTLM', 1)
 if get_option('enable_debug_logging')
   conf.set('ENABLE_DEBUG', 1)
 endif
-if get_option('enable_opie')
-  conf.set('ENABLE_OPIE', 1)
-endif
 if get_option('enable_xattr')
   conf.set('ENABLE_XATTR', 1)
 endif

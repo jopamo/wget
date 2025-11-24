@@ -67,7 +67,7 @@ enum {
 };
 
 struct scheme_data {
-  /* Short name of the scheme, such as "http" or "ftp". */
+  /* Short name of the scheme, such as "http" or "https". */
   const char* name;
   /* Leading string that identifies the scheme, such as "https://". */
   const char* leading_string;
@@ -82,21 +82,13 @@ static struct scheme_data supported_schemes[] = {{"http", "http://", DEFAULT_HTT
 #ifdef HAVE_SSL
                                                  {"https", "https://", DEFAULT_HTTPS_PORT, scm_has_query | scm_has_fragment},
 #endif
-                                                 {"ftp", "ftp://", DEFAULT_FTP_PORT, scm_has_params | scm_has_fragment},
-#ifdef HAVE_SSL
-                                                 /*
-                                                  * Explicit FTPS uses the same port as FTP.
-                                                  * Implicit FTPS has its own port (990), but it is disabled by default.
-                                                  */
-                                                 {"ftps", "ftps://", DEFAULT_FTP_PORT, scm_has_params | scm_has_fragment},
-#endif
 
                                                  /* SCHEME_INVALID */
                                                  {NULL, NULL, -1, 0}};
 
 /* Forward declarations: */
 
-static bool path_simplify(enum url_scheme, char*);
+static bool path_simplify(char*);
 
 /* Support for escaping and unescaping of URL strings.  */
 
@@ -615,7 +607,6 @@ enum {
   PE_NO_ERROR = 0,
   PE_UNSUPPORTED_SCHEME,
   PE_UNSUPPORTED_SCHEME_HTTPS,
-  PE_UNSUPPORTED_SCHEME_FTPS,
   PE_MISSING_SCHEME,
   PE_INVALID_HOST_NAME,
   PE_BAD_PORT_NUMBER,
@@ -628,7 +619,6 @@ enum {
 static const char* parse_errors[] = {[PE_NO_ERROR] = N_("No error"),
                                      [PE_UNSUPPORTED_SCHEME] = N_("Unsupported scheme"),
                                      [PE_UNSUPPORTED_SCHEME_HTTPS] = N_("HTTPS support not compiled in"),
-                                     [PE_UNSUPPORTED_SCHEME_FTPS] = N_("FTPS support not compiled in"),
                                      [PE_MISSING_SCHEME] = N_("Scheme missing"),
                                      [PE_INVALID_HOST_NAME] = N_("Invalid host name"),
                                      [PE_BAD_PORT_NUMBER] = N_("Bad port number"),
@@ -670,8 +660,6 @@ struct url* url_parse(const char* url, int* error, struct iri* iri, bool percent
       error_code = PE_MISSING_SCHEME;
     else if (!c_strncasecmp(url, "https:", 6))
       error_code = PE_UNSUPPORTED_SCHEME_HTTPS;
-    else if (!c_strncasecmp(url, "ftps:", 5))
-      error_code = PE_UNSUPPORTED_SCHEME_FTPS;
     else
       error_code = PE_UNSUPPORTED_SCHEME;
     goto error;
@@ -844,7 +832,7 @@ struct url* url_parse(const char* url, int* error, struct iri* iri, bool percent
   u->passwd = passwd;
 
   u->path = strdupdelim(path_b, path_e);
-  path_modified = path_simplify(scheme, u->path);
+  path_modified = path_simplify(u->path);
   split_path(u->path, &u->dir, &u->file);
 
   host_modified = lowercase_str(u->host);
@@ -1092,8 +1080,8 @@ static void sync_path(struct url* u) {
   u->url = url_string(u, URL_AUTH_SHOW);
 }
 
-/* Mutators.  Code in ftp.c insists on changing u->dir and u->file.
-   This way we can sync u->path and u->url when they get changed.  */
+/* Mutators.  These keep u->path and u->url in sync when callers tweak
+   the directory or file components directly.  */
 
 void url_set_dir(struct url* url, const char* newdir) {
   xfree(url->dir);
@@ -1712,7 +1700,7 @@ char* url_file_name(const struct url* u, char* replaced_filename) {
    function, run test_path_simplify to make sure you haven't broken a
    test case.  */
 
-static bool path_simplify(enum url_scheme scheme, char* path) {
+static bool path_simplify(char* path) {
   char* h = path; /* hare */
   char* t = path; /* tortoise */
   char* beg = path;
@@ -1734,24 +1722,9 @@ static bool path_simplify(enum url_scheme scheme, char* path) {
         for (--t; t > beg && t[-1] != '/'; t--)
           ;
       }
-      else if (scheme == SCHEME_FTP
-#ifdef HAVE_SSL
-               || scheme == SCHEME_FTPS
-#endif
-      ) {
-        /* If we're at the beginning, copy the "../" literally
-           and move the beginning so a later ".." doesn't remove
-           it.  This violates RFC 3986; but we do it for FTP
-           anyway because there is otherwise no way to get at a
-           parent directory, when the FTP server drops us in a
-           non-root directory (which is not uncommon). */
-        beg = t + 3;
-        goto regular;
-      }
       h += 3;
     }
     else {
-    regular:
       /* A regular path element.  If H hasn't advanced past T,
          simply skip to the next path element.  Otherwise, copy
          the path element until the next slash.  */
@@ -2156,9 +2129,9 @@ ps (char *path)
 }
 #endif
 
-static const char* run_test(const char* test, const char* expected_result, enum url_scheme scheme, bool expected_change) {
+static const char* run_test(const char* test, const char* expected_result, bool expected_change) {
   char* test_copy = xstrdup(test);
-  bool modified = path_simplify(scheme, test_copy);
+  bool modified = path_simplify(test_copy);
 
   if (0 != strcmp(test_copy, expected_result)) {
     printf("Failed path_simplify(\"%s\"): expected \"%s\", got \"%s\".\n", test, expected_result, test_copy);
@@ -2178,45 +2151,38 @@ static const char* run_test(const char* test, const char* expected_result, enum 
 const char* test_path_simplify(void) {
   static const struct {
     const char *test, *result;
-    enum url_scheme scheme;
     bool should_modify;
-  } tests[] = {{"", "", SCHEME_HTTP, false},
-               {".", "", SCHEME_HTTP, true},
-               {"./", "", SCHEME_HTTP, true},
-               {"..", "", SCHEME_HTTP, true},
-               {"../", "", SCHEME_HTTP, true},
-               {"..", "..", SCHEME_FTP, false},
-               {"../", "../", SCHEME_FTP, false},
-               {"foo", "foo", SCHEME_HTTP, false},
-               {"foo/bar", "foo/bar", SCHEME_HTTP, false},
-               {"foo///bar", "foo///bar", SCHEME_HTTP, false},
-               {"foo/.", "foo/", SCHEME_HTTP, true},
-               {"foo/./", "foo/", SCHEME_HTTP, true},
-               {"foo./", "foo./", SCHEME_HTTP, false},
-               {"foo/../bar", "bar", SCHEME_HTTP, true},
-               {"foo/../bar/", "bar/", SCHEME_HTTP, true},
-               {"foo/bar/..", "foo/", SCHEME_HTTP, true},
-               {"foo/bar/../x", "foo/x", SCHEME_HTTP, true},
-               {"foo/bar/../x/", "foo/x/", SCHEME_HTTP, true},
-               {"foo/..", "", SCHEME_HTTP, true},
-               {"foo/../..", "", SCHEME_HTTP, true},
-               {"foo/../../..", "", SCHEME_HTTP, true},
-               {"foo/../../bar/../../baz", "baz", SCHEME_HTTP, true},
-               {"foo/../..", "..", SCHEME_FTP, true},
-               {"foo/../../..", "../..", SCHEME_FTP, true},
-               {"foo/../../bar/../../baz", "../../baz", SCHEME_FTP, true},
-               {"a/b/../../c", "c", SCHEME_HTTP, true},
-               {"./a/../b", "b", SCHEME_HTTP, true}};
+  } tests[] = {{"", "", false},
+               {".", "", true},
+               {"./", "", true},
+               {"..", "", true},
+               {"../", "", true},
+               {"foo", "foo", false},
+               {"foo/bar", "foo/bar", false},
+               {"foo///bar", "foo///bar", false},
+               {"foo/.", "foo/", true},
+               {"foo/./", "foo/", true},
+               {"foo./", "foo./", false},
+               {"foo/../bar", "bar", true},
+               {"foo/../bar/", "bar/", true},
+               {"foo/bar/..", "foo/", true},
+               {"foo/bar/../x", "foo/x", true},
+               {"foo/bar/../x/", "foo/x/", true},
+               {"foo/..", "", true},
+               {"foo/../..", "", true},
+               {"foo/../../..", "", true},
+               {"foo/../../bar/../../baz", "baz", true},
+               {"a/b/../../c", "c", true},
+               {"./a/../b", "b", true}};
   unsigned i;
 
   for (i = 0; i < countof(tests); i++) {
     const char* message;
     const char* test = tests[i].test;
     const char* expected_result = tests[i].result;
-    enum url_scheme scheme = tests[i].scheme;
     bool expected_change = tests[i].should_modify;
 
-    message = run_test(test, expected_result, scheme, expected_change);
+    message = run_test(test, expected_result, expected_change);
     if (message)
       return message;
   }

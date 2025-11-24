@@ -38,9 +38,9 @@
 #include "wget.h"
 
 #ifdef HAVE_SSL
-#define RES_TYPE_SUPPORTED(x) ((!x) || !strcmp(x, "http") || !strcmp(x, "https") || !strcmp(x, "ftp") || !strcmp(x, "ftps"))
+#define RES_TYPE_SUPPORTED(x) ((!x) || !strcmp(x, "http") || !strcmp(x, "https"))
 #else
-#define RES_TYPE_SUPPORTED(x) ((!x) || !strcmp(x, "ftp") || !strcmp(x, "http"))
+#define RES_TYPE_SUPPORTED(x) ((!x) || !strcmp(x, "http"))
 #endif
 
 #define DEFAULT_PRI 999999

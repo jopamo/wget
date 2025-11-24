@@ -28,7 +28,6 @@
 #include "progress.h"
 #include "url.h"
 #include "recur.h"
-#include "ftp.h"
 #include "http.h"
 #include "host.h"
 #include "connect.h"
@@ -1262,6 +1261,7 @@ uerr_t retrieve_url(struct url* orig_parsed,
                     struct iri* iri,
                     bool register_status,
                     struct transfer_context* tctx) {
+  (void)recursive;
   uerr_t result;
   char* url;
   bool location_changed;
@@ -1364,34 +1364,9 @@ redirected:
 #endif
     result = http_loop(u, orig_parsed, &mynewloc, &local_file, refurl, dt, proxy_url, iri, tctx);
   }
-  else if (u->scheme == SCHEME_FTP
-#ifdef HAVE_SSL
-           || u->scheme == SCHEME_FTPS
-#endif
-  ) {
-    /* If this is a redirection, temporarily turn off opt.ftp_glob
-       and opt.recursive, both being undesirable when following
-       redirects.  */
-    bool oldrec = recursive, glob = opt.ftp_glob;
-    if (redirection_count)
-      oldrec = glob = false;
-
-    result = ftp_loop(u, orig_parsed, &local_file, dt, proxy_url, recursive, glob);
-    recursive = oldrec;
-
-    /* There is a possibility of having HTTP being redirected to
-       FTP.  In these cases we must decide whether the text is HTML
-       according to the suffix.  The HTML suffixes are `.html',
-       `.htm' and a few others, case-insensitive.  */
-    if (redirection_count && local_file &&
-        (u->scheme == SCHEME_FTP
-#ifdef HAVE_SSL
-         || u->scheme == SCHEME_FTPS
-#endif
-         )) {
-      if (has_html_suffix_p(local_file))
-        *dt |= TEXTHTML;
-    }
+  else {
+    logprintf(LOG_NOTQUIET, _("Unsupported URL scheme in %s.\n"), quote(url));
+    result = URLERROR;
   }
 
   if (proxy_url) {
@@ -1566,7 +1541,7 @@ static uerr_t retrieve_from_url_list(struct urlpos* url_list, int* count, struct
   status = RETROK; /* Suppose everything is OK.  */
 
   for (cur_url = url_list; cur_url; cur_url = cur_url->next, ++*count) {
-    char *filename = NULL, *new_file = NULL, *proxy;
+    char *filename = NULL, *new_file = NULL;
     int dt = 0;
     struct iri* tmpiri;
     struct url* parsed_url;
@@ -1582,26 +1557,8 @@ static uerr_t retrieve_from_url_list(struct urlpos* url_list, int* count, struct
     tmpiri = iri_dup(iri);
     parsed_url = url_parse(cur_url->url->url, NULL, tmpiri, true);
 
-    proxy = getproxy(cur_url->url);
-    if ((opt.recursive || opt.page_requisites) && ((cur_url->url->scheme != SCHEME_FTP
-#ifdef HAVE_SSL
-                                                    && cur_url->url->scheme != SCHEME_FTPS
-#endif
-                                                    ) ||
-                                                   proxy)) {
-      int old_follow_ftp = opt.follow_ftp;
-
-      /* Turn opt.follow_ftp on in case of recursive FTP retrieval */
-      if (cur_url->url->scheme == SCHEME_FTP
-#ifdef HAVE_SSL
-          || cur_url->url->scheme == SCHEME_FTPS
-#endif
-      )
-        opt.follow_ftp = 1;
-
+    if (opt.recursive || opt.page_requisites) {
       status = retrieve_tree(parsed_url ? parsed_url : cur_url->url, tmpiri);
-
-      opt.follow_ftp = old_follow_ftp;
     }
     else {
       struct transfer_context tctx;
@@ -1609,7 +1566,6 @@ static uerr_t retrieve_from_url_list(struct urlpos* url_list, int* count, struct
       status = retrieve_url(parsed_url ? parsed_url : cur_url->url, cur_url->url->url, &filename, &new_file, NULL, &dt, opt.recursive, tmpiri, true, &tctx);
       transfer_context_free(&tctx);
     }
-    xfree(proxy);
 
     if (parsed_url)
       url_free(parsed_url);
@@ -1852,13 +1808,7 @@ static char* getproxy(struct url* u) {
     case SCHEME_HTTPS:
       proxy = opt.https_proxy ? opt.https_proxy : getenv("https_proxy");
       break;
-    case SCHEME_FTPS:
-      proxy = opt.ftp_proxy ? opt.ftp_proxy : getenv("ftps_proxy");
-      break;
 #endif
-    case SCHEME_FTP:
-      proxy = opt.ftp_proxy ? opt.ftp_proxy : getenv("ftp_proxy");
-      break;
     case SCHEME_INVALID:
       break;
   }

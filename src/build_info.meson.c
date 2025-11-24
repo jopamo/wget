@@ -84,12 +84,6 @@ const char* compiled_features[] = {
     "-ntlm",
 #endif
 
-#if defined ENABLE_OPIE
-    "+opie",
-#else
-    "-opie",
-#endif
-
 #if defined HAVE_LIBPSL
     "+psl",
 #else

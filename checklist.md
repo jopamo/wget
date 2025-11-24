@@ -32,7 +32,7 @@ To flip the remaining `[ ]` entries in this section we now require the staged re
 1. **Prepare foundational architecture**
    - Audit every blocking helper (`wget_ev_io_wait`, `fd_read_body`, `wget_ev_loop_run_transfers`, etc.), mark them legacy, and catalog all call sites.
    - Rework `src/evloop.c` so the main libev loop runs continuously; remove per-transfer blocking `ev_run` calls.
-   - Introduce a scheduler in `src/transfer.c` that owns a pool of `transfer_context`s, accepts enqueue requests, and reports completion asynchronously. (In progress: new `src/scheduler.c` + `src/scheduler.h` expose enqueue/cancel/status APIs that bind transfer contexts to the central loop; HTTP/FTP wiring still pending.)
+   - Introduce a scheduler in `src/transfer.c` that owns a pool of `transfer_context`s, accepts enqueue requests, and reports completion asynchronously. (In progress: new `src/scheduler.c` + `src/scheduler.h` expose enqueue/cancel/status APIs that bind transfer contexts to the central loop; remaining HTTP wiring still pending.)
    - Convert connect → header → body → finish flows into libev-driven state machines for each protocol.
    - Demonstrate N concurrent transfers (10/100/1000) without blocking the loop.
 
@@ -61,7 +61,7 @@ See `docs/blocking-helpers.md` for the design notes and outstanding call sites. 
 
 * [ ] Remove `wget_ev_io_wait` by moving `connect_with_timeout`, `select_fd`, and `test_socket_open` over to scheduler-aware `ev_io` + timer registrations (touch `src/connect.c`, `src/evloop.c`).
 * [ ] Replace `wget_ev_sleep` with scheduler timers so retry/backoff logic (`sleep_between_retrievals` in `src/retr.c`) never spins the global loop.
-* [ ] Delete `fd_read_body` once HTTP/FTP body streaming uses the asynchronous transfer callbacks directly (updates to `src/http.c`, `src/ftp.c`, `src/retr.c`, `src/http_body.c`).
+* [ ] Delete `fd_read_body` once HTTP body streaming uses the asynchronous transfer callbacks directly (updates to `src/http.c`, `src/retr.c`, `src/http_body.c`).
 * [ ] Retire `wget_ev_loop_run_transfers` after the scheduler owns the global loop pumping and all callers use completion callbacks/futures (touch `src/evloop.c`, `src/main.c`, tests).
 
 ---
@@ -139,7 +139,7 @@ See `docs/blocking-helpers.md` for the design notes and outstanding call sites. 
 
 ## **7. Validation, observability, and release readiness**
 
-* [ ] Document a repeatable manual test matrix (libev/c-ares builds, HTTPS/FTP targets, recursion, Metalink) and capture commands/logs in `docs/testing.md` or a new `docs/test-matrix.md`.
+* [ ] Document a repeatable manual test matrix (libev/c-ares builds, HTTPS targets, recursion, Metalink) and capture commands/logs in `docs/testing.md` or a new `docs/test-matrix.md`.
 * [ ] Add libev/c-ares integration tests that assert watchers fire as expected (extend `tests/evloop_transfer_test.c` or add new suites under `tests/`).
 * [ ] Instrument the scheduler with debug logging / stats hooks so we can prove per-host limits, queue depth, and throughput against the “thousands of concurrent transfers” goal (`src/scheduler.c`, `src/log.c`).
 * [ ] Automate ASan/Valgrind smoke runs in CI scripts or Meson targets to catch regressions before release (`meson.build`, `tests/` helpers).

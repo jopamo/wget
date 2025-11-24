@@ -11,9 +11,6 @@ sources = [
   'css-url.c',
   'digest.c',
   'exits.c',
-  'ftp-basic.c',
-  'ftp-ls.c',
-  'ftp.c',
   'hash.c',
   'host.c',
   'hsts.c',
@@ -62,10 +59,6 @@ sources += css_scanner
 
 if have_iri
   sources += 'iri.c'
-endif
-
-if get_option('enable_opie')
-  sources += 'ftp-opie.c'
 endif
 
 if get_option('enable_xattr')

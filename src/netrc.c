@@ -224,7 +224,7 @@ static void shift_left(char* string) {
     *p = *(p + 1);
 }
 
-/* Parse a .netrc file (as described in the ftp(1) manual page).  */
+/* Parse a .netrc file (per the traditional .netrc specification).  */
 static acc_t* parse_netrc_fp(const char* path, FILE* fp) {
   char *line = NULL, *p, *tok;
   const char* premature_token = NULL;

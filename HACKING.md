@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-This tree is the trimmed downloader core. All implementation and headers live under `src/`, grouped roughly by protocol (`http.c`, `ftp.c`, `warc.c`), storage helpers (`cookies.c`, `hsts.c`, `xattr.c`), and utility layers (`utils.c`, `xalloc.c`, `progress.c`). Top-level `meson.build` and `meson_options.txt` describe the build graph and feature toggles, while `src/meson.build` lists concrete sources. Policy docs are at the root (`SECURITY.md`, `checklist.md`, `COPYING`, and this file). There are no `lib/`, `gnulib`, or autotools artifacts in this snapshot—keep it that way and avoid committing Meson build directories.
+This tree is the trimmed downloader core. All implementation and headers live under `src/`, grouped roughly by protocol (`http.c`, `warc.c`), storage helpers (`cookies.c`, `hsts.c`, `xattr.c`), and utility layers (`utils.c`, `xalloc.c`, `progress.c`). Top-level `meson.build` and `meson_options.txt` describe the build graph and feature toggles, while `src/meson.build` lists concrete sources. Policy docs are at the root (`SECURITY.md`, `checklist.md`, `COPYING`, and this file). There are no `lib/`, `gnulib`, or autotools artifacts in this snapshot—keep it that way and avoid committing Meson build directories.
 
 The HTTP client is in the middle of being split into smaller, testable modules. As of now:
 

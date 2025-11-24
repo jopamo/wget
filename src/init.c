@@ -106,7 +106,6 @@ CMD_DECLARE(cmd_spec_compression);
 CMD_DECLARE(cmd_spec_dirstruct);
 CMD_DECLARE(cmd_spec_header);
 CMD_DECLARE(cmd_spec_warc_header);
-CMD_DECLARE(cmd_spec_htmlify);
 CMD_DECLARE(cmd_spec_mirror);
 CMD_DECLARE(cmd_spec_prefer_family);
 CMD_DECLARE(cmd_spec_progress);
@@ -201,30 +200,14 @@ static const struct {
 #endif
     {"excludedirectories", &opt.excludes, cmd_directory_vector},
     {"excludedomains", &opt.exclude_domains, cmd_vector},
-    {"followftp", &opt.follow_ftp, cmd_boolean},
     {"followtags", &opt.follow_tags, cmd_vector},
     {"forcehtml", &opt.force_html, cmd_boolean},
-    {"ftppasswd", &opt.ftp_passwd, cmd_string}, /* deprecated */
-    {"ftppassword", &opt.ftp_passwd, cmd_string},
-    {"ftpproxy", &opt.ftp_proxy, cmd_string},
-#ifdef HAVE_SSL
-    {"ftpscleardataconnection", &opt.ftps_clear_data_connection, cmd_boolean},
-    {"ftpsfallbacktoftp", &opt.ftps_fallback_to_ftp, cmd_boolean},
-    {"ftpsimplicit", &opt.ftps_implicit, cmd_boolean},
-    {"ftpsresumessl", &opt.ftps_resume_ssl, cmd_boolean},
-#endif
-#ifdef __VMS
-    {"ftpstmlf", &opt.ftp_stmlf, cmd_boolean},
-#endif /* def __VMS */
-    {"ftpuser", &opt.ftp_user, cmd_string},
-    {"glob", &opt.ftp_glob, cmd_boolean},
     {"header", NULL, cmd_spec_header},
 #ifdef HAVE_HSTS
     {"hsts", &opt.hsts, cmd_boolean},
     {"hstsfile", &opt.hsts_file, cmd_file},
 #endif
     {"htmlextension", &opt.adjust_extension, cmd_boolean}, /* deprecated */
-    {"htmlify", NULL, cmd_spec_htmlify},
     {"httpkeepalive", &opt.http_keep_alive, cmd_boolean},
     {"httppasswd", &opt.http_passwd, cmd_string}, /* deprecated */
     {"httppassword", &opt.http_passwd, cmd_string},
@@ -254,7 +237,6 @@ static const struct {
     {"loadcookies", &opt.cookies_input, cmd_file},
     {"localencoding", &opt.locale, cmd_string},
     {"logfile", &opt.lfilename, cmd_file},
-    {"login", &opt.ftp_user, cmd_string}, /* deprecated*/
     {"maxredirect", &opt.max_redirect, cmd_number},
 #ifdef HAVE_METALINK
     {"metalinkindex", &opt.metalink_index, cmd_number_inf},
@@ -270,8 +252,6 @@ static const struct {
     {"numtries", &opt.ntry, cmd_number_inf}, /* deprecated*/
     {"outputdocument", &opt.output_document, cmd_file},
     {"pagerequisites", &opt.page_requisites, cmd_boolean},
-    {"passiveftp", &opt.ftp_pasv, cmd_boolean},
-    {"passwd", &opt.ftp_passwd, cmd_string}, /* deprecated*/
     {"password", &opt.passwd, cmd_string},
 #ifdef HAVE_SSL
     {"pinnedpubkey", &opt.pinnedpubkey, cmd_string},
@@ -282,7 +262,6 @@ static const struct {
 #ifdef HAVE_METALINK
     {"preferredlocation", &opt.preferred_location, cmd_string},
 #endif
-    {"preservepermissions", &opt.preserve_perm, cmd_boolean},
 #ifdef HAVE_SSL
     {"privatekey", &opt.private_key, cmd_file},
     {"privatekeytype", &opt.private_key_type, cmd_cert_type},
@@ -308,10 +287,8 @@ static const struct {
     {"rejectregex", &opt.rejectregex_s, cmd_string},
     {"relativeonly", &opt.relative_only, cmd_boolean},
     {"remoteencoding", &opt.encoding_remote, cmd_string},
-    {"removelisting", &opt.remove_listing, cmd_boolean},
     {"reportspeed", &opt.report_bps, cmd_spec_report_speed},
     {"restrictfilenames", NULL, cmd_spec_restrict_file_names},
-    {"retrsymlinks", &opt.retr_symlinks, cmd_boolean},
     {"retryconnrefused", &opt.retry_connrefused, cmd_boolean},
     {"retryonhosterror", &opt.retry_on_host_error, cmd_boolean},
     {"retryonhttperror", &opt.retry_on_http_error, cmd_string},
@@ -407,8 +384,6 @@ void defaults(void) {
   opt.reclevel = 5;
   opt.add_hostdir = true;
   opt.netrc = true;
-  opt.ftp_glob = true;
-  opt.htmlify = true;
   opt.http_keep_alive = true;
   opt.use_proxy = true;
   opt.convert_file_only = false;
@@ -425,37 +400,14 @@ void defaults(void) {
   opt.tcp_sndbuf = 0;
   opt.use_robots = true;
 
-  opt.remove_listing = true;
-
   opt.dot_bytes = 1024;
   opt.dot_spacing = 10;
   opt.dots_in_line = 50;
 
   opt.dns_cache = true;
-  opt.ftp_pasv = true;
-  /* 2014-09-07  Darshit Shah  <darnir@gmail.com>
-   * opt.retr_symlinks is set to true by default. Creating symbolic links on the
-   * local file system pose a security threat by malicious FTP Servers that
-   * server a specially crafted .listing file akin to this:
-   *
-   * lrwxrwxrwx   1 root     root           33 Dec 25  2012 JoCxl6d8rFU -> /
-   * drwxrwxr-x  15 1024     106          4096 Aug 28 02:02 JoCxl6d8rFU
-   *
-   * A .listing file in this fashion makes Wget susceptiple to a symlink attack
-   * wherein the attacker is able to create arbitrary files, directories and
-   * symbolic links on the target system and even set permissions.
-   *
-   * Hence, by default Wget attempts to retrieve the pointed-to files and does
-   * not create the symbolic links locally.
-   */
-  opt.retr_symlinks = true;
 
 #ifdef HAVE_SSL
   opt.check_cert = CHECK_CERT_ON;
-  opt.ftps_resume_ssl = true;
-  opt.ftps_fallback_to_ftp = false;
-  opt.ftps_implicit = false;
-  opt.ftps_clear_data_connection = false;
 #endif
 
 #if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
@@ -1428,15 +1380,8 @@ static bool cmd_spec_warc_header(const char* com, const char* val, void* place_i
   return true;
 }
 
-static bool cmd_spec_htmlify(const char* com, const char* val, void* place_ignored WGET_ATTR_UNUSED) {
-  int flag = cmd_boolean(com, val, &opt.htmlify);
-  if (flag && !opt.htmlify)
-    opt.remove_listing = false;
-  return flag;
-}
-
 /* Set the "mirror" mode.  It means: recursive download, timestamping,
-   no limit on max. recursion depth, and don't remove listings.  */
+   and no limit on max. recursion depth.  */
 
 static bool cmd_spec_mirror(const char* com, const char* val, void* place_ignored WGET_ATTR_UNUSED) {
   bool mirror;
@@ -1449,7 +1394,6 @@ static bool cmd_spec_mirror(const char* com, const char* val, void* place_ignore
       opt.dirstruct = true;
     opt.timestamping = true;
     opt.reclevel = INFINITE_RECURSION;
-    opt.remove_listing = false;
   }
   return true;
 }
@@ -1801,9 +1745,6 @@ void cleanup(void) {
   xfree(opt.warc_filename);
   xfree(opt.warc_tempdir);
   xfree(opt.warc_cdx_dedup_filename);
-  xfree(opt.ftp_user);
-  xfree(opt.ftp_passwd);
-  xfree(opt.ftp_proxy);
   xfree(opt.https_proxy);
   xfree(opt.http_proxy);
   free_vec(opt.no_proxy);

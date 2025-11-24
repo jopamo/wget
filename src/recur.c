@@ -44,7 +44,6 @@
 #include "recur.h"
 #include "utils.h"
 #include "retr.h"
-#include "ftp.h"
 #include "host.h"
 #include "hash.h"
 #include "res.h"
@@ -595,12 +594,7 @@ static reject_reason download_child(const struct urlpos* upos, struct url* paren
   u_scheme_like_http = schemes_are_similar_p(u->scheme, SCHEME_HTTP);
 
   /* 1. Schemes other than HTTP are normally not recursed into. */
-  if (!u_scheme_like_http && !((u->scheme == SCHEME_FTP
-#ifdef HAVE_SSL
-                                || u->scheme == SCHEME_FTPS
-#endif
-                                ) &&
-                               opt.follow_ftp)) {
+  if (!u_scheme_like_http) {
     DEBUGP(("Not following non-HTTP schemes.\n"));
     reason = WG_RR_NONHTTP;
     goto out;
@@ -799,13 +793,7 @@ static void write_reject_log_url(FILE* fp, const struct url* url) {
     case SCHEME_HTTPS:
       scheme_str = "SCHEME_HTTPS";
       break;
-    case SCHEME_FTPS:
-      scheme_str = "SCHEME_FTPS";
-      break;
 #endif
-    case SCHEME_FTP:
-      scheme_str = "SCHEME_FTP";
-      break;
     default:
       scheme_str = "SCHEME_INVALID";
       break;

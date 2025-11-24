@@ -215,7 +215,6 @@ struct cmdline_option {
        main().  */
     OPT__APPEND_OUTPUT,
     OPT__CLOBBER,
-    OPT__DONT_REMOVE_LISTING,
     OPT__EXECUTE,
     OPT__NO,
     OPT__PARENT
@@ -267,23 +266,14 @@ static struct cmdline_option option_data[] = {
 #endif
     {"dns-timeout", 0, OPT_VALUE, "dnstimeout", -1},
     {"domains", 'D', OPT_VALUE, "domains", -1},
-    {"dont-remove-listing", 0, OPT__DONT_REMOVE_LISTING, NULL, no_argument},
     {"dot-style", 0, OPT_VALUE, "dotstyle", -1}, /* deprecated */
     {"egd-file", 0, OPT_VALUE, "egdfile", -1},
     {"exclude-directories", 'X', OPT_VALUE, "excludedirectories", -1},
     {"exclude-domains", 0, OPT_VALUE, "excludedomains", -1},
     {"execute", 'e', OPT__EXECUTE, NULL, required_argument},
-    {"follow-ftp", 0, OPT_BOOLEAN, "followftp", -1},
     {"follow-tags", 0, OPT_VALUE, "followtags", -1},
     {"force-directories", 'x', OPT_BOOLEAN, "dirstruct", -1},
     {"force-html", 'F', OPT_BOOLEAN, "forcehtml", -1},
-    {"ftp-password", 0, OPT_VALUE, "ftppassword", -1},
-#ifdef __VMS
-    {"ftp-stmlf", 0, OPT_BOOLEAN, "ftpstmlf", -1},
-#endif /* def __VMS */
-    {"ftp-user", 0, OPT_VALUE, "ftpuser", -1},
-    IF_SSL("ftps-clear-data-connection", 0, OPT_BOOLEAN, "ftpscleardataconnection", -1) IF_SSL("ftps-fallback-to-ftp", 0, OPT_BOOLEAN, "ftpsfallbacktoftp", -1)
-        IF_SSL("ftps-implicit", 0, OPT_BOOLEAN, "ftpsimplicit", -1) IF_SSL("ftps-resume-ssl", 0, OPT_BOOLEAN, "ftpsresumessl", -1){"glob", 0, OPT_BOOLEAN, "glob", -1},
     {"header", 0, OPT_VALUE, "header", -1},
     {"help", 'h', OPT_FUNCALL, (void*)print_help, no_argument},
     {"host-directories", 0, OPT_BOOLEAN, "addhostdir", -1},
@@ -292,7 +282,6 @@ static struct cmdline_option option_data[] = {
     {"hsts-file", 0, OPT_VALUE, "hstsfile", -1},
 #endif
     {"html-extension", 'E', OPT_BOOLEAN, "adjustextension", -1}, /* deprecated */
-    {"htmlify", 0, OPT_BOOLEAN, "htmlify", -1},
     {"http-keep-alive", 0, OPT_BOOLEAN, "httpkeepalive", -1},
     {"http-passwd", 0, OPT_VALUE, "httppassword", -1}, /* deprecated */
     {"http-password", 0, OPT_VALUE, "httppassword", -1},
@@ -333,7 +322,6 @@ static struct cmdline_option option_data[] = {
     {"output-file", 'o', OPT_VALUE, "logfile", -1},
     {"page-requisites", 'p', OPT_BOOLEAN, "pagerequisites", -1},
     {"parent", 0, OPT__PARENT, NULL, optional_argument},
-    {"passive-ftp", 0, OPT_BOOLEAN, "passiveftp", -1},
     {"password", 0, OPT_VALUE, "password", -1},
     IF_SSL("pinnedpubkey", 0, OPT_VALUE, "pinnedpubkey", -1){"post-data", 0, OPT_VALUE, "postdata", -1},
     {"post-file", 0, OPT_VALUE, "postfile", -1},
@@ -341,7 +329,6 @@ static struct cmdline_option option_data[] = {
 #ifdef HAVE_METALINK
     {"preferred-location", 0, OPT_VALUE, "preferredlocation", -1},
 #endif
-    {"preserve-permissions", 0, OPT_BOOLEAN, "preservepermissions", -1},
     IF_SSL("ciphers", 0, OPT_VALUE, "ciphers", -1) IF_SSL("private-key", 0, OPT_VALUE, "privatekey", -1)
         IF_SSL("private-key-type", 0, OPT_VALUE, "privatekeytype", -1){"progress", 0, OPT_VALUE, "progress", -1},
     {"show-progress", 0, OPT_BOOLEAN, "showprogress", -1},
@@ -363,10 +350,8 @@ static struct cmdline_option option_data[] = {
     {"reject-regex", 0, OPT_VALUE, "rejectregex", -1},
     {"relative", 'L', OPT_BOOLEAN, "relativeonly", -1},
     {"remote-encoding", 0, OPT_VALUE, "remoteencoding", -1},
-    {"remove-listing", 0, OPT_BOOLEAN, "removelisting", -1},
     {"report-speed", 0, OPT_BOOLEAN, "reportspeed", -1},
     {"restrict-file-names", 0, OPT_BOOLEAN, "restrictfilenames", -1},
-    {"retr-symlinks", 0, OPT_BOOLEAN, "retrsymlinks", -1},
     {"retry-connrefused", 0, OPT_BOOLEAN, "retryconnrefused", -1},
     {"retry-on-host-error", 0, OPT_BOOLEAN, "retryonhosterror", -1},
     {"retry-on-http-error", 0, OPT_VALUE, "retryonhttperror", -1},
@@ -670,9 +655,9 @@ Download:\n"),
                                      one of IPv6, IPv4, or none\n"),
 #endif
                                N_("\
-       --user=USER                 set both ftp and http user to USER\n"),
+       --user=USER                 set the HTTP user to USER\n"),
                                N_("\
-       --password=PASS             set both ftp and http password to PASS\n"),
+       --password=PASS             set the HTTP password to PASS\n"),
                                N_("\
        --ask-password              prompt for passwords\n"),
 #ifndef __VMS
@@ -841,42 +826,6 @@ HSTS options:\n"),
 #endif
 
                                N_("\
-FTP options:\n"),
-#ifdef __VMS
-                               N_("\
-       --ftp-stmlf                 use Stream_LF format for all binary FTP files\n"),
-#endif /* def __VMS */
-                               N_("\
-       --ftp-user=USER             set ftp user to USER\n"),
-                               N_("\
-       --ftp-password=PASS         set ftp password to PASS\n"),
-                               N_("\
-       --no-remove-listing         don't remove '.listing' files\n"),
-                               N_("\
-       --no-glob                   turn off FTP file name globbing\n"),
-                               N_("\
-       --no-passive-ftp            disable the \"passive\" transfer mode\n"),
-                               N_("\
-       --preserve-permissions      preserve remote file permissions\n"),
-                               N_("\
-       --retr-symlinks             when recursing, get linked-to files (not dir)\n"),
-                               "\n",
-
-#ifdef HAVE_SSL
-                               N_("\
-FTPS options:\n"),
-                               N_("\
-       --ftps-implicit                 use implicit FTPS (default port is 990)\n"),
-                               N_("\
-       --ftps-resume-ssl               resume the SSL/TLS session started in the control connection when\n"
-                                  "                                         opening a data connection\n"),
-                               N_("\
-       --ftps-clear-data-connection    cipher the control channel only; all the data will be in plaintext\n"),
-                               N_("\
-       --ftps-fallback-to-ftp          fall back to FTP if FTPS is not supported in the target server\n"),
-#endif
-
-                               N_("\
 WARC options:\n"),
                                N_("\
        --warc-file=FILENAME        save request/response data to a .warc.gz file\n"),
@@ -925,7 +874,7 @@ Recursive download:\n"),
   -K,  --backup-converted          before converting file X, back up as X.orig\n"),
 #endif /* def __VMS [else] */
                                N_("\
-  -m,  --mirror                    shortcut for -N -r -l inf --no-remove-listing\n"),
+  -m,  --mirror                    shortcut for -N -r -l inf\n"),
                                N_("\
   -p,  --page-requisites           get all images, etc. needed to display HTML page\n"),
                                N_("\
@@ -953,8 +902,6 @@ Recursive accept/reject:\n"),
   -D,  --domains=LIST              comma-separated list of accepted domains\n"),
                                N_("\
        --exclude-domains=LIST      comma-separated list of rejected domains\n"),
-                               N_("\
-       --follow-ftp                follow FTP links from HTML documents\n"),
                                N_("\
        --follow-tags=LIST          comma-separated list of followed HTML tags\n"),
                                N_("\
@@ -1445,9 +1392,6 @@ int main(int argc, char** argv) {
         setoptval(cmdopt->type == OPT__PARENT ? "noparent" : "noclobber", flag ? "0" : "1", cmdopt->long_name);
         break;
       }
-      case OPT__DONT_REMOVE_LISTING:
-        setoptval("removelisting", "0", cmdopt->long_name);
-        break;
     }
 
     longindex = -1;
@@ -1604,7 +1548,7 @@ for details.\n\n"));
     exit(WGET_EXIT_GENERIC_ERROR);
   }
 
-  if (opt.ask_passwd && !(opt.user || opt.http_user || opt.ftp_user)) {
+  if (opt.ask_passwd && !(opt.user || opt.http_user)) {
     fprintf(stderr, _("WARNING: No username set with --ask-password. This is usually not what you want.\n"));
   }
 
@@ -1773,13 +1717,11 @@ for details.\n\n"));
   /* Open the output filename if necessary.  */
 
   /* 2005-04-17 SMS.
-     Note that having the output_stream ("-O") file opened here for an FTP
-     URL rather than in getftp() (ftp.c) (and the http equivalent) rather
-     limits the ability in VMS to open the file differently for ASCII
-     versus binary FTP there.  (Of course, doing it here allows a open
-     failure to be detected immediately, without first connecting to the
-     server.)
-  */
+     Note that having the output_stream ("-O") file opened here rather than
+     during the protocol-specific retrieval limits the ability on VMS to open
+     the file differently for ASCII versus binary transfers.  Doing it here,
+     however, allows an open failure to be detected immediately, without
+     first connecting to the server. */
   if (opt.output_document) {
     if (HYPHENP(opt.output_document)) {
 #ifdef WINDOWS
@@ -1952,25 +1894,8 @@ only if outputting to a regular file.\n"));
       if (opt.use_askpass)
         use_askpass(url_parsed);
 
-      if ((opt.recursive || opt.page_requisites) && ((url_scheme(t) != SCHEME_FTP
-#ifdef HAVE_SSL
-                                                      && url_scheme(t) != SCHEME_FTPS
-#endif
-                                                      ) ||
-                                                     url_uses_proxy(url_parsed))) {
-        int old_follow_ftp = opt.follow_ftp;
-
-        /* Turn opt.follow_ftp on in case of recursive FTP retrieval */
-        if (url_scheme(t) == SCHEME_FTP
-#ifdef HAVE_SSL
-            || url_scheme(t) == SCHEME_FTPS
-#endif
-        )
-          opt.follow_ftp = 1;
-
+      if (opt.recursive || opt.page_requisites) {
         retrieve_tree(url_parsed, NULL);
-
-        opt.follow_ftp = old_follow_ftp;
       }
       else {
         struct transfer_context tctx;
