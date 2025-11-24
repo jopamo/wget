@@ -227,20 +227,6 @@ extern const char* exec_name;
 extern const char* program_name;
 extern const char* program_argstring;
 
-/* Document type ("dt") flags */
-enum {
-  TEXTHTML = 0x0001,             /* document is of type text/html
-                                    or application/xhtml+xml */
-  RETROKF = 0x0002,              /* retrieval was OK */
-  HEAD_ONLY = 0x0004,            /* only send the HEAD request */
-  SEND_NOCACHE = 0x0008,         /* send Cache-Control: no-cache and Pragma: no-cache directive */
-  ACCEPTRANGES = 0x0010,         /* Accept-ranges header was found */
-  ADDED_HTML_EXTENSION = 0x0020, /* added ".html" extension due to -E */
-  TEXTCSS = 0x0040,              /* document is of type text/css */
-  IF_MODIFIED_SINCE = 0x0080,    /* use if-modified-since header */
-  TEXTXML = 0x0200               /* document is XML (sitemaps, feeds, etc.) */
-};
-
 /* Universal error type -- used almost everywhere.  Error reporting of
    this detail is not generally used or needed and should be
    simplified.  */
@@ -302,6 +288,15 @@ typedef enum {
   WARC_TMP_FWRITEERR,
   TIMECONV_ERR
 } uerr_t;
+
+/* Global context for main event loop management */
+struct main_loop_ctx {
+  int pending_operations;
+  int numurls_succeeded;
+  uerr_t overall_status;
+  struct ev_loop* loop;
+  bool all_finished;
+};
 
 /* Note that code in various places assumes that this string is five
    characters long. */
