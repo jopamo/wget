@@ -175,7 +175,6 @@ const char* retr_rate(wgint, double);
 double calc_rate(wgint, double, int*);
 void printwhat(int, int);
 
-void sleep_between_retrievals(int);
 int sleep_between_retrievals_async(struct scheduler* sched, int count, void (*callback)(void*), void* user_arg);
 
 void rotate_backups(const char*);

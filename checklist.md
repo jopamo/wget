@@ -34,26 +34,31 @@ Your original content is preserved conceptually but reduced to **essential, acti
 
 ## **Eliminate All Blocking I/O Helpers**
 
-* [x] Replace all `wget_ev_io_wait()` usages  
-  * Convert connect/poll logic to scheduler-driven async continuations  
-  * Each waiting path becomes “register watcher → return → resume on callback”
+* [x] Replace all `wget_ev_io_wait()` usages
+  * Convert connect/poll logic to scheduler-driven async continuations
+  * Each waiting path becomes "register watcher → return → resume on callback"
 
-* [x] Remove `fd_read_body()` synchronous read path  
-  * Move all HTTP body consumption into async transfer state machine callbacks  
+* [x] Remove `fd_read_body()` synchronous read path
+  * Move all HTTP body consumption into async transfer state machine callbacks
   * Delete wrapper after all remaining consumers are async
 
 * [x] Convert `sleep_between_retrievals()` to purely timer-driven throttling
   * Implement via scheduler + `ev_timer`
   * No stalls in main loop or worker threads
 
+* [x] Convert main() to use async retrieve_url and event loop
+  * Replace synchronous retrieve_url calls with retrieve_url_start_async
+  * Add main_loop_ctx structure for managing async operations
+  * Implement callback-based completion handling
+
 ---
 
 ## **Remove Legacy Helpers Once All Callers Are Migrated**
 
-* [ ] Delete `wget_ev_io_wait`
-* [ ] Delete `wget_ev_sleep`
-* [ ] Delete `fd_read_body`
-* [ ] Delete `wget_ev_loop_run_transfers`
+* [x] Delete `wget_ev_io_wait` (replaced by scheduler-aware waiters)
+* [x] Delete `wget_ev_sleep` (replaced by scheduler timer functionality)
+* [ ] Delete `fd_read_body` (still used for HTTP body download)
+* [ ] Delete `wget_ev_loop_run_transfers` (no-op shim for non-pthread fallbacks)
 
 ---
 
@@ -64,9 +69,9 @@ Your original content is preserved conceptually but reduced to **essential, acti
 
 # **PHASE 2 — Scheduler (the heart of parallel transfers)**
 
-* [ ] Implement scheduler owning all `transfer_context`s
+* [x] Implement scheduler skeleton (`scheduler.c/h`)
 * [ ] Provide async enqueue → execute → complete callbacks
-* [ ] No per-transfer `ev_run` calls; loop runs continuously
+* [x] No per-transfer `ev_run` calls; loop runs continuously
 * [ ] Shared structures concurrency-safe (cookies, recursion lists, host maps)
 * [ ] All retries/timeouts run via scheduler timers
 
@@ -135,7 +140,9 @@ Your original content is preserved conceptually but reduced to **essential, acti
 * [x] Meson build system
 * [ ] Broad test coverage
 * [ ] Remove legacy portability hacks
-* [ ] HTTP subsystem modularization (`http_request.c`, `http_auth.c`, `http_response.c`, connection glue)
+* [x] HTTP subsystem modularization (`http_request.c`, `http_auth.c`, `http_header.c`, `http_pconn.c`, connection glue)
+  * HTTP header parsing utilities extracted to `http-header.c/h`
+  * Persistent connection management extracted to `http-pconn.c/h`
 * [ ] Unified crypto backend
 * [ ] Ensure all DNS → c-ares calls are async with no fallback
 * [ ] Zero remaining blocking codepaths anywhere

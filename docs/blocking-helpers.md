@@ -6,13 +6,13 @@ The refactor roadmap in `checklist.md` requires us to retire the synchronous hel
 
 *Purpose*: Historically ran the global libev loop until a single fd reported readiness, effectively serialising I/O. It has now been superseded by the scheduler-friendly helpers in `src/transfer_wait.c` (`transfer_io_wait_schedule()` for continuations plus `transfer_io_wait_blocking()` for legacy callers), and the remaining call sites in `src/connect.c` have migrated.
 
-## `wget_ev_sleep` — `src/evhelpers.c:114`
+## `wget_ev_sleep` — removed
 
-*Purpose*: Previously spun the central loop until a timer fired. It now arms a timer and blocks on a condition variable so the dedicated event-loop thread continues to serve other transfers.
+*Purpose*: Previously spun the central loop until a timer fired. It armed a timer and blocked on a condition variable so the dedicated event-loop thread continued to serve other transfers. It has been replaced by scheduler timer functionality.
 
-*Call sites*:
+*Previous call sites*:
 
-- `src/retr.c:1739-1755` — `sleep_between_retrievals` gates retries and `--wait`.
+- `src/retr.c:1739-1755` — `sleep_between_retrievals` gates retries and `--wait` (now uses async version).
 
 ## `fd_read_body` — `src/retr.c:981`
 
