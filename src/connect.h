@@ -155,12 +155,6 @@ void fd_close(int fd);
 void connect_cleanup(void);
 #endif
 
-#ifdef WINDOWS
-int select_fd_nb(int fd, double maxtime, int wait_for);
-#else
-#define select_fd_nb select_fd
-#endif
-
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

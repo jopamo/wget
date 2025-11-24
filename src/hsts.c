@@ -301,15 +301,7 @@ static bool hsts_file_access_valid(const char* filename) {
   if (stat(filename, &st) == -1)
     return false;
 
-  return
-#ifndef WINDOWS
-      /*
-       * The world-writable concept is a Unix-centric notion.
-       * We bypass this test on Windows.
-       */
-      !(st.st_mode & S_IWOTH) &&
-#endif
-      S_ISREG(st.st_mode);
+  return !(st.st_mode & S_IWOTH) && S_ISREG(st.st_mode);
 }
 
 /* HSTS API */

@@ -55,10 +55,8 @@
 #include <sys/stat.h>
 
 /* For TIOCGWINSZ and friends: */
-#ifndef WINDOWS
 #include <sys/ioctl.h>
 #include <termios.h>
-#endif
 
 /* Needed for Unix version of run_with_timeout. */
 #include <signal.h>
@@ -416,9 +414,6 @@ char* datetime_str(time_t t) {
   return fmttime(t, "%Y-%m-%d %H:%M:%S");
 }
 
-/* The Windows versions of the following two functions are defined in
-   mswindows.c. On MSDOS this function should never be called. */
-
 #ifdef __VMS
 
 bool fork_to_background(void) {
@@ -427,7 +422,7 @@ bool fork_to_background(void) {
 
 #else /* def __VMS */
 
-#if !defined(WINDOWS) && !defined(MSDOS)
+#if !defined(MSDOS)
 bool fork_to_background(void) {
   pid_t pid;
   /* Whether we arrange our own version of opt.lfilename here.  */
@@ -470,7 +465,7 @@ bool fork_to_background(void) {
 
   return logfile_changed;
 }
-#endif /* !WINDOWS && !MSDOS */
+#endif /* !MSDOS */
 
 #endif /* def __VMS [else] */
 
@@ -488,8 +483,7 @@ void touch(const char* file, time_t tm) {
     logprintf(LOG_NOTQUIET, "utime(%s): %s\n", file, strerror(errno));
 }
 
-/* Checks if FILE is a symbolic link, and removes it if it is.  Does
-   nothing under MS-Windows.  */
+/* Checks if FILE is a symbolic link, and removes it if it is.  */
 int remove_link(const char* file) {
   int err = 0;
   struct stat st;
@@ -510,7 +504,7 @@ bool file_exists_p(const char* filename, file_stats_t* fstats) {
   if (!filename)
     return false;
 
-#if defined(WINDOWS) || defined(__VMS)
+#ifdef __VMS
   int ret = stat(filename, &buf);
   if (ret >= 0) {
     if (fstats != NULL)
@@ -800,7 +794,7 @@ FILE* fopen_stat(const char* fname, const char* mode, file_stats_t* fstats) {
     fclose(fp);
     return NULL;
   }
-#if !(defined(WINDOWS) || defined(__VMS))
+#ifndef __VMS
   if (fstats != NULL && (fdstats.st_dev != fstats->st_dev || fdstats.st_ino != fstats->st_ino)) {
     /* File changed since file_exists_p() : NOT SAFE */
     logprintf(LOG_NOTQUIET, _("File %s changed since the last check. Security check failed.\n"), fname);
@@ -844,7 +838,7 @@ int open_stat(const char* fname, int flags, mode_t mode, file_stats_t* fstats) {
     close(fd);
     return -1;
   }
-#if !(defined(WINDOWS) || defined(__VMS))
+#ifndef __VMS
   if (fstats != NULL && (fdstats.st_dev != fstats->st_dev || fdstats.st_ino != fstats->st_ino)) {
     /* File changed since file_exists_p() : NOT SAFE */
     logprintf(LOG_NOTQUIET, _("Trying to open file %s but it changed since last check. Security check failed.\n"), fname);
@@ -1132,14 +1126,8 @@ struct file_memory* wget_read_file(const char* file) {
   return wget_read_from_file(file, &left_open);
 }
 
-/*
- * Set a file-descriptor to be non-blocking.
- * Since the needed fcntl flags are not implemented in gnulib
- * for Windows, we will provide an alternate stub implementation
- * in mswindows.c. The stub will be a no-op and will prevent
- * asynchronous file operations on Windows, but such is life
- */
-#if !defined(WINDOWS) && !defined(MSDOS)
+/* Set a file-descriptor to be non-blocking when the platform supports it. */
+#if !defined(MSDOS)
 static void set_fd_nonblocking(const int fd) {
   int flags = fcntl(fd, F_GETFL, 0);
   fcntl(fd, F_SETFL, flags | O_NONBLOCK);
@@ -1737,10 +1725,9 @@ char* number_to_string(char* buffer, wgint number) {
        long on 32-bit machines with LFS.
     b) you cannot use printf("%lld", number) because NUMBER could be
        long on 32-bit machines without LFS, or on 64-bit machines,
-       which do not require LFS.  Also, Windows doesn't support %lld.
+       which do not require LFS.  Some legacy libcs also lack %lld.
     c) you cannot use printf("%j", (int_max_t) number) because not all
-       versions of printf support "%j", the most notable being the one
-       on Windows.
+       versions of printf support "%j" on older platforms.
     d) you cannot #define WGINT_FMT to the appropriate format and use
        printf(WGINT_FMT, number) because that would break translations
        for user-visible messages, such as printf("Downloaded: %d
@@ -1794,14 +1781,9 @@ int determine_screen_width(void) {
     return 0; /* most likely ENOTTY */
 
   return wsz.ws_col;
-#elif defined(WINDOWS)
-  CONSOLE_SCREEN_BUFFER_INFO csbi;
-  if (!GetConsoleScreenBufferInfo(GetStdHandle(STD_ERROR_HANDLE), &csbi))
-    return 0;
-  return csbi.dwSize.X;
-#else  /* neither TIOCGWINSZ nor WINDOWS */
+#else  /* no TIOCGWINSZ */
   return 0;
-#endif /* neither TIOCGWINSZ nor WINDOWS */
+#endif /* no TIOCGWINSZ */
 }
 
 /* Whether the rnd system (either rand or [dl]rand48) has been
@@ -2008,19 +1990,11 @@ bool run_with_timeout(double timeout, void (*fun)(void*), void* arg) {
 
 #else /* not USE_SIGNAL_TIMEOUT */
 
-#ifndef WINDOWS
-/* A stub version of run_with_timeout that just calls FUN(ARG).  Don't
-   define it under Windows, because Windows has its own version of
-   run_with_timeout that uses threads.  */
-
 bool run_with_timeout(double timeout, void (*fun)(void*), void* arg) {
   fun(arg);
   return false;
 }
-#endif /* not WINDOWS */
 #endif /* not USE_SIGNAL_TIMEOUT */
-
-#ifndef WINDOWS
 
 /* Sleep the specified amount of seconds.  On machines without
    nanosleep(), this may sleep shorter if interrupted by signals.  */
@@ -2055,10 +2029,6 @@ void xsleep(double seconds) {
   }
   usleep(seconds * 1000000);
 #else /* fall back select */
-  /* Note that, although Windows supports select, it can't be used to
-     implement sleeping because Winsock's select doesn't implement
-     timeout when it is passed NULL pointers for all fd sets.  (But it
-     does under Cygwin, which implements Unix-compatible select.)  */
   struct timeval sleep;
   sleep.tv_sec = (long)seconds;
   sleep.tv_usec = 1000000 * (seconds - (long)seconds);
@@ -2070,8 +2040,6 @@ void xsleep(double seconds) {
 #endif
 }
 #endif
-
-#endif /* not WINDOWS */
 
 /* Encode the octets in DATA of length LENGTH to base64 format,
    storing the result to DEST.  The output will be zero-terminated,

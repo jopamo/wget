@@ -46,6 +46,7 @@
 #include <sha1.h>
 #include <base32.h>
 #include <unistd.h>
+#include <fcntl.h>
 #if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
 #include <zlib.h>
 #endif
@@ -58,12 +59,6 @@
 
 #include "warc.h"
 #include "exits.h"
-
-#ifdef WINDOWS
-/* we need this on Windows to have O_TEMPORARY defined */
-#include <fcntl.h>
-#include <rpc.h>
-#endif
 
 #ifndef O_TEMPORARY
 #define O_TEMPORARY 0
@@ -595,51 +590,6 @@ void warc_uuid_str(char* urn_str, size_t urn_size) {
   xfree(uuid_str);
 }
 #else
-#ifdef WINDOWS
-
-typedef RPC_STATUS(RPC_ENTRY* UuidCreate_proc)(UUID*);
-typedef RPC_STATUS(RPC_ENTRY* UuidToString_proc)(UUID*, unsigned char**);
-typedef RPC_STATUS(RPC_ENTRY* RpcStringFree_proc)(unsigned char**);
-
-static int windows_uuid_str(char* urn_str, size_t urn_size) {
-  static UuidCreate_proc pfn_UuidCreate = NULL;
-  static UuidToString_proc pfn_UuidToString = NULL;
-  static RpcStringFree_proc pfn_RpcStringFree = NULL;
-  static int rpc_uuid_avail = -1;
-
-  /* Rpcrt4.dll is not available on older versions of Windows, so we
-     need to test its availability at run time.  */
-  if (rpc_uuid_avail == -1) {
-    HMODULE hm_rpcrt4 = LoadLibrary("Rpcrt4.dll");
-
-    if (hm_rpcrt4) {
-      pfn_UuidCreate = (UuidCreate_proc)GetProcAddress(hm_rpcrt4, "UuidCreate");
-      pfn_UuidToString = (UuidToString_proc)GetProcAddress(hm_rpcrt4, "UuidToStringA");
-      pfn_RpcStringFree = (RpcStringFree_proc)GetProcAddress(hm_rpcrt4, "RpcStringFreeA");
-      if (pfn_UuidCreate && pfn_UuidToString && pfn_RpcStringFree)
-        rpc_uuid_avail = 1;
-      else
-        rpc_uuid_avail = 0;
-    }
-    else
-      rpc_uuid_avail = 0;
-  }
-
-  if (rpc_uuid_avail) {
-    BYTE* uuid_str;
-    UUID uuid;
-
-    if (pfn_UuidCreate(&uuid) == RPC_S_OK) {
-      if (pfn_UuidToString(&uuid, &uuid_str) == RPC_S_OK) {
-        snprintf(urn_str, urn_size, "<urn:uuid:%s>", uuid_str);
-        pfn_RpcStringFree(&uuid_str);
-        return 1;
-      }
-    }
-  }
-  return 0;
-}
-#endif
 /* Fills urn_str with a UUID based on random numbers in the format
    required for the WARC-Record-Id header.
    (See RFC 4122, UUID version 4.)
@@ -653,13 +603,6 @@ void warc_uuid_str(char* urn_str, size_t urn_size) {
 
   unsigned char uuid_data[16];
   int i;
-
-#ifdef WINDOWS
-  /* If the native method fails (expected on older Windows versions),
-     use the fallback below.  */
-  if (windows_uuid_str(urn_str, urn_size))
-    return;
-#endif
 
   for (i = 0; i < 16; i++)
     uuid_data[i] = random_number(255);

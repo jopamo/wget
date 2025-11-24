@@ -10,7 +10,7 @@
 #include <string.h>
 #include <signal.h>
 #include <spawn.h>
-#if defined(ENABLE_NLS) || defined(WINDOWS)
+#ifdef ENABLE_NLS
 #include <locale.h>
 #endif
 #include <assert.h>
@@ -47,14 +47,6 @@
 #define main main_wget
 #endif
 
-
-#ifdef WINDOWS
-#include <io.h>
-#include <fcntl.h>
-#ifndef ENABLE_NLS
-#include <mbctype.h>
-#endif
-#endif
 
 #ifdef __VMS
 #include "vms.h"
@@ -123,14 +115,6 @@ static void i18n_initialize(void) {
   bindtextdomain("wget", LOCALEDIR);
   bindtextdomain("wget-gnulib", LOCALEDIR);
   textdomain("wget");
-#elif defined WINDOWS
-  char MBCP[16] = "";
-  int CP;
-
-  CP = _getmbcp(); /* Consider it's different from default. */
-  if (CP > 0)
-    snprintf(MBCP, sizeof(MBCP), ".%d", CP);
-  setlocale(LC_ALL, MBCP);
 #endif /* ENABLE_NLS */
 }
 
@@ -1204,11 +1188,6 @@ int main(int argc, char** argv) {
   exec_name = base_name(argv[0]);
 #endif /* def __VMS [else] */
 
-#ifdef WINDOWS
-  /* Drop extension (typically .EXE) from executable filename. */
-  windows_main((char**)&exec_name);
-#endif
-
   /* Construct the arguments string. */
   for (argstring_length = 1, i = 1; i < argc; i++)
     argstring_length += strlen(argv[i]) + 3 + 1;
@@ -1691,9 +1670,6 @@ for details.\n\n"));
      first connecting to the server. */
   if (opt.output_document) {
     if (HYPHENP(opt.output_document)) {
-#ifdef WINDOWS
-      _setmode(_fileno(stdout), _O_BINARY);
-#endif
       output_stream = stdout;
     }
     else {
@@ -1791,10 +1767,6 @@ only if outputting to a regular file.\n"));
   else if (output_stream != stdout)
     set_ods5_dest(opt.output_document);
 #endif /* def __VMS */
-
-#ifdef WINDOWS
-  ws_startup();
-#endif
 
 #ifdef SIGHUP
   /* Respect environments (e.g. nohup) that have already disabled SIGHUP. */

@@ -654,15 +654,16 @@ void log_init(const char* file, bool appendp) {
     ) {
       /* If the output is a TTY, enable save context, i.e. store
          the most recent several messages ("context") and dump
-         them to a log file in case SIGHUP or SIGUSR1 is received
-         (or Ctrl+Break is pressed under Windows).  */
+         them to a log file in case SIGHUP or SIGUSR1 is received.  */
       save_context_p = true;
     }
   }
 
-#ifndef WINDOWS
-  /* Initialize this values so we don't have to ask every time we print line */
+#ifdef HAVE_ISATTY
+  /* Initialize this value so we don't have to ask every time we print a line. */
   shell_is_interactive = isatty(STDIN_FILENO);
+#else
+  shell_is_interactive = 0;
 #endif
 
   log_unlock();
@@ -937,7 +938,7 @@ void redirect_output(bool to_file, const char* signal_name) {
 /* Check whether there's a need to redirect output. */
 
 static void check_redirect_output_locked(void) {
-#if !defined(WINDOWS) && !defined(__VMS)
+#ifndef __VMS
   /* If it was redirected already to log file by SIGHUP, SIGUSR1 or -o parameter,
    * it was permanent.
    * If there was no SIGHUP or SIGUSR1 and shell is interactive
@@ -954,5 +955,5 @@ static void check_redirect_output_locked(void) {
       redirect_output_locked(false, NULL);
     }
   }
-#endif /* !defined(WINDOWS) && !defined(__VMS) */
+#endif /* !__VMS */
 }

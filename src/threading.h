@@ -31,11 +31,7 @@
 #endif
 
 typedef struct wget_mutex {
-#if defined(WINDOWS)
-  INIT_ONCE once;
-  CRITICAL_SECTION cs;
-  bool initialized;
-#elif defined HAVE_PTHREAD_H && HAVE_PTHREAD_H
+#if defined HAVE_PTHREAD_H && HAVE_PTHREAD_H
   pthread_mutex_t mutex;
   bool initialized;
 #else
@@ -43,9 +39,7 @@ typedef struct wget_mutex {
 #endif
 } wget_mutex_t;
 
-#if defined(WINDOWS)
-#define WGET_MUTEX_INITIALIZER {INIT_ONCE_STATIC_INIT, {0}, false}
-#elif defined HAVE_PTHREAD_H && HAVE_PTHREAD_H
+#if defined HAVE_PTHREAD_H && HAVE_PTHREAD_H
 #define WGET_MUTEX_INITIALIZER {PTHREAD_MUTEX_INITIALIZER, false}
 #else
 #define WGET_MUTEX_INITIALIZER {0}

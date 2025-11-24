@@ -10,7 +10,6 @@ The refactor roadmap in `checklist.md` requires us to retire the synchronous hel
 
 - `src/connect.c:285` — `connect_with_timeout` blocks while waiting for connect().
 - `src/connect.c:701` — `select_fd` wrapper.
-- `src/connect.c:706` — `select_fd_nb` on Windows.
 - `src/connect.c:723` — `test_socket_open` polls for readability.
 
 ## `wget_ev_sleep` — `src/evhelpers.c:114`

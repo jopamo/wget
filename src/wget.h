@@ -20,10 +20,6 @@
 #endif
 #endif
 
-#if ((defined _WIN32 || defined __WIN32__) && !defined __CYGWIN__)
-#define WINDOWS
-#endif
-
 /* Include these, so random files need not include them.  */
 #include "sysdep.h"
 
@@ -118,8 +114,8 @@
 /* Pick an integer type large enough for file sizes, content lengths,
    and such.  Because today's files can be very large, it should be a
    signed integer at least 64 bits wide.  This can't be typedeffed to
-   off_t because: a) off_t is always 32-bit on Windows, and b) we
-   don't necessarily want to tie having a 64-bit type for internal
+   off_t because some platforms ship with 32-bit off_t and we don't
+   necessarily want to tie having a 64-bit type for internal
    calculations to having LFS support.  */
 
 /* Gnulib's stdint.h module essentially guarantees the existence of int64_t.

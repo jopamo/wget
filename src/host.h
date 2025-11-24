@@ -5,9 +5,6 @@
 #ifndef HOST_H
 #define HOST_H
 
-#ifdef WINDOWS
-#include <winsock2.h>
-#else
 #ifdef __VMS
 #include "vms_ip.h"
 #else /* def __VMS */
@@ -17,7 +14,6 @@
 #include <netinet/in.h>
 #ifndef __BEOS__
 #include <arpa/inet.h>
-#endif
 #endif
 
 struct url;

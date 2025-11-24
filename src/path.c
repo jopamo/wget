@@ -90,18 +90,8 @@ char* canonicalize_path(const char* path) {
 
   size_t prefix_len = FILE_SYSTEM_PREFIX_LEN(path);
   char* scratch = xstrdup(path);
-#ifdef WINDOWS
-  for (char* p = scratch; *p; ++p) {
-    if (*p == '\\')
-      *p = '/';
-  }
-#endif
 
   bool absolute = scratch[0] && ISSLASH(scratch[0]);
-#ifdef WINDOWS
-  if (!absolute && prefix_len >= 3 && scratch[1] == ':' && ISSLASH(scratch[2]))
-    absolute = true;
-#endif
 
   char* cursor = scratch + prefix_len;
   while (*cursor && ISSLASH(*cursor))

@@ -12,7 +12,6 @@
 
 #include <sys/socket.h>
 
-#ifndef WINDOWS
 #ifdef __VMS
 #include "vms_ip.h"
 #else /* def __VMS */
@@ -25,7 +24,6 @@
 #ifndef __BEOS__
 #include <arpa/inet.h>
 #endif
-#endif /* not WINDOWS */
 
 #include <errno.h>
 #include <string.h>
@@ -195,17 +193,9 @@ static int socket_set_nonblocking(int fd, struct socket_blocking_state* state) {
     state->have_saved_flags = true;
   }
 #else
-#ifdef WINDOWS
-  unsigned long mode = 1;
-  if (ioctlsocket(fd, FIONBIO, &mode) != 0) {
-    errno = WSAGetLastError();
-    return -1;
-  }
-#else
   int mode = 1;
   if (ioctl(fd, FIONBIO, &mode) < 0)
     return -1;
-#endif
   if (state)
     state->have_saved_flags = true;
 #endif
@@ -219,14 +209,8 @@ static void socket_restore_blocking(int fd, struct socket_blocking_state* state)
 #ifdef F_GETFL
   fcntl(fd, F_SETFL, state->saved_flags);
 #else
-#ifdef WINDOWS
-  unsigned long mode = 0;
-  if (ioctlsocket(fd, FIONBIO, &mode) != 0)
-    errno = WSAGetLastError();
-#else
   int mode = 0;
   ioctl(fd, FIONBIO, &mode);
-#endif
 #endif
   state->have_saved_flags = false;
 }
@@ -291,11 +275,7 @@ static int connect_with_timeout(int fd, const struct sockaddr* addr, socklen_t a
   }
 
   int sock_error = 0;
-#ifdef WINDOWS
-  int optlen = sizeof(sock_error);
-#else
   socklen_t optlen = (socklen_t)sizeof(sock_error);
-#endif
   if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (void*)&sock_error, &optlen) < 0) {
     saved_errno = errno;
     socket_restore_blocking(fd, &state);
@@ -700,12 +680,6 @@ bool retryable_socket_connect_error(int err) {
 int select_fd(int fd, double maxtime, int wait_for) {
   return wget_ev_io_wait(fd, maxtime, wait_for);
 }
-
-#ifdef WINDOWS
-int select_fd_nb(int fd, double maxtime, int wait_for) {
-  return wget_ev_io_wait(fd, maxtime, wait_for);
-}
-#endif
 
 /* Return true if the connection to the remote site established through
    SOCK is still open

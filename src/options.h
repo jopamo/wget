@@ -246,7 +246,7 @@ struct options {
   char* body_data;      /* HTTP Method Data String */
   char* body_file;      /* HTTP Method File */
 
-  enum { restrict_unix, restrict_vms, restrict_windows } restrict_files_os;                          /* file name restriction ruleset. */
+  enum { restrict_unix, restrict_vms } restrict_files_os;                          /* file name restriction ruleset. */
   bool restrict_files_ctrl;                                                                          /* non-zero if control chars in URLs
                                                                                                         are restricted from appearing in
                                                                                                         generated file names. */

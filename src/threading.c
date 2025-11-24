@@ -27,39 +27,7 @@
 #include <unistd.h>
 #endif
 
-#if defined(WINDOWS)
-
-static BOOL CALLBACK mutex_init_once(PINIT_ONCE once WGET_ATTR_UNUSED, PVOID param, PVOID* ctx WGET_ATTR_UNUSED) {
-  wget_mutex_t* mutex = (wget_mutex_t*)param;
-  InitializeCriticalSection(&mutex->cs);
-  mutex->initialized = true;
-  return TRUE;
-}
-
-void wget_mutex_init(wget_mutex_t* mutex) {
-  mutex->once = INIT_ONCE_STATIC_INIT;
-  mutex->initialized = false;
-}
-
-void wget_mutex_lock(wget_mutex_t* mutex) {
-  InitOnceExecuteOnce(&mutex->once, mutex_init_once, mutex, NULL);
-  EnterCriticalSection(&mutex->cs);
-}
-
-void wget_mutex_unlock(wget_mutex_t* mutex) {
-  if (mutex->initialized)
-    LeaveCriticalSection(&mutex->cs);
-}
-
-void wget_mutex_destroy(wget_mutex_t* mutex) {
-  if (mutex->initialized) {
-    DeleteCriticalSection(&mutex->cs);
-    mutex->initialized = false;
-    mutex->once = INIT_ONCE_STATIC_INIT;
-  }
-}
-
-#elif defined HAVE_PTHREAD_H && HAVE_PTHREAD_H
+#if defined HAVE_PTHREAD_H && HAVE_PTHREAD_H
 
 static pthread_mutex_t pthread_init_lock = PTHREAD_MUTEX_INITIALIZER;
 

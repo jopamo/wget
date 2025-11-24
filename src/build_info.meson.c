@@ -54,7 +54,7 @@ const char* compiled_features[] = {
     "-iri",
 #endif
 
-#if SIZEOF_OFF_T >= 8 || defined WINDOWS
+#if SIZEOF_OFF_T >= 8
     "+large-file",
 #else
     "-large-file",

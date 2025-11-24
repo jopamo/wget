@@ -64,9 +64,6 @@
 
 #include <fcntl.h>
 
-#ifdef WINDOWS
-#include <w32sock.h>
-#endif
 
 /* Application-wide SSL context.  This is common to all SSL
    connections.  */
@@ -107,16 +104,6 @@ static void init_prng(void) {
   /* Get random data from EGD if opt.egd_file was used.  */
   if (opt.egd_file && *opt.egd_file)
     RAND_egd(opt.egd_file);
-#endif
-
-#ifdef WINDOWS
-  /* Under Windows, we can try to seed the PRNG using screen content.
-     This may or may not work, depending on whether we'll calling Wget
-     interactively.  */
-
-  RAND_screen();
-  if (RAND_status())
-    return;
 #endif
 
 #if 0 /* don't do this by default */
@@ -572,7 +559,7 @@ static int openssl_read_peek(int fd, char* buf, int bufsize, void* arg, double t
       wait_for = WAIT_FOR_WRITE;                     \
     else                                             \
       break;                                         \
-    err = select_fd_nb(_fd, next_timeout, wait_for); \
+    err = select_fd(_fd, next_timeout, wait_for);    \
     if (err <= 0) {                                  \
       if (err == 0)                                  \
       timedout:                                      \

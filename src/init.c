@@ -401,9 +401,7 @@ void defaults(void) {
 #endif
 
   /* The default for file name restriction defaults to the OS type. */
-#if defined(WINDOWS) || defined(MSDOS) || defined(__CYGWIN__)
-  opt.restrict_files_os = restrict_windows;
-#elif defined(__VMS)
+#if defined(__VMS)
   opt.restrict_files_os = restrict_vms;
 #else
   opt.restrict_files_os = restrict_unix;
@@ -482,18 +480,14 @@ char* home_dir(void) {
       buff = strdup(_w32_get_argv0());
 
       home = buf;
-#elif !defined(WINDOWS)
+#else
       /* If HOME is not defined, try getting it from the password
          file.  */
       struct passwd* pwd = getpwuid(getuid());
       if (!pwd || !pwd->pw_dir)
         return NULL;
       home = pwd->pw_dir;
-#else  /* !WINDOWS */
-      /* Under Windows, if $HOME isn't defined, use the directory where
-         `wget.exe' resides.  */
-      home = ws_mypath();
-#endif /* WINDOWS */
+#endif
     }
   }
 
@@ -556,32 +550,13 @@ char* wgetrc_user_file_name(void) {
 }
 
 /* Return the path to the user's .wgetrc.  This is either the value of
-   `WGETRC' environment variable, or `$HOME/.wgetrc'.
-
-   Additionally, for windows, look in the directory where wget.exe
-   resides.  */
+   `WGETRC' environment variable, or `$HOME/.wgetrc'.  */
 char* wgetrc_file_name(void) {
   char* file = wgetrc_env_file_name();
   if (file && *file)
     return file;
 
   file = wgetrc_user_file_name();
-
-#ifdef WINDOWS
-  /* Under Windows, if we still haven't found .wgetrc, look for the file
-     `wget.ini' in the directory where `wget.exe' resides; we do this for
-     backward compatibility with previous versions of Wget.
-     SYSTEM_WGETRC should not be defined under WINDOWS.  */
-  if (!file) {
-    const char* home = ws_mypath();
-    if (home) {
-      file = aprintf("%s/wget.ini", home);
-      if (!file_exists_p(file, NULL)) {
-        xfree(file);
-      }
-    }
-  }
-#endif /* WINDOWS */
 
   return file;
 }
@@ -809,7 +784,7 @@ static enum parse_line parse_line(const char* line, char** com, char** val, int*
   return line_ok;
 }
 
-#if defined(WINDOWS) || defined(MSDOS)
+#if defined(MSDOS)
 #define ISSEP(c) ((c) == '/' || (c) == '\\')
 #define SEPSTRING "/\\"
 #else
@@ -1033,7 +1008,7 @@ static bool cmd_file(const char* com WGET_ATTR_UNUSED, const char* val, void* pl
 
   *pstring = xstrdup(val);
 
-#if defined(WINDOWS) || defined(MSDOS)
+#if defined(MSDOS)
   /* Convert "\" to "/". */
   {
     char* s;
@@ -1060,7 +1035,7 @@ static bool cmd_directory(const char* com, const char* val, void* place) {
   char *s, *t;
 
   /* Call cmd_file() for tilde expansion and separator
-     canonicalization (backslash -> slash under Windows).  These
+     canonicalization on legacy platforms.  These
      things should perhaps be in a separate function.  */
   if (!cmd_file(com, val, place))
     return false;
@@ -1467,8 +1442,6 @@ static bool cmd_spec_restrict_file_names(const char* com, const char* val, void*
       restrict_os = restrict_unix;
     else if (VAL_IS("vms"))
       restrict_os = restrict_vms;
-    else if (VAL_IS("windows"))
-      restrict_os = restrict_windows;
     else if (VAL_IS("lowercase"))
       restrict_case = restrict_lowercase;
     else if (VAL_IS("uppercase"))
@@ -1480,7 +1453,7 @@ static bool cmd_spec_restrict_file_names(const char* com, const char* val, void*
     else {
       fprintf(stderr, _("\
 %s: %s: Invalid restriction %s,\n\
-    use [unix|vms|windows],[lowercase|uppercase],[nocontrol],[ascii].\n"),
+    use [unix|vms],[lowercase|uppercase],[nocontrol],[ascii].\n"),
               exec_name, com, quote(val));
       return false;
     }
@@ -1819,9 +1792,8 @@ const char* test_cmd_spec_restrict_file_names(void) {
     int expected_restrict_files_case;
     bool result;
   } test_array[] = {
-      {"windows", restrict_windows, true, restrict_no_case_restriction, true},
-      {"windows,", restrict_windows, true, restrict_no_case_restriction, true},
-      {"windows,lowercase", restrict_windows, true, restrict_lowercase, true},
+      {"unix", restrict_unix, true, restrict_no_case_restriction, true},
+      {"vms,lowercase", restrict_vms, true, restrict_lowercase, true},
       {"unix,nocontrol,lowercase,", restrict_unix, false, restrict_lowercase, true},
   };
 

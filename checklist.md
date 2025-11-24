@@ -121,7 +121,7 @@ See `docs/blocking-helpers.md` for the design notes and outstanding call sites. 
 * [x] Modern build system (Meson)
 * [x] Targeted unit tests for TCP tuning options (TCP_NODELAY + buffer sizing)
 * [ ] Broad unit-test coverage and fuzz testing – update `tests/`, `src/meson.build`
-* [ ] Minimized legacy code and compatibility hacks – update `src/utils.c`, `src/mswindows.c`, `src/sysdep.h`
+* [ ] Minimized legacy code and compatibility hacks – update `src/utils.c`, `src/sysdep.h`
 * [ ] Clean modular architecture oriented around event loop-driven state machines – update `src/evloop.c`, `src/transfer.c`, `src/http.c`
 * [ ] HTTP subsystem modularization roadmap
   - [x] Extracted request construction helpers into `src/http_request.c` and authentication helpers into `src/http_auth.c`

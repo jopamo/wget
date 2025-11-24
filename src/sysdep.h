@@ -44,16 +44,6 @@
 #include <stdint.h>
 #include <inttypes.h>
 
-#ifdef WINDOWS
-/* Windows doesn't have some functions normally found on Unix-like
-   systems, such as strcasecmp, strptime, etc.  Include mswindows.h so
-   we get the declarations for their replacements in mswindows.c, as
-   well as to pick up Windows-specific includes and constants.  To be
-   able to test for such features, the file must be included as early
-   as possible.  */
-#include "mswindows.h"
-#endif
-
 #include <stdbool.h>
 #include <limits.h>
 #include <fnmatch.h>

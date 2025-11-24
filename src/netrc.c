@@ -45,11 +45,7 @@
 #include "netrc.h"
 #include "init.h"
 
-#ifdef WINDOWS
-#define NETRC_FILE_NAME "_netrc"
-#else
 #define NETRC_FILE_NAME ".netrc"
-#endif
 
 typedef struct _acc_t {
   char* host; /* NULL if this is the default machine

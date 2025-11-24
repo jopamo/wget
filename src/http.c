@@ -1235,11 +1235,6 @@ static uerr_t set_file_timestamp(struct http_stat* hs) {
       hs->orig_file_name = local_filename;  // was previously malloc'ed
     hs->orig_file_size = st.st_size;
     hs->orig_file_tstamp = st.st_mtime;
-#ifdef WINDOWS
-    /* Modification time granularity is 2 seconds for Windows, so
-        increase local time by 1 second for later comparison. */
-    ++hs->orig_file_tstamp;
-#endif
     hs->timestamp_checked = true;
   }
 
@@ -2446,9 +2441,6 @@ uerr_t http_loop(const struct url* u, struct url* original_url, char** newloc, c
         logprintf(LOG_NOTQUIET, "--%s--  %s\n", tms, hurl);
       }
 
-#ifdef WINDOWS
-      ws_changetitle(hurl);
-#endif
       xfree(hurl);
     }
 

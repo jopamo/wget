@@ -9,7 +9,6 @@
 #include <string.h>
 #include <assert.h>
 
-#ifndef WINDOWS
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -22,11 +21,6 @@
 #include <netdb.h>
 #endif /* def __VMS [else] */
 #define SET_H_ERRNO(err) ((void)(h_errno = (err)))
-#else /* WINDOWS */
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#define SET_H_ERRNO(err) WSASetLastError(err)
-#endif /* WINDOWS */
 
 #include <errno.h>
 
@@ -42,7 +36,7 @@
 #define NO_ADDRESS NO_DATA
 #endif
 
-#if !HAVE_DECL_H_ERRNO && !defined(WINDOWS)
+#if !HAVE_DECL_H_ERRNO
 extern int h_errno;
 #endif
 

@@ -1229,10 +1229,9 @@ static void append_string(const char* str, struct growable* dest) {
 }
 
 enum {
-  filechr_not_unix = 1,    /* unusable on Unix, / and \0 */
-  filechr_not_vms = 2,     /* unusable on VMS (ODS5), 0x00-0x1F * ? */
-  filechr_not_windows = 4, /* unusable on Windows, one of \|/<>?:*" */
-  filechr_control = 8      /* a control character, e.g. 0-31 */
+  filechr_not_unix = 1, /* unusable on Unix, / and \0 */
+  filechr_not_vms = 2,  /* unusable on VMS (ODS5), 0x00-0x1F * ? */
+  filechr_control = 4   /* a control character, e.g. 0-31 */
 };
 
 #define FILE_CHAR_TEST(c, mask) ((opt.restrict_files_nonascii && !c_isascii((unsigned char)(c))) || (filechr_table[(unsigned char)(c)] & (mask)))
@@ -1240,13 +1239,13 @@ enum {
 /* Shorthands for the table: */
 #define U filechr_not_unix
 #define V filechr_not_vms
-#define W filechr_not_windows
+#define W 0
 #define C filechr_control
 
-#define UVWC U | V | W | C
-#define UW U | W
-#define VC V | C
-#define VW V | W
+#define UVWC (U | V | C)
+#define UW U
+#define VC (V | C)
+#define VW V
 
 /* Table of characters unsafe under various conditions (see above).
 
@@ -1291,15 +1290,14 @@ static const unsigned char filechr_table[256] = {
 
 /* FN_PORT_SEP is the separator between host and port in file names
    for non-standard port numbers.  On Unix this is normally ':', as in
-   "www.xemacs.org:4001/index.html".  Under Windows, we set it to +
-   because Windows can't handle ':' in file names.  */
-#define FN_PORT_SEP (opt.restrict_files_os != restrict_windows ? ':' : '+')
+   "www.xemacs.org:4001/index.html".  */
+#define FN_PORT_SEP ':'
 
 /* FN_QUERY_SEP is the separator between the file name and the URL
-   query, normally '?'.  Because VMS and Windows cannot handle '?' in a
+   query, normally '?'.  Because VMS cannot handle '?' in a
    file name, we use '@' instead there.  */
-#define FN_QUERY_SEP (((opt.restrict_files_os != restrict_vms) && (opt.restrict_files_os != restrict_windows)) ? '?' : '@')
-#define FN_QUERY_SEP_STR (((opt.restrict_files_os != restrict_vms) && (opt.restrict_files_os != restrict_windows)) ? "?" : "@")
+#define FN_QUERY_SEP ((opt.restrict_files_os != restrict_vms) ? '?' : '@')
+#define FN_QUERY_SEP_STR ((opt.restrict_files_os != restrict_vms) ? "?" : "@")
 
 /* Quote path element, characters in [b, e), as file name, and append
    the quoted string to DEST.  Each character is quoted as per
@@ -1324,7 +1322,7 @@ static void append_uri_pathel(const char* b, const char* e, bool escaped, struct
   else if (opt.restrict_files_os == restrict_vms)
     mask = filechr_not_vms;
   else
-    mask = filechr_not_windows;
+    mask = filechr_not_unix;
 
   if (opt.restrict_files_ctrl)
     mask |= filechr_control;
@@ -1363,11 +1361,7 @@ static void append_uri_pathel(const char* b, const char* e, bool escaped, struct
      string length.  Each quoted char introduces two additional
      characters in the string, hence 2*quoted.  */
   outlen = (e - b) + (2 * quoted);
-#ifdef WINDOWS
-  max_length = MAX_PATH;
-#else
   max_length = get_max_length(dest->base, dest->tail, _PC_NAME_MAX);
-#endif
   max_length -= CHOMP_BUFFER;
   if (max_length > 0 && outlen > max_length) {
     logprintf(LOG_NOTQUIET, "The destination name is too long (%d), reducing to %d\n", outlen, max_length);

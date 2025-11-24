@@ -64,26 +64,16 @@
 #include <time.h>
 #include <sys/time.h>
 
-/* Cygwin currently (as of 2005-04-08, Cygwin 1.5.14) lacks clock_getres,
-   but still defines _POSIX_TIMERS!  Because of that we simply use the
-   Windows timers under Cygwin.  */
-#ifdef __CYGWIN__
-#include <windows.h>
-#endif
-
 #include "utils.h"
 #include "ptimer.h"
 
-/* Depending on the OS, one and only one of PTIMER_POSIX,
-   PTIMER_GETTIMEOFDAY, or PTIMER_WINDOWS will be defined.  */
+/* Depending on the OS, one and only one of PTIMER_POSIX
+   or PTIMER_GETTIMEOFDAY will be defined.  */
 
 #undef PTIMER_POSIX
 #undef PTIMER_GETTIMEOFDAY
-#undef PTIMER_WINDOWS
 
-#if defined(WINDOWS) || defined(__CYGWIN__)
-#define PTIMER_WINDOWS /* use Windows timers */
-#elif _POSIX_TIMERS - 0 > 0
+#if _POSIX_TIMERS - 0 > 0
 #define PTIMER_POSIX /* use POSIX timers (clock_gettime) */
 #else
 #define PTIMER_GETTIMEOFDAY /* use gettimeofday */
@@ -203,70 +193,6 @@ static inline double gettimeofday_resolution(void) {
 }
 #endif /* PTIMER_GETTIMEOFDAY */
 
-#ifdef PTIMER_WINDOWS
-/* Elapsed time measurement on Windows: where high-resolution timers
-   are available, time is stored in a LARGE_INTEGER and retrieved
-   using QueryPerformanceCounter.  Otherwise, it is stored in a DWORD
-   and retrieved using GetTickCount.
-
-   This method is used on Windows.  */
-
-typedef union {
-  DWORD lores;         /* In case GetTickCount is used */
-  LARGE_INTEGER hires; /* In case high-resolution timer is used */
-} ptimer_system_time;
-
-#define IMPL_init windows_init
-#define IMPL_measure windows_measure
-#define IMPL_diff windows_diff
-#define IMPL_resolution windows_resolution
-
-/* Whether high-resolution timers are used.  Set by ptimer_initialize_once
-   the first time ptimer_new is called. */
-static bool windows_hires_timers;
-
-/* Frequency of high-resolution timers -- number of updates per
-   second.  Calculated the first time ptimer_new is called provided
-   that high-resolution timers are available. */
-static double windows_hires_freq;
-
-static void windows_init(void) {
-  LARGE_INTEGER freq;
-  freq.QuadPart = 0;
-  QueryPerformanceFrequency(&freq);
-  if (freq.QuadPart != 0) {
-    windows_hires_timers = true;
-    windows_hires_freq = (double)freq.QuadPart;
-  }
-}
-
-static inline void windows_measure(ptimer_system_time* pst) {
-  if (windows_hires_timers)
-    QueryPerformanceCounter(&pst->hires);
-  else
-    /* Where hires counters are not available, use GetTickCount rather
-       GetSystemTime, because it is unaffected by clock skew and
-       simpler to use.  Note that overflows don't affect us because we
-       never use absolute values of the ticker, only the
-       differences.  */
-    pst->lores = GetTickCount();
-}
-
-static inline double windows_diff(ptimer_system_time* pst1, ptimer_system_time* pst2) {
-  if (windows_hires_timers)
-    return (pst1->hires.QuadPart - pst2->hires.QuadPart) / windows_hires_freq;
-  else
-    return pst1->lores - pst2->lores;
-}
-
-static double windows_resolution(void) {
-  if (windows_hires_timers)
-    return 1.0 / windows_hires_freq;
-  else
-    return 10; /* according to MSDN */
-}
-#endif /* PTIMER_WINDOWS */
-
 /* The code below this point is independent of timer implementation. */
 
 struct ptimer {
@@ -344,8 +270,8 @@ double ptimer_measure(struct ptimer* pt) {
      elapsed time and increment all future calculations by that
      amount.
 
-     This cannot happen with Windows and POSIX monotonic/highres
-     timers, but the check is not expensive.  */
+     This cannot happen with POSIX monotonic/highres timers,
+     but the check is not expensive.  */
 
   if (elapsed < pt->elapsed_last) {
     pt->start = now;
