@@ -34,15 +34,13 @@
 #ifndef COOKIES_H
 #define COOKIES_H
 
-struct cookie_jar;
+#include <stdbool.h>
 
-struct cookie_jar* cookie_jar_new(void);
-void cookie_jar_delete(struct cookie_jar*);
+void cookies_init(const char* load_file);
+void cookies_cleanup(void);
+void cookies_save(const char* save_file);
 
-void cookie_handle_set_cookie(struct cookie_jar*, const char*, int, const char*, const char*);
-char* cookie_header(struct cookie_jar*, const char*, int, const char*, bool);
-
-void cookie_jar_load(struct cookie_jar*, const char*);
-void cookie_jar_save(struct cookie_jar*, const char*);
+void cookie_handle_set_cookie(const char* host, int port, const char* path, const char* set_cookie_header);
+char* cookie_header(const char* host, int port, const char* path, bool secure);
 
 #endif /* COOKIES_H */
