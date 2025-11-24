@@ -49,6 +49,7 @@ struct transfer_context {
   struct scheduler* scheduler;
   void* scheduler_internal;
   int user_priority;
+  void* user_data;
 };
 
 #ifndef TRANSFER_CTX_T_DEFINED
