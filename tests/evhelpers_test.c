@@ -71,36 +71,12 @@ static void test_wait_for_write_ready(void) {
   close(writer);
 }
 
-static int timer_fired;
-static ev_timer helper_timer;
-
-static void helper_timer_cb(EV_P_ ev_timer* w, int revents WGET_ATTR_UNUSED) {
-  timer_fired++;
-  ev_timer_stop(EV_A_ w);
-}
-
-static void test_ev_sleep_pumps_loop(void) {
-  struct ev_loop* loop = wget_ev_loop_get();
-  timer_fired = 0;
-
-  ev_timer_init(&helper_timer, helper_timer_cb, 0.01, 0);
-  helper_timer.data = NULL;
-  ev_timer_start(loop, &helper_timer);
-
-  wget_ev_sleep(0.03);
-
-  if (ev_is_active(&helper_timer))
-    ev_timer_stop(loop, &helper_timer);
-  expect(timer_fired == 1, "ev sleep should service timers");
-}
-
 int main(void) {
   wget_ev_loop_init();
 
   test_wait_for_read_ready();
   test_wait_timeout();
   test_wait_for_write_ready();
-  test_ev_sleep_pumps_loop();
 
   wget_ev_loop_deinit();
   return 0;

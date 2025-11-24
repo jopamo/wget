@@ -14,13 +14,11 @@ The refactor roadmap in `checklist.md` requires us to retire the synchronous hel
 
 - `src/retr.c:1739-1755` — `sleep_between_retrievals` gates retries and `--wait` (now uses async version).
 
-## `fd_read_body` — `src/retr.c:981`
+## `fd_read_body` — removed
 
-*Purpose*: Starts the asynchronous body reader and waits for completion. The old implementation drove `wget_ev_loop_run_transfers()`; the new version blocks on a condition variable so other transfers keep progressing, but it still serialises the caller until the transfer finishes.
+*Purpose*: Previously started the asynchronous body reader and waited for completion. The old implementation drove `wget_ev_loop_run_transfers()`; it has been replaced by fully asynchronous body transfer using `retr_body_start_async`.
 
-*Call sites*:
-
-- `src/http.c:1549-1564` — HTTP response body download.
+*Replacement*: `retr_body_start_async` provides fully asynchronous body transfer without blocking the caller.
 
 ## `wget_ev_loop_run_transfers` — `src/evloop.c`
 

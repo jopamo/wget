@@ -57,7 +57,7 @@ Your original content is preserved conceptually but reduced to **essential, acti
 
 * [x] Delete `wget_ev_io_wait` (replaced by scheduler-aware waiters)
 * [x] Delete `wget_ev_sleep` (replaced by scheduler timer functionality)
-* [ ] Delete `fd_read_body` (still used for HTTP body download)
+* [x] Delete `fd_read_body` (replaced by async `retr_body_start_async`)
 * [ ] Delete `wget_ev_loop_run_transfers` (no-op shim for non-pthread fallbacks)
 
 ---
