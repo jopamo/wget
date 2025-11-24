@@ -13,26 +13,44 @@
 #include "warc.h"
 #include "utils.h"
 
-int http_body_download(struct http_stat* hs,
-                       int sock,
-                       FILE* fp,
-                       wgint contlen,
-                       wgint contrange,
-                       bool chunked_transfer_encoding,
-                       char* url,
-                       char* warc_timestamp_str,
-                       char* warc_request_uuid,
-                       ip_address* warc_ip,
-                       char* type,
-                       int statcode,
-                       char* head) {
+struct http_body_async_closure {
+  struct http_stat* hs;
+  http_body_done_cb done_cb;
+  FILE* warc_tmp;
+  int warc_payload_offset;
+};
+
+static void http_body_retr_done_cb(int status, wgint qtyread, wgint qtywritten, double elapsed, void* user_data) {
+  struct http_body_async_closure* closure = user_data;
+  struct http_stat* hs = closure->hs;
+  http_body_done_cb done_cb = closure->done_cb;
+
+  if (status >= 0) {
+    if (closure->warc_tmp != NULL) {
+      bool r = warc_write_response_record(hs->url, hs->warc_timestamp_str, hs->warc_request_uuid, hs->warc_ip, closure->warc_tmp, closure->warc_payload_offset, hs->type, hs->statcode, hs->newloc);
+      if (!r)
+        status = WARC_ERR; /* Indicate WARC error */
+    }
+  }
+
+  if (closure->warc_tmp != NULL)
+    fclose(closure->warc_tmp);
+  xfree(closure);
+
+  done_cb(hs, status, qtyread, qtywritten, elapsed);
+}
+
+void http_body_download(struct http_stat* hs, int sock, FILE* fp, wgint contlen, wgint contrange, bool chunked_transfer_encoding, http_body_done_cb done_cb) {
   int warc_payload_offset = 0;
   FILE* warc_tmp = NULL;
   int warcerr = 0;
   int flags = 0;
+  struct http_body_async_closure* closure;
 
-  if (!hs)
-    return WARC_ERR;
+  if (!hs) {
+    done_cb(hs, WARC_ERR, 0, 0, 0);
+    return;
+  }
 
   if (opt.warc_filename != NULL) {
     warc_tmp = warc_tempfile();
@@ -40,8 +58,8 @@ int http_body_download(struct http_stat* hs,
       warcerr = WARC_TMP_FOPENERR;
 
     if (warcerr == 0) {
-      int head_len = strlen(head);
-      int warc_tmp_written = fwrite(head, 1, head_len, warc_tmp);
+      int head_len = strlen(hs->head);
+      int warc_tmp_written = fwrite(hs->head, 1, head_len, warc_tmp);
       if (warc_tmp_written != head_len)
         warcerr = WARC_TMP_FWRITEERR;
       warc_payload_offset = head_len;
@@ -50,13 +68,14 @@ int http_body_download(struct http_stat* hs,
     if (warcerr != 0) {
       if (warc_tmp != NULL)
         fclose(warc_tmp);
-      return warcerr;
+      done_cb(hs, warcerr, 0, 0, 0);
+      return;
     }
   }
 
   if (fp != NULL) {
     if (opt.save_headers && hs->restval == 0)
-      fwrite(head, 1, strlen(head), fp);
+      fwrite(hs->head, 1, strlen(hs->head), fp);
   }
 
   if (contlen != -1)
@@ -72,27 +91,18 @@ int http_body_download(struct http_stat* hs,
   hs->len = hs->restval;
   hs->rd_size = 0;
 
-  hs->res = fd_read_body(hs->local_file, sock, fp, contlen != -1 ? contlen : 0, hs->restval, &hs->rd_size, &hs->len, &hs->dltime, flags, warc_tmp);
-  if (hs->res >= 0) {
-    if (warc_tmp != NULL) {
-      bool r = warc_write_response_record(url, warc_timestamp_str, warc_request_uuid, warc_ip, warc_tmp, warc_payload_offset, type, statcode, hs->newloc);
-      if (!r)
-        return WARC_ERR;
-    }
+  closure = xcalloc(1, sizeof(struct http_body_async_closure));
+  closure->hs = hs;
+  closure->done_cb = done_cb;
+  closure->warc_tmp = warc_tmp;
+  closure->warc_payload_offset = warc_payload_offset;
 
-    return RETRFINISHED;
-  }
-
-  if (warc_tmp != NULL)
-    fclose(warc_tmp);
-
-  if (hs->res == -2)
-    return FWRITEERR;
-  else if (hs->res == -3)
-    return WARC_TMP_FWRITEERR;
-  else {
-    xfree(hs->rderrmsg);
-    hs->rderrmsg = xstrdup(fd_errstr(sock));
-    return RETRFINISHED;
+  if (retr_body_start_async(wget_ev_loop_get(), hs->local_file, sock, fp, contlen != -1 ? contlen : 0, hs->restval, &hs->rd_size, &hs->len, &hs->dltime, flags, warc_tmp, http_body_retr_done_cb,
+                            closure) < 0) {
+    if (warc_tmp != NULL)
+      fclose(warc_tmp);
+    xfree(closure);
+    done_cb(hs, -1, 0, 0, 0);  // Indicate error starting async transfer
+    return;
   }
 }
