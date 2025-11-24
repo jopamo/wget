@@ -128,6 +128,26 @@ worker_pool_test = executable(
 
 test('worker_pool_dispatch', worker_pool_test)
 
+http_response_sources = files(
+  'http_response_test.c',
+  'http_response_stubs.c',
+  'test_stubs.c',
+  '../src/http_response.c',
+  '../src/xalloc.c',
+  '../src/quoting.c',
+  '../src/strcase.c',
+)
+
+http_response_test = executable(
+  'http_response_test',
+  http_response_sources,
+  include_directories: test_includes,
+  dependencies: [],
+  install: false,
+)
+
+test('http_response_stat_helpers', http_response_test)
+
 sitemap_sources = files(
   'sitemap_test.c',
   'test_stubs.c',

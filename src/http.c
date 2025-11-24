@@ -17,6 +17,7 @@
 #include "hash.h"
 #include "http.h"
 #include "http_body.h"
+#include "http_response.h"
 #include "http_internal.h"
 #include "http_auth.h"
 #include "http_request.h"
@@ -162,42 +163,6 @@ static int body_file_send(int sock, const char* file_name, wgint promised_size, 
   return 0;
 }
 
-/* Determine whether [START, PEEKED + PEEKLEN) contains an empty line.
-   If so, return the pointer to the position after the line, otherwise
-   return NULL.  This is used as callback to fd_read_hunk.  The data
-   between START and PEEKED has been read and cannot be "unread"; the
-   data after PEEKED has only been peeked.  */
-
-static const char* response_head_terminator(const char* start, const char* peeked, int peeklen) {
-  const char *p, *end;
-
-  /* If at first peek, verify whether HUNK starts with "HTTP".  If
-     not, this is a HTTP/0.9 request and we must bail out without
-     reading anything.  */
-  if (start == peeked && 0 != memcmp(start, "HTTP", MIN(peeklen, 4)))
-    return start;
-
-  /* Look for "\n[\r]\n", and return the following position if found.
-     Start two chars before the current to cover the possibility that
-     part of the terminator (e.g. "\n\r") arrived in the previous
-     batch.  */
-  p = peeked - start < 2 ? start : peeked - 2;
-  end = peeked + peeklen;
-
-  /* Check for \n\r\n or \n\n anywhere in [p, end-2). */
-  for (; p < end - 2; p++)
-    if (*p == '\n') {
-      if (p[1] == '\r' && p[2] == '\n')
-        return p + 3;
-      else if (p[1] == '\n')
-        return p + 2;
-    }
-  /* p==end-2: check for \n\n directly preceding END. */
-  if (peeklen >= 2 && p[0] == '\n' && p[1] == '\n')
-    return p + 2;
-
-  return NULL;
-}
 
 /* The maximum size of a single HTTP response we care to read.  Rather
    than being a limit of the reader implementation, this limit
@@ -205,307 +170,11 @@ static const char* response_head_terminator(const char* start, const char* peeke
    malicious or buggy server output, thus protecting the user.  Define
    it to 0 to remove the limit.  */
 
-#define HTTP_RESPONSE_MAX_SIZE 65536
 
-/* Read the HTTP request head from FD and return it.  The error
-   conditions are the same as with fd_read_hunk.
 
-   To support HTTP/0.9 responses, this function tries to make sure
-   that the data begins with "HTTP".  If this is not the case, no data
-   is read and an empty request is returned, so that the remaining
-   data can be treated as body.  */
 
-static char* read_http_response_head(int fd) {
-  return fd_read_hunk(fd, response_head_terminator, 512, HTTP_RESPONSE_MAX_SIZE);
-}
 
-struct response {
-  /* The response data. */
-  const char* data;
 
-  /* The array of pointers that indicate where each header starts.
-     For example, given this HTTP response:
-
-       HTTP/1.0 200 Ok
-       Description: some
-        text
-       Etag: x
-
-     The headers are located like this:
-
-     "HTTP/1.0 200 Ok\r\nDescription: some\r\n text\r\nEtag: x\r\n\r\n"
-     ^                   ^                             ^          ^
-     headers[0]          headers[1]                    headers[2] headers[3]
-
-     I.e. headers[0] points to the beginning of the request,
-     headers[1] points to the end of the first header and the
-     beginning of the second one, etc.  */
-
-  const char** headers;
-};
-
-/* Create a new response object from the text of the HTTP response,
-   available in HEAD.  That text is automatically split into
-   constituent header lines for fast retrieval using
-   resp_header_*.  */
-
-static struct response* resp_new(char* head) {
-  char* hdr;
-  int count, size;
-
-  struct response* resp = xnew0(struct response);
-  resp->data = head;
-
-  if (*head == '\0') {
-    /* Empty head means that we're dealing with a headerless
-       (HTTP/0.9) response.  In that case, don't set HEADERS at
-       all.  */
-    return resp;
-  }
-
-  /* Split HEAD into header lines, so that resp_header_* functions
-     don't need to do this over and over again.  */
-
-  size = count = 0;
-  hdr = head;
-  while (1) {
-    DO_REALLOC(resp->headers, size, count + 1, const char*);
-    resp->headers[count++] = hdr;
-
-    /* Break upon encountering an empty line. */
-    if (!hdr[0] || (hdr[0] == '\r' && hdr[1] == '\n') || hdr[0] == '\n')
-      break;
-
-    /* Find the end of HDR, including continuations. */
-    for (;;) {
-      char* end = strchr(hdr, '\n');
-
-      if (!end) {
-        hdr += strlen(hdr);
-        break;
-      }
-
-      hdr = end + 1;
-
-      if (*hdr != ' ' && *hdr != '\t')
-        break;
-
-      // continuation, transform \r and \n into spaces
-      *end = ' ';
-      if (end > head && end[-1] == '\r')
-        end[-1] = ' ';
-    }
-  }
-  DO_REALLOC(resp->headers, size, count + 1, const char*);
-  resp->headers[count] = NULL;
-
-  return resp;
-}
-
-/* Locate the header named NAME in the request data, starting with
-   position START.  This allows the code to loop through the request
-   data, filtering for all requests of a given name.  Returns the
-   found position, or -1 for failure.  The code that uses this
-   function typically looks like this:
-
-     for (pos = 0; (pos = resp_header_locate (...)) != -1; pos++)
-       ... do something with header ...
-
-   If you only care about one header, use resp_header_get instead of
-   this function.  */
-
-static int resp_header_locate(const struct response* resp, const char* name, int start, const char** begptr, const char** endptr) {
-  int i;
-  const char** headers = resp->headers;
-  int name_len;
-
-  if (!headers || !headers[1])
-    return -1;
-
-  name_len = strlen(name);
-  if (start > 0)
-    i = start;
-  else
-    i = 1;
-
-  for (; headers[i + 1]; i++) {
-    const char* b = headers[i];
-    const char* e = headers[i + 1];
-    if (e - b > name_len && b[name_len] == ':' && 0 == c_strncasecmp(b, name, name_len)) {
-      b += name_len + 1;
-      while (b < e && c_isspace(*b))
-        ++b;
-      while (b < e && c_isspace(e[-1]))
-        --e;
-      *begptr = b;
-      *endptr = e;
-      return i;
-    }
-  }
-  return -1;
-}
-
-/* Find and retrieve the header named NAME in the request data.  If
-   found, set *BEGPTR to its starting, and *ENDPTR to its ending
-   position, and return true.  Otherwise return false.
-
-   This function is used as a building block for resp_header_copy
-   and resp_header_strdup.  */
-
-static bool resp_header_get(const struct response* resp, const char* name, const char** begptr, const char** endptr) {
-  int pos = resp_header_locate(resp, name, 0, begptr, endptr);
-  return pos != -1;
-}
-
-/* Copy the response header named NAME to buffer BUF, no longer than
-   BUFSIZE (BUFSIZE includes the terminating 0).  If the header
-   exists, true is returned, false otherwise.  If there should be no
-   limit on the size of the header, use resp_header_strdup instead.
-
-   If BUFSIZE is 0, no data is copied, but the boolean indication of
-   whether the header is present is still returned.  */
-
-static bool resp_header_copy(const struct response* resp, const char* name, char* buf, int bufsize) {
-  const char *b, *e;
-  if (!resp_header_get(resp, name, &b, &e))
-    return false;
-  if (bufsize) {
-    int len = MIN(e - b, bufsize - 1);
-    memcpy(buf, b, len);
-    buf[len] = '\0';
-  }
-  return true;
-}
-
-/* Return the value of header named NAME in RESP, allocated with
-   malloc.  If such a header does not exist in RESP, return NULL.  */
-
-static char* resp_header_strdup(const struct response* resp, const char* name) {
-  const char *b, *e;
-  if (!resp_header_get(resp, name, &b, &e))
-    return NULL;
-  return strdupdelim(b, e);
-}
-
-/* Parse the HTTP status line, which is of format:
-
-   HTTP-Version SP Status-Code SP Reason-Phrase
-
-   The function returns the status-code, or -1 if the status line
-   appears malformed.  The pointer to "reason-phrase" message is
-   returned in *MESSAGE.  */
-
-static int resp_status(const struct response* resp, char** message) {
-  int status;
-  const char *p, *end;
-
-  if (!resp->headers) {
-    /* For a HTTP/0.9 response, assume status 200. */
-    if (message)
-      *message = xstrdup(_("No headers, assuming HTTP/0.9"));
-    return 200;
-  }
-
-  p = resp->headers[0];
-  end = resp->headers[1];
-
-  if (!end)
-    return -1;
-
-  /* "HTTP" */
-  if (end - p < 4 || 0 != strncmp(p, "HTTP", 4))
-    return -1;
-  p += 4;
-
-  /* Match the HTTP version.  This is optional because Gnutella
-     servers have been reported to not specify HTTP version.  */
-  if (p < end && *p == '/') {
-    ++p;
-    while (p < end && c_isdigit(*p))
-      ++p;
-    if (p < end && *p == '.')
-      ++p;
-    while (p < end && c_isdigit(*p))
-      ++p;
-  }
-
-  while (p < end && c_isspace(*p))
-    ++p;
-  if (end - p < 3 || !c_isdigit(p[0]) || !c_isdigit(p[1]) || !c_isdigit(p[2]))
-    return -1;
-
-  status = 100 * (p[0] - '0') + 10 * (p[1] - '0') + (p[2] - '0');
-  p += 3;
-
-  if (message) {
-    while (p < end && c_isspace(*p))
-      ++p;
-    while (p < end && c_isspace(end[-1]))
-      --end;
-    *message = strdupdelim(p, end);
-  }
-
-  return status;
-}
-
-/* Release the resources used by RESP.
-   It is safe to call it with a valid pointer to a NULL pointer.
-   It is not safe to call it with a invalid or NULL pointer.  */
-
-static void resp_free(struct response** resp_ref) {
-  struct response* resp = *resp_ref;
-
-  if (!resp)
-    return;
-
-  xfree(resp->headers);
-  xfree(resp);
-
-  *resp_ref = NULL;
-}
-
-/* Print a single line of response, the characters [b, e).  We tried
-   getting away with
-      logprintf (LOG_VERBOSE, "%s%.*s\n", prefix, (int) (e - b), b);
-   but that failed to escape the non-printable characters and, in fact,
-   caused crashes in UTF-8 locales.  */
-
-static void print_response_line(const char* prefix, const char* b, const char* e) {
-  char buf[1024], *copy;
-  size_t len = e - b;
-
-  if (len < sizeof(buf))
-    copy = buf;
-  else
-    copy = xmalloc(len + 1);
-
-  memcpy(copy, b, len);
-  copy[len] = 0;
-
-  logprintf(LOG_ALWAYS, "%s%s\n", prefix, quotearg_style(escape_quoting_style, copy));
-
-  if (copy != buf)
-    xfree(copy);
-}
-
-/* Print the server response, line by line, omitting the trailing CRLF
-   from individual header lines, and prefixed with PREFIX.  */
-
-static void print_server_response(const struct response* resp, const char* prefix) {
-  int i;
-  if (!resp->headers)
-    return;
-  for (i = 0; resp->headers[i + 1]; i++) {
-    const char* b = resp->headers[i];
-    const char* e = resp->headers[i + 1];
-    /* Skip CRLF */
-    if (b < e && e[-1] == '\n')
-      --e;
-    if (b < e && e[-1] == '\r')
-      --e;
-    print_response_line(prefix, b, e);
-  }
-}
 
 /* Parse the `Content-Range' header and extract the information it
    contains.  Returns true if successful, false otherwise.  */
@@ -1115,20 +784,6 @@ static bool persistent_available_p(const char* host, int port, bool ssl, bool* h
     fd = -1;                                  \
   } while (0)
 
-static void free_hstat(struct http_stat* hs) {
-  xfree(hs->newloc);
-  xfree(hs->remote_time);
-  xfree(hs->error);
-  xfree(hs->rderrmsg);
-  xfree(hs->local_file);
-  xfree(hs->orig_file_name);
-  xfree(hs->message);
-#ifdef HAVE_METALINK
-  metalink_delete(hs->metalink);
-  hs->metalink = NULL;
-#endif
-}
-
 static void get_file_flags(const char* filename, int* dt) {
   logprintf(LOG_VERBOSE, _("\
 File %s already there; not retrieving.\n\n"),
@@ -1387,7 +1042,7 @@ static uerr_t establish_connection(const struct url* u,
   int sock = *sock_ref;
   struct request* req = *req_ref;
   const struct url* conn = *conn_ref;
-  struct response* resp;
+  struct http_response* resp;
   int write_error;
   int statcode;
 
@@ -1465,7 +1120,7 @@ static uerr_t establish_connection(const struct url* u,
         return WRITEFAILED;
       }
 
-      head = read_http_response_head(sock);
+      head = http_response_read_head(sock);
       if (!head) {
         logprintf(LOG_VERBOSE, _("Failed reading proxy response: %s\n"), fd_errstr(sock));
         CLOSE_INVALIDATE(sock);
@@ -1478,19 +1133,17 @@ static uerr_t establish_connection(const struct url* u,
       }
       DEBUGP(("proxy responded with: [%s]\n", head));
 
-      resp = resp_new(head);
-      statcode = resp_status(resp, &message);
+      resp = http_response_parse(head);
+      statcode = http_response_status(resp, &message);
       if (statcode < 0) {
         char* tms = datetime_str(time(NULL));
         logprintf(LOG_VERBOSE, "%d\n", statcode);
         logprintf(LOG_NOTQUIET, _("%s ERROR %d: %s.\n"), tms, statcode, quotearg_style(escape_quoting_style, _("Malformed status line")));
-        xfree(head);
+        http_response_free(&resp);
         return HERR;
       }
-      xfree(hs->message);
-      hs->message = xstrdup(message);
-      resp_free(&resp);
-      xfree(head);
+      http_stat_set_message(hs, message);
+      http_response_free(&resp);
       if (statcode != 200) {
       failed_tunnel:
         logprintf(LOG_NOTQUIET, _("Proxy tunneling failed: %s"), message ? quotearg_style(escape_quoting_style, message) : "?");
@@ -1596,14 +1249,14 @@ static uerr_t set_file_timestamp(struct http_stat* hs) {
   return RETROK;
 }
 
-static uerr_t check_file_output(const struct url* u, struct http_stat* hs, struct response* resp, char* hdrval, size_t hdrsize) {
+static uerr_t check_file_output(const struct url* u, struct http_stat* hs, const struct http_response* resp, char* hdrval, size_t hdrsize) {
   /* Determine the local filename if needed. Notice that if -O is used
    * hstat.local_file is set by http_loop to the argument of -O. */
   if (!hs->local_file) {
     char* local_file = NULL;
 
     /* Honor Content-Disposition whether possible. */
-    if (!opt.content_disposition || !resp_header_copy(resp, "Content-Disposition", hdrval, hdrsize) || !parse_content_disposition(hdrval, &local_file)) {
+    if (!opt.content_disposition || !http_response_header_copy(resp, "Content-Disposition", hdrval, hdrsize) || !parse_content_disposition(hdrval, &local_file)) {
       /* The Content-Disposition header is missing or broken.
        * Choose unique file name according to given URL. */
       hs->local_file = url_file_name(u, NULL);
@@ -1650,7 +1303,7 @@ static uerr_t check_file_output(const struct url* u, struct http_stat* hs, struc
 }
 
 static uerr_t
-check_auth(const struct url* u, char* user, char* passwd, struct response* resp, struct request* req, bool* ntlm_seen_ref, bool* retry, bool* basic_auth_finished_ref, bool* auth_finished_ref) {
+check_auth(const struct url* u, char* user, char* passwd, struct http_response* resp, struct request* req, bool* ntlm_seen_ref, bool* retry, bool* basic_auth_finished_ref, bool* auth_finished_ref) {
   uerr_t auth_err = RETROK;
   bool basic_auth_finished = *basic_auth_finished_ref;
   bool auth_finished = *auth_finished_ref;
@@ -1668,7 +1321,7 @@ check_auth(const struct url* u, char* user, char* passwd, struct response* resp,
     const char *wabeg, *waend;
     const char *digest = NULL, *basic = NULL, *ntlm = NULL;
 
-    for (wapos = 0; !ntlm && (wapos = resp_header_locate(resp, "WWW-Authenticate", wapos, &wabeg, &waend)) != -1; ++wapos) {
+    for (wapos = 0; !ntlm && (wapos = http_response_header_locate(resp, "WWW-Authenticate", wapos, &wabeg, &waend)) != -1; ++wapos) {
       param_token name, value;
       size_t len = waend - wabeg;
 
@@ -1881,7 +1534,7 @@ static void set_content_type(int* dt, const char* type) {
 /* Will return proper metalink_t structure if enough data was found in
    http response resp. Otherwise returns NULL.
    Two exit points: one for success and one for failure.  */
-static metalink_t* metalink_from_http(const struct response* resp, const struct http_stat* hs, const struct url* u) {
+static metalink_t* metalink_from_http(const struct http_response* resp, const struct http_stat* hs, const struct url* u) {
   metalink_t* metalink = NULL;
   metalink_file_t* mfile = xnew0(metalink_file_t);
   const char *val_beg, *val_end;
@@ -1901,7 +1554,7 @@ static metalink_t* metalink_from_http(const struct response* resp, const struct 
   mfile->metaurls = xnew0(metalink_metaurl_t*);
 
   /* Process the Content-Type header.  */
-  if (resp_header_locate(resp, "Content-Type", 0, &val_beg, &val_end) != -1) {
+  if (http_response_header_locate(resp, "Content-Type", 0, &val_beg, &val_end) != -1) {
     metalink_metaurl_t murl = {0};
 
     const char *type_beg, *type_end;
@@ -1950,7 +1603,7 @@ static metalink_t* metalink_from_http(const struct response* resp, const struct 
     murl.mediatype = typestr;
     typestr = NULL;
 
-    if (opt.content_disposition && resp_header_locate(resp, "Content-Disposition", 0, &val_beg, &val_end) != -1) {
+    if (opt.content_disposition && http_response_header_locate(resp, "Content-Disposition", 0, &val_beg, &val_end) != -1) {
       find_key_value(val_beg, val_end, "filename", &namestr);
       murl.name = namestr;
       namestr = NULL;
@@ -1972,7 +1625,7 @@ static metalink_t* metalink_from_http(const struct response* resp, const struct 
 skip_content_type:
 
   /* Find all Link headers.  */
-  for (i = 0; (i = resp_header_locate(resp, "Link", i, &val_beg, &val_end)) != -1; i++) {
+  for (i = 0; (i = http_response_header_locate(resp, "Link", i, &val_beg, &val_end)) != -1; i++) {
     char *rel = NULL, *reltype = NULL;
     char* urlstr = NULL;
     const char *url_beg, *url_end, *attrs_beg;
@@ -2245,7 +1898,7 @@ skip_content_type:
   }
 
   /* Find all Digest headers.  */
-  for (i = 0; (i = resp_header_locate(resp, "Digest", i, &val_beg, &val_end)) != -1; i++) {
+  for (i = 0; (i = http_response_header_locate(resp, "Digest", i, &val_beg, &val_end)) != -1; i++) {
     const char* dig_pos;
     char *dig_type, *dig_hash;
 
@@ -2402,7 +2055,7 @@ static uerr_t gethttp(const struct url* u, struct url* original_url, struct http
 #endif
 
   char* head = NULL;
-  struct response* resp = NULL;
+  struct http_response* resp = NULL;
   char hdrval[512];
   char* message = NULL;
 
@@ -2443,16 +2096,7 @@ static uerr_t gethttp(const struct url* u, struct url* original_url, struct http
   /* Initialize certain elements of struct http_stat.
    * Since this function is called in a loop, we have to xfree certain
    * members. */
-  hs->len = 0;
-  hs->contlen = -1;
-  hs->res = -1;
-  xfree(hs->rderrmsg);
-  xfree(hs->newloc);
-  xfree(hs->remote_time);
-  xfree(hs->error);
-  xfree(hs->message);
-  hs->local_encoding = ENC_NONE;
-  hs->remote_encoding = ENC_NONE;
+  http_stat_reset(hs);
 
   conn = u;
 
@@ -2591,7 +2235,7 @@ retry_with_auth:
     bool _repeat;
 
     do {
-      head = read_http_response_head(sock);
+      head = http_response_read_head(sock);
       if (!head) {
         if (errno == 0) {
           logputs(LOG_NOTQUIET, _("No data received.\n"));
@@ -2607,23 +2251,23 @@ retry_with_auth:
       }
       DEBUGP(("\n---response begin---\n%s---response end---\n", head));
 
-      resp = resp_new(head);
+      resp = http_response_parse(head);
 
       /* Check for status line.  */
       xfree(message);
-      statcode = resp_status(resp, &message);
+      statcode = http_response_status(resp, &message);
       if (statcode < 0) {
         char* tms = datetime_str(time(NULL));
         logprintf(LOG_VERBOSE, "%d\n", statcode);
         logprintf(LOG_NOTQUIET, _("%s ERROR %d: %s.\n"), tms, statcode, quotearg_style(escape_quoting_style, _("Malformed status line")));
         CLOSE_INVALIDATE(sock);
         retval = HERR;
+        http_response_free(&resp);
         goto cleanup;
       }
 
       if (H_10X(statcode)) {
-        xfree(head);
-        resp_free(&resp);
+        http_response_free(&resp);
         _repeat = true;
         DEBUGP(("Ignoring response\n"));
       }
@@ -2633,16 +2277,15 @@ retry_with_auth:
     } while (_repeat);
   }
 
-  xfree(hs->message);
-  hs->message = xstrdup(message);
+  http_stat_set_message(hs, message);
   if (!opt.server_response)
     logprintf(LOG_VERBOSE, "%2d %s\n", statcode, message ? quotearg_style(escape_quoting_style, message) : "");
   else {
     logprintf(LOG_VERBOSE, "\n");
-    print_server_response(resp, "  ");
+    http_response_print(resp, "  ");
   }
 
-  if (!opt.ignore_length && resp_header_copy(resp, "Content-Length", hdrval, sizeof(hdrval))) {
+  if (!opt.ignore_length && http_response_header_copy(resp, "Content-Length", hdrval, sizeof(hdrval))) {
     wgint parsed;
     errno = 0;
     parsed = str_to_wgint(hdrval, NULL, 10);
@@ -2665,14 +2308,14 @@ retry_with_auth:
 
   /* Check for keep-alive related responses. */
   if (!inhibit_keep_alive) {
-    if (resp_header_copy(resp, "Connection", hdrval, sizeof(hdrval))) {
+    if (http_response_header_copy(resp, "Connection", hdrval, sizeof(hdrval))) {
       if (0 == c_strcasecmp(hdrval, "Close"))
         keep_alive = false;
     }
   }
 
   chunked_transfer_encoding = false;
-  if (resp_header_copy(resp, "Transfer-Encoding", hdrval, sizeof(hdrval)) && 0 == c_strcasecmp(hdrval, "chunked"))
+  if (http_response_header_copy(resp, "Transfer-Encoding", hdrval, sizeof(hdrval)) && 0 == c_strcasecmp(hdrval, "chunked"))
     chunked_transfer_encoding = true;
 
 #ifdef ENABLE_COOKIES
@@ -2682,7 +2325,7 @@ retry_with_auth:
     const char *scbeg, *scend;
     /* The jar should have been created by now. */
     assert(wget_cookie_jar != NULL);
-    for (scpos = 0; (scpos = resp_header_locate(resp, "Set-Cookie", scpos, &scbeg, &scend)) != -1; ++scpos) {
+    for (scpos = 0; (scpos = http_response_header_locate(resp, "Set-Cookie", scpos, &scbeg, &scend)) != -1; ++scpos) {
       char buf[1024], *set_cookie;
       size_t len = scend - scbeg;
 
@@ -2715,7 +2358,7 @@ retry_with_auth:
     /* Bugfix: hs->local_file is NULL (opt.content_disposition).  */
     if (!hs->local_file && hs->metalink && hs->metalink->origin)
       hs->local_file = xstrdup(hs->metalink->origin);
-    xfree(hs->message);
+    http_stat_set_message(hs, NULL);
     retval = RETR_WITH_METALINK;
     CLOSE_FINISH(sock);
     goto cleanup;
@@ -2730,7 +2373,7 @@ retry_with_auth:
        But if we are writing a WARC file we are: we like to keep everything.  */
     if (warc_enabled) {
       int _err;
-      type = resp_header_strdup(resp, "Content-Type");
+      type = http_response_header_strdup(resp, "Content-Type");
       _err = http_body_download(hs, sock, NULL, contlen, 0, chunked_transfer_encoding, u->url, warc_timestamp_str, warc_request_uuid, warc_ip, type, statcode, head);
       xfree(type);
 
@@ -2755,9 +2398,8 @@ retry_with_auth:
     {
       auth_err = check_auth(u, user, passwd, resp, req, &ntlm_seen, &retry, &basic_auth_finished, &auth_finished);
       if (auth_err == RETROK && retry) {
-        resp_free(&resp);
+        http_response_free(&resp);
         xfree(message);
-        xfree(head);
         goto retry_with_auth;
       }
     }
@@ -2782,19 +2424,12 @@ retry_with_auth:
     }
   }
 
-  hs->statcode = statcode;
-  xfree(hs->error);
-  if (statcode == -1)
-    hs->error = xstrdup(_("Malformed status line"));
-  else if (!message || !*message)
-    hs->error = xstrdup(_("(no description)"));
-  else
-    hs->error = xstrdup(message);
+  http_stat_record_status(hs, statcode, message);
 
 #ifdef HAVE_HSTS
   if (opt.hsts && hsts_store) {
     int64_t max_age;
-    const char* hsts_params = resp_header_strdup(resp, "Strict-Transport-Security");
+    const char* hsts_params = http_response_header_strdup(resp, "Strict-Transport-Security");
     bool include_subdomains;
 
     if (parse_strict_transport_security(hsts_params, &max_age, &include_subdomains)) {
@@ -2808,7 +2443,7 @@ retry_with_auth:
   }
 #endif
 
-  type = resp_header_strdup(resp, "Content-Type");
+  type = http_response_header_strdup(resp, "Content-Type");
   if (type) {
     char* tmp = strchr(type, ';');
     if (tmp) {
@@ -2832,98 +2467,14 @@ retry_with_auth:
 #endif
     }
   }
-  xfree(hs->newloc);
-  hs->newloc = resp_header_strdup(resp, "Location");
-  xfree(hs->remote_time);
-  hs->remote_time = resp_header_strdup(resp, "Last-Modified");
-  if (!hs->remote_time)  // now look for the Wayback Machine's timestamp
-    hs->remote_time = resp_header_strdup(resp, "X-Archive-Orig-last-modified");
+  http_stat_capture_headers(hs, resp, u, type, hdrval, sizeof(hdrval));
 
-  if (resp_header_copy(resp, "Content-Range", hdrval, sizeof(hdrval))) {
+  if (http_response_header_copy(resp, "Content-Range", hdrval, sizeof(hdrval))) {
     wgint first_byte_pos, last_byte_pos, entity_length;
     if (parse_content_range(hdrval, &first_byte_pos, &last_byte_pos, &entity_length)) {
       contrange = first_byte_pos;
       contlen = last_byte_pos - first_byte_pos + 1;
     }
-  }
-
-  if (resp_header_copy(resp, "Content-Encoding", hdrval, sizeof(hdrval))) {
-    hs->local_encoding = ENC_INVALID;
-
-    switch (hdrval[0]) {
-      case 'b':
-      case 'B':
-        if (0 == c_strcasecmp(hdrval, "br"))
-          hs->local_encoding = ENC_BROTLI;
-        break;
-      case 'c':
-      case 'C':
-        if (0 == c_strcasecmp(hdrval, "compress"))
-          hs->local_encoding = ENC_COMPRESS;
-        break;
-      case 'd':
-      case 'D':
-        if (0 == c_strcasecmp(hdrval, "deflate"))
-          hs->local_encoding = ENC_DEFLATE;
-        break;
-      case 'g':
-      case 'G':
-        if (0 == c_strcasecmp(hdrval, "gzip"))
-          hs->local_encoding = ENC_GZIP;
-        break;
-      case 'i':
-      case 'I':
-        if (0 == c_strcasecmp(hdrval, "identity"))
-          hs->local_encoding = ENC_NONE;
-        break;
-      case 'x':
-      case 'X':
-        if (0 == c_strcasecmp(hdrval, "x-compress"))
-          hs->local_encoding = ENC_COMPRESS;
-        else if (0 == c_strcasecmp(hdrval, "x-gzip"))
-          hs->local_encoding = ENC_GZIP;
-        break;
-      case '\0':
-        hs->local_encoding = ENC_NONE;
-    }
-
-    if (hs->local_encoding == ENC_INVALID) {
-      DEBUGP(("Unrecognized Content-Encoding: %s\n", hdrval));
-      hs->local_encoding = ENC_NONE;
-    }
-#if defined(HAVE_LIBZ) && defined(ENABLE_COMPRESSION)
-    else if (hs->local_encoding == ENC_GZIP && opt.compression != compression_none) {
-      const char* p;
-
-      /* Make sure the Content-Type is not gzip before decompressing */
-      if (type) {
-        p = strchr(type, '/');
-        if (p == NULL) {
-          hs->remote_encoding = ENC_GZIP;
-          hs->local_encoding = ENC_NONE;
-        }
-        else {
-          p++;
-          if (c_tolower(p[0]) == 'x' && p[1] == '-')
-            p += 2;
-          if (0 != c_strcasecmp(p, "gzip")) {
-            hs->remote_encoding = ENC_GZIP;
-            hs->local_encoding = ENC_NONE;
-          }
-        }
-      }
-      else {
-        hs->remote_encoding = ENC_GZIP;
-        hs->local_encoding = ENC_NONE;
-      }
-
-      /* don't uncompress if a file ends with '.gz' or '.tgz' */
-      if (hs->remote_encoding == ENC_GZIP && (p = strrchr(u->file, '.')) && (c_strcasecmp(p, ".gz") == 0 || c_strcasecmp(p, ".tgz") == 0)) {
-        DEBUGP(("Enabling broken server workaround. Will not decompress this GZip file.\n"));
-        hs->remote_encoding = ENC_NONE;
-      }
-    }
-#endif
   }
 
   /* 20x responses are counted among successful by default.  */
@@ -3241,10 +2792,9 @@ retry_with_auth:
   retval = err;
 
 cleanup:
-  xfree(head);
   xfree(type);
   xfree(message);
-  resp_free(&resp);
+  http_response_free(&resp);
   request_free(&req);
 
   return retval;
@@ -3655,7 +3205,7 @@ The sizes do not match (local %s) -- retrieving.\n"),
             }
           }
 
-          /* free_hstat (&hstat); */
+          /* http_stat_release (&hstat); */
           hstat.timestamp_checked = true;
         }
 
@@ -3820,7 +3370,7 @@ exit: {
     transfer_context_record_stats(tctx, hstat.len, hstat.dltime);
   }
 
-  free_hstat(&hstat);
+  http_stat_release(&hstat);
 }
 
   return ret;
