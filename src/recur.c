@@ -352,7 +352,7 @@ uerr_t retrieve_tree(struct url* start_url_parsed, struct iri* pi) {
           is_sitemap = false;
         }
 
-        if (!is_css && file && status == RETROK && (dt & RETROKF) && (dt & TEXTXML)) {
+        if (!is_css && file && status == RETROK && (dt & RETROKF) && (dt & (TEXTXML | APPXML))) {
           descend = true;
           is_sitemap = true;
         }
