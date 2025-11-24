@@ -12,18 +12,8 @@
 
 struct ip_address;
 
-int http_body_download(struct http_stat* hs,
-                       int sock,
-                       FILE* fp,
-                       wgint contlen,
-                       wgint contrange,
-                       bool chunked_transfer_encoding,
-                       char* url,
-                       char* warc_timestamp_str,
-                       char* warc_request_uuid,
-                       ip_address* warc_ip,
-                       char* type,
-                       int statcode,
-                       char* head);
+typedef void (*http_body_done_cb)(struct http_stat* hs, int status, wgint qtyread, wgint qtywritten, double elapsed);
+
+void http_body_download(struct http_stat* hs, int sock, FILE* fp, wgint contlen, wgint contrange, bool chunked_transfer_encoding, http_body_done_cb done_cb);
 
 #endif /* WGET_HTTP_BODY_H */
