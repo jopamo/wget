@@ -40,6 +40,9 @@ void transfer_context_free(struct transfer_context* ctx) {
   replace_string(&ctx->requested_uri, NULL);
   replace_string(&ctx->local_file, NULL);
   ctx->progress_handle = NULL;
+  ctx->scheduler = NULL;
+  ctx->scheduler_internal = NULL;
+  ctx->user_priority = 0;
 }
 
 void transfer_context_snapshot_options(struct transfer_context* ctx, const struct options* template_opts) {

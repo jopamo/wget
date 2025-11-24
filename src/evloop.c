@@ -112,6 +112,7 @@ bool wget_ev_loop_has_active_transfers(void) {
   return active_transfer_machines > 0;
 }
 
+/* LEGACY_BLOCKING: spins the main loop until all transfers complete. */
 void wget_ev_loop_run_transfers(void) {
   struct ev_loop* loop = wget_ev_loop_get();
   while (wget_ev_loop_has_active_transfers())

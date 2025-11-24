@@ -978,6 +978,7 @@ static void retr_body_sync_cb(int status, wgint qtyread WGET_ATTR_UNUSED, wgint 
   bridge->status = status;
 }
 
+/* LEGACY_BLOCKING: drives one transfer to completion before returning. */
 int fd_read_body(const char* downloaded_filename,
                  int fd,
                  FILE* out,

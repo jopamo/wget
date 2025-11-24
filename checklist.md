@@ -55,6 +55,15 @@ To flip the remaining `[ ]` entries in this section we now require the staged re
    - Grow automated coverage (concurrency/unit/fuzz) and keep gnulib-free, modern Meson wiring.
    - Purge remaining blocking patterns, finish crypto/code cleanups, and ensure every subsystem matches the event-driven model.
 
+### Legacy blocking helper retirement tracker
+
+See `docs/blocking-helpers.md` for the design notes and outstanding call sites. These entries stay `[ ]` until the helper disappears entirely.
+
+* [ ] Remove `wget_ev_io_wait` by moving `connect_with_timeout`, `select_fd`, and `test_socket_open` over to scheduler-aware `ev_io` + timer registrations (touch `src/connect.c`, `src/evloop.c`).
+* [ ] Replace `wget_ev_sleep` with scheduler timers so retry/backoff logic (`sleep_between_retrievals` in `src/retr.c`) never spins the global loop.
+* [ ] Delete `fd_read_body` once HTTP/FTP body streaming uses the asynchronous transfer callbacks directly (updates to `src/http.c`, `src/ftp.c`, `src/retr.c`, `src/http_body.c`).
+* [ ] Retire `wget_ev_loop_run_transfers` after the scheduler owns the global loop pumping and all callers use completion callbacks/futures (touch `src/evloop.c`, `src/main.c`, tests).
+
 ---
 
 ## **2. HTTP/TLS & performance protocol layer**
@@ -118,10 +127,20 @@ To flip the remaining `[ ]` entries in this section we now require the staged re
 * [ ] Clean modular architecture oriented around event loop-driven state machines – update `src/evloop.c`, `src/transfer.c`, `src/http.c`
 * [ ] HTTP subsystem modularization roadmap
   - [x] Extracted request construction helpers into `src/http_request.c` and authentication helpers into `src/http_auth.c`
-  - [ ] Move response parsing + http_stat bookkeeping into a dedicated module (planned `src/http_response.c`)
+  - [ ] Move response parsing + http_stat bookkeeping into a dedicated module (new `src/http_response.c` handles header parsing; wire remaining http_stat plumbing)
   - [ ] Lift retry/state-machine glue and persistent-connection helpers out of `src/http.c` so orchestration becomes the thin layer
 * [ ] Thread-safe, lock-minimized design around libev + worker pool – update `src/threading.c`, `src/evloop.c`
 * [ ] Confirm crypto codepaths (Metalink hashes, MD5/SHA variants) use unified crypto backend or are removed – update `src/metalink.c`, `src/hash.c`, `src/openssl.c`
 * [ ] Replace all legacy blocking patterns (`sleep`, blocking DNS, blocking poll, blocking writes) with libev timers or non-blocking calls – update `src/retr.c`, `src/threading.c`, `src/evhelpers.c`
 * [ ] Ensure all DNS code paths are 100% async under c-ares with no fallbacks – update `src/host.c`, `src/res.c`, `src/evloop.c`
 * [ ] Verify that no file operations stall the event loop (I/O batching, worker delegation) – update `src/transfer.c`, `src/threading.c`, `src/evloop.c`
+
+---
+
+## **7. Validation, observability, and release readiness**
+
+* [ ] Document a repeatable manual test matrix (libev/c-ares builds, HTTPS/FTP targets, recursion, Metalink) and capture commands/logs in `docs/testing.md` or a new `docs/test-matrix.md`.
+* [ ] Add libev/c-ares integration tests that assert watchers fire as expected (extend `tests/evloop_transfer_test.c` or add new suites under `tests/`).
+* [ ] Instrument the scheduler with debug logging / stats hooks so we can prove per-host limits, queue depth, and throughput against the “thousands of concurrent transfers” goal (`src/scheduler.c`, `src/log.c`).
+* [ ] Automate ASan/Valgrind smoke runs in CI scripts or Meson targets to catch regressions before release (`meson.build`, `tests/` helpers).
+* [ ] Track completion of checklist items inside release notes so each tag documents which boxes from sections 1–6 were validated (update `docs/release-notes.md` or add a new summary file).

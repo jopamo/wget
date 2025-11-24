@@ -49,6 +49,7 @@ static void fd_wait_timer_cb(EV_P_ ev_timer* w, int revents WGET_ATTR_UNUSED) {
   ev_io_stop(EV_A_ & ctx->io);
 }
 
+/* LEGACY_BLOCKING: waits synchronously for readiness on a single fd. */
 int wget_ev_io_wait(int fd, double maxtime, int wait_for) {
   if (fd < 0)
     return -1;
@@ -111,6 +112,7 @@ static void wget_ev_sleep_cb(EV_P_ ev_timer* w, int revents WGET_ATTR_UNUSED) {
   ev_timer_stop(EV_A_ w);
 }
 
+/* LEGACY_BLOCKING: busy-loops the main event loop until the timer fires. */
 void wget_ev_sleep(double seconds) {
   if (seconds <= 0)
     return;

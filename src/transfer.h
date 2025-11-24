@@ -42,6 +42,8 @@ struct transfer_stats {
   double seconds_spent;
 };
 
+struct scheduler;
+
 struct transfer_context {
   struct options options; /* Snapshot of the global options. */
   bool has_options;
@@ -51,6 +53,9 @@ struct transfer_context {
   struct transfer_stats stats;
   struct ev_loop* loop;
   enum transfer_state state;
+  struct scheduler* scheduler;
+  void* scheduler_internal;
+  int user_priority;
 };
 
 void transfer_context_init(struct transfer_context* ctx);

@@ -57,6 +57,7 @@ enum {
   rb_compressed_gzip = 8
 };
 
+/* LEGACY_BLOCKING: drives a single transfer to completion before returning. */
 int fd_read_body(const char*, int, FILE*, wgint, wgint, wgint*, wgint*, double*, int, FILE*);
 
 typedef const char* (*hunk_terminator_t)(const char*, const char*, int);

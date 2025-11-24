@@ -20,6 +20,7 @@ sources = [
   'html-parse.c',
   'html-url.c',
   'http_body.c',
+  'http_response.c',
   'http_auth.c',
   'http_request.c',
   'http-ntlm.c',
