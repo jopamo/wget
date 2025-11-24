@@ -49,6 +49,8 @@ int main(void) {
   double before = ev_now(loop);
   wget_ev_loop_run_transfers();
   double after = ev_now(loop);
+  (void)before;
+  (void)after; /* Suppress unused variable warnings */
   assert(after - before < 0.01);
 
   wget_cond_destroy(&fired_cond);
