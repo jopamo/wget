@@ -33,11 +33,15 @@
 #include "hash.h"
 #include "cookies.h"
 #include "safe_stdio.h"
-#include "http.h" /* for http_atotm */
+#include "http-header.h" /* for http_atotm */
 #include "c-strcase.h"
 #include "threading.h"
 
 #ifdef ENABLE_COOKIES
+
+/* The global cookie jar. */
+static struct cookie_jar* wget_cookie_jar;
+static bool cookies_loaded_p;
 
 /* Declarations of `struct cookie' and the most basic functions. */
 
@@ -61,25 +65,27 @@ struct cookie_jar {
   wget_mutex_t lock;
 };
 
-static void cookie_jar_lock(struct cookie_jar* jar) {
-  wget_mutex_lock(&jar->lock);
+static void cookie_jar_lock(void) {
+  wget_mutex_lock(&wget_cookie_jar->lock);
 }
 
-static void cookie_jar_unlock(struct cookie_jar* jar) {
-  wget_mutex_unlock(&jar->lock);
+static void cookie_jar_unlock(void) {
+  wget_mutex_unlock(&wget_cookie_jar->lock);
 }
 
 /* Value set by entry point functions, so that the low-level
    routines don't need to call time() all the time.  */
 static time_t cookies_now;
 
-struct cookie_jar* cookie_jar_new(void) {
+static struct cookie_jar* cookie_jar_new(void) {
   struct cookie_jar* jar = xnew(struct cookie_jar);
   jar->chains = make_nocase_string_hash_table(0);
   jar->cookie_count = 0;
   wget_mutex_init(&jar->lock);
   return jar;
 }
+
+static void cookie_jar_delete(struct cookie_jar* jar);
 
 struct cookie {
   char* domain; /* domain of the cookie */
@@ -147,17 +153,17 @@ static void delete_cookie(struct cookie* cookie) {
    all cookies from that domain.  Every new cookie is placed on the
    head of the list.  */
 
-/* Find and return a cookie in JAR whose domain, path, and attribute
+/* Find and return a cookie in the jar whose domain, path, and attribute
    name correspond to COOKIE.  If found, PREVPTR will point to the
    location of the cookie previous in chain, or NULL if the found
    cookie is the head of a chain.
 
    If no matching cookie is found, return NULL. */
 
-static struct cookie* find_matching_cookie(struct cookie_jar* jar, struct cookie* cookie, struct cookie** prevptr) {
+static struct cookie* find_matching_cookie(struct cookie* cookie, struct cookie** prevptr) {
   struct cookie *chain, *prev;
 
-  chain = hash_table_get(jar->chains, cookie->domain);
+  chain = hash_table_get(wget_cookie_jar->chains, cookie->domain);
   if (!chain)
     goto nomatch;
 
@@ -182,16 +188,16 @@ nomatch:
    The key of each chain's hash table entry is allocated only the
    first time; next hash_table_put's reuse the same key.  */
 
-static void store_cookie(struct cookie_jar* jar, struct cookie* cookie) {
+static void store_cookie(struct cookie* cookie) {
   struct cookie* chain_head;
   char* chain_key;
 
-  if (hash_table_get_pair(jar->chains, cookie->domain, &chain_key, &chain_head)) {
+  if (hash_table_get_pair(wget_cookie_jar->chains, cookie->domain, &chain_key, &chain_head)) {
     /* A chain of cookies in this domain already exists.  Check for
        duplicates -- if an extant cookie exactly matches our domain,
        port, path, and name, replace it.  */
     struct cookie* prev;
-    struct cookie* victim = find_matching_cookie(jar, cookie, &prev);
+    struct cookie* victim = find_matching_cookie(cookie, &prev);
 
     if (victim) {
       /* Remove VICTIM from the chain.  COOKIE will be placed at
@@ -207,7 +213,7 @@ static void store_cookie(struct cookie_jar* jar, struct cookie* cookie) {
         cookie->next = victim->next;
       }
       delete_cookie(victim);
-      --jar->cookie_count;
+      --wget_cookie_jar->cookie_count;
       DEBUGP(("Deleted old cookie (to be replaced.)\n"));
     }
     else
@@ -223,8 +229,8 @@ static void store_cookie(struct cookie_jar* jar, struct cookie* cookie) {
     chain_key = xstrdup(cookie->domain);
   }
 
-  hash_table_put(jar->chains, chain_key, cookie);
-  ++jar->cookie_count;
+  hash_table_put(wget_cookie_jar->chains, chain_key, cookie);
+  ++wget_cookie_jar->cookie_count;
 
   IF_DEBUG {
     time_t exptime = cookie->expiry_time;
@@ -239,14 +245,14 @@ static void store_cookie(struct cookie_jar* jar, struct cookie* cookie) {
    former corresponds to netscape cookie spec, while the latter is
    specified by rfc2109.  */
 
-static void discard_matching_cookie(struct cookie_jar* jar, struct cookie* cookie) {
+static void discard_matching_cookie(struct cookie* cookie) {
   struct cookie *prev, *victim;
 
-  if (!hash_table_count(jar->chains))
+  if (!hash_table_count(wget_cookie_jar->chains))
     /* No elements == nothing to discard. */
     return;
 
-  victim = find_matching_cookie(jar, cookie, &prev);
+  victim = find_matching_cookie(cookie, &prev);
   if (victim) {
     if (prev)
       /* Simply unchain the victim. */
@@ -257,7 +263,7 @@ static void discard_matching_cookie(struct cookie_jar* jar, struct cookie* cooki
       char* chain_key = NULL;
       int res;
 
-      res = hash_table_get_pair(jar->chains, victim->domain, &chain_key, NULL);
+      res = hash_table_get_pair(wget_cookie_jar->chains, victim->domain, &chain_key, NULL);
 
       if (res == 0) {
         logprintf(LOG_VERBOSE, _("Unable to get cookie for %s\n"), victim->domain);
@@ -265,11 +271,11 @@ static void discard_matching_cookie(struct cookie_jar* jar, struct cookie* cooki
       if (!victim->next) {
         /* VICTIM was the only cookie in the chain.  Destroy the
            chain and deallocate the chain key.  */
-        hash_table_remove(jar->chains, victim->domain);
+        hash_table_remove(wget_cookie_jar->chains, victim->domain);
         xfree(chain_key);
       }
       else
-        hash_table_put(jar->chains, chain_key, victim->next);
+        hash_table_put(wget_cookie_jar->chains, chain_key, victim->next);
     }
     delete_cookie(victim);
     DEBUGP(("Discarded old cookie.\n"));
@@ -658,13 +664,16 @@ static bool check_path_match(const char* cookie_path, const char* path) {
    cookie or discarding a matching one, or ignoring it completely, all
    depending on the contents.  */
 
-void cookie_handle_set_cookie(struct cookie_jar* jar, const char* host, int port, const char* path, const char* set_cookie) {
+void cookie_handle_set_cookie(const char* host, int port, const char* path, const char* set_cookie) {
   struct cookie* cookie;
   cookies_now = time(NULL);
   char buf[1024], *tmp;
   size_t pathlen = strlen(path);
 
-  cookie_jar_lock(jar);
+  if (!wget_cookie_jar)
+    return;
+
+  cookie_jar_lock();
 
   /* Wget's paths don't begin with '/' (blame rfc1808), but cookie
      usage assumes /-prefixed paths.  Until the rest of Wget is fixed,
@@ -721,11 +730,11 @@ void cookie_handle_set_cookie(struct cookie_jar* jar, const char* host, int port
      discarding was requested.  */
 
   if (cookie->discard_requested) {
-    discard_matching_cookie(jar, cookie);
+    discard_matching_cookie(cookie);
     goto out;
   }
 
-  store_cookie(jar, cookie);
+  store_cookie(cookie);
   if (tmp != buf)
     xfree(tmp);
   goto unlock;
@@ -736,7 +745,7 @@ out:
   if (tmp != buf)
     xfree(tmp);
 unlock:
-  cookie_jar_unlock(jar);
+  cookie_jar_unlock();
 }
 
 /* Support for sending out cookies in HTTP requests, based on
@@ -766,12 +775,12 @@ static int count_char(const char* string, char chr) {
    DEST should be large enough to accept (in the worst case) as many
    elements as there are domain components of HOST.  */
 
-static int find_chains_of_host(struct cookie_jar* jar, const char* host, struct cookie* dest[]) {
+static int find_chains_of_host(const char* host, struct cookie* dest[]) {
   int dest_count = 0;
   int passes, passcnt;
 
   /* Bail out quickly if there are no cookies in the jar.  */
-  if (!hash_table_count(jar->chains))
+  if (!hash_table_count(wget_cookie_jar->chains))
     return 0;
 
   if (numeric_address_p(host))
@@ -790,7 +799,7 @@ static int find_chains_of_host(struct cookie_jar* jar, const char* host, struct 
      fly.srk.fer.hr, first look for fly.srk.fer.hr's chain, then
      srk.fer.hr's, then fer.hr's.  */
   while (1) {
-    struct cookie* chain = hash_table_get(jar->chains, host);
+    struct cookie* chain = hash_table_get(wget_cookie_jar->chains, host);
     if (chain)
       dest[dest_count++] = chain;
     if (++passcnt >= passes)
@@ -943,7 +952,7 @@ static int goodness_comparator(const void* p1, const void* p2) {
    cookies pertain to this request, i.e. no cookie header should be
    generated, NULL is returned.  */
 
-char* cookie_header(struct cookie_jar* jar, const char* host, int port, const char* path, bool secflag) {
+char* cookie_header(const char* host, int port, const char* path, bool secflag) {
   struct cookie* chains[32];
   int chain_count;
 
@@ -954,6 +963,9 @@ char* cookie_header(struct cookie_jar* jar, const char* host, int port, const ch
   int result_size, pos;
   char pathbuf[1024];
 
+  if (!wget_cookie_jar)
+    return NULL;
+
   /* First, find the cookie chains whose domains match HOST. */
 
   /* Allocate room for find_chains_of_host to write to.  The number of
@@ -962,12 +974,12 @@ char* cookie_header(struct cookie_jar* jar, const char* host, int port, const ch
   chain_count = 1 + count_char(host, '.');
   if (chain_count > (int)countof(chains))
     return NULL;
-  cookie_jar_lock(jar);
-  chain_count = find_chains_of_host(jar, host, chains);
+  cookie_jar_lock();
+  chain_count = find_chains_of_host(host, chains);
 
   /* No cookies for this host. */
   if (chain_count <= 0) {
-    cookie_jar_unlock(jar);
+    cookie_jar_unlock();
     return NULL;
   }
 
@@ -1068,7 +1080,7 @@ char* cookie_header(struct cookie_jar* jar, const char* host, int port, const ch
 out:
   if (path != pathbuf)
     xfree(path);
-  cookie_jar_unlock(jar);
+  cookie_jar_unlock();
   return result;
 }
 
@@ -1133,7 +1145,7 @@ static int domain_port(const char* domain_b, const char* domain_e, const char** 
 
 /* Load cookies from FILE.  */
 
-void cookie_jar_load(struct cookie_jar* jar, const char* file) {
+static void cookie_jar_load(const char* file) {
   char* line = NULL;
   size_t bufsize = 0;
 
@@ -1143,7 +1155,7 @@ void cookie_jar_load(struct cookie_jar* jar, const char* file) {
     return;
   }
 
-  cookie_jar_lock(jar);
+  cookie_jar_lock();
   cookies_now = time(NULL);
 
   while (getline(&line, &bufsize, fp) > 0) {
@@ -1229,7 +1241,7 @@ void cookie_jar_load(struct cookie_jar* jar, const char* file) {
       cookie->permanent = 1;
     }
 
-    store_cookie(jar, cookie);
+    store_cookie(cookie);
 
   next:
     continue;
@@ -1238,7 +1250,7 @@ void cookie_jar_load(struct cookie_jar* jar, const char* file) {
     delete_cookie(cookie);
   }
 
-  cookie_jar_unlock(jar);
+  cookie_jar_unlock();
   xfree(line);
   if (wget_close_stream(fp) < 0)
     logprintf(LOG_NOTQUIET, _("Failed to finish reading cookies file %s: %s\n"), quote(file), strerror(errno));
@@ -1246,7 +1258,7 @@ void cookie_jar_load(struct cookie_jar* jar, const char* file) {
 
 /* Save cookies, in format described above, to FILE. */
 
-void cookie_jar_save(struct cookie_jar* jar, const char* file) {
+static void cookie_jar_save(const char* file) {
   FILE* fp;
   hash_table_iterator iter;
 
@@ -1260,12 +1272,12 @@ void cookie_jar_save(struct cookie_jar* jar, const char* file) {
     return;
   }
 
-  cookie_jar_lock(jar);
+  cookie_jar_lock();
   fputs("# HTTP Cookie File\n", fp);
   fprintf(fp, "# Generated by Wget on %s.\n", datetime_str(cookies_now));
   fputs("# Edit at your own risk.\n\n", fp);
 
-  for (hash_table_iterate(jar->chains, &iter); hash_table_iter_next(&iter);) {
+  for (hash_table_iterate(wget_cookie_jar->chains, &iter); hash_table_iter_next(&iter);) {
     const char* domain = iter.key;
     struct cookie* cookie = iter.value;
     for (; cookie; cookie = cookie->next) {
@@ -1284,7 +1296,7 @@ void cookie_jar_save(struct cookie_jar* jar, const char* file) {
     }
   }
 unlock:
-  cookie_jar_unlock(jar);
+  cookie_jar_unlock();
   if (ferror(fp))
     logprintf(LOG_NOTQUIET, _("Error writing to %s: %s\n"), quote(file), strerror(errno));
   if (wget_close_stream(fp) < 0)
@@ -1295,13 +1307,13 @@ unlock:
 
 /* Clean up cookie-related data. */
 
-void cookie_jar_delete(struct cookie_jar* jar) {
+static void cookie_jar_delete(struct cookie_jar* jar) {
   if (!jar)
     return;
 
   /* Iterate over chains (indexed by domain) and free them. */
   hash_table_iterator iter;
-  cookie_jar_lock(jar);
+  cookie_jar_lock();
   for (hash_table_iterate(jar->chains, &iter); hash_table_iter_next(&iter);) {
     struct cookie* chain = iter.value;
     xfree(iter.key);
@@ -1313,7 +1325,7 @@ void cookie_jar_delete(struct cookie_jar* jar) {
     }
   }
   hash_table_destroy(jar->chains);
-  cookie_jar_unlock(jar);
+  cookie_jar_unlock();
   wget_mutex_destroy(&jar->lock);
   xfree(jar);
 
@@ -1321,6 +1333,29 @@ void cookie_jar_delete(struct cookie_jar* jar) {
   psl_free(psl);
   psl = NULL;
 #endif
+}
+
+void cookies_init(const char* load_file) {
+  if (opt.cookies) {
+    if (!wget_cookie_jar)
+      wget_cookie_jar = cookie_jar_new();
+    if (load_file && !cookies_loaded_p) {
+      cookie_jar_load(load_file);
+      cookies_loaded_p = true;
+    }
+  }
+}
+
+void cookies_cleanup(void) {
+  if (wget_cookie_jar) {
+    cookie_jar_delete(wget_cookie_jar);
+    wget_cookie_jar = NULL;
+  }
+}
+
+void cookies_save(const char* file) {
+  if (wget_cookie_jar && file)
+    cookie_jar_save(file);
 }
 
 /* Test cases.  Currently this is only tests parse_set_cookies.  To
@@ -1403,24 +1438,12 @@ void test_cookies(void) {
 
 #else /* !ENABLE_COOKIES */
 
-struct cookie_jar* cookie_jar_new(void) {
+void cookies_init(const char* load_file WGET_ATTR_UNUSED) {}
+void cookies_cleanup(void) {}
+void cookies_save(const char* file WGET_ATTR_UNUSED) {}
+void cookie_handle_set_cookie(const char* host WGET_ATTR_UNUSED, int port WGET_ATTR_UNUSED, const char* request_path WGET_ATTR_UNUSED, const char* header WGET_ATTR_UNUSED) {}
+char* cookie_header(const char* host WGET_ATTR_UNUSED, int port WGET_ATTR_UNUSED, const char* path WGET_ATTR_UNUSED, bool secure WGET_ATTR_UNUSED) {
   return NULL;
 }
-
-void cookie_jar_delete(struct cookie_jar* jar WGET_ATTR_UNUSED) {}
-
-void cookie_handle_set_cookie(struct cookie_jar* jar WGET_ATTR_UNUSED,
-                              const char* host WGET_ATTR_UNUSED,
-                              int port WGET_ATTR_UNUSED,
-                              const char* request_path WGET_ATTR_UNUSED,
-                              const char* header WGET_ATTR_UNUSED) {}
-
-char* cookie_header(struct cookie_jar* jar WGET_ATTR_UNUSED, const char* host WGET_ATTR_UNUSED, int port WGET_ATTR_UNUSED, const char* path WGET_ATTR_UNUSED, bool secure WGET_ATTR_UNUSED) {
-  return NULL;
-}
-
-void cookie_jar_load(struct cookie_jar* jar WGET_ATTR_UNUSED, const char* file WGET_ATTR_UNUSED) {}
-
-void cookie_jar_save(struct cookie_jar* jar WGET_ATTR_UNUSED, const char* file WGET_ATTR_UNUSED) {}
 
 #endif /* ENABLE_COOKIES */
