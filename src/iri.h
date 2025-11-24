@@ -39,6 +39,7 @@ struct iri {
   char* content_encoding; /* Encoding of links inside the fetched file */
   char* orig_url;         /* */
   bool utf8_encode;       /* Will/Is the current url encoded in utf8 */
+  void* user_data;        /* User data pointer for callbacks */
 };
 
 #ifdef ENABLE_IRI
