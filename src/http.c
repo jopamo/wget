@@ -16,6 +16,10 @@
 
 #include "hash.h"
 #include "http.h"
+#include "http_body.h"
+#include "http_internal.h"
+#include "http_auth.h"
+#include "http_request.h"
 #include "hsts.h"
 #include "utils.h"
 #include "url.h"
@@ -56,10 +60,6 @@
 #endif /* def __VMS */
 
 /* Forward decls. */
-struct http_stat;
-static char* create_authorization_line(const char*, const char*, const char*, const char*, const char*, bool*, uerr_t*);
-static char* basic_authentication_encode(const char*, const char*);
-static bool known_authentication_scheme_p(const char*, const char*);
 static void ensure_extension(struct http_stat*, const char*, int*);
 #ifdef ENABLE_COOKIES
 static void load_cookies(void);
@@ -110,290 +110,6 @@ static struct cookie_jar* wget_cookie_jar;
 #define HTTP_STATUS_BAD_GATEWAY 502
 #define HTTP_STATUS_UNAVAILABLE 503
 #define HTTP_STATUS_GATEWAY_TIMEOUT 504
-
-enum rp { rel_none, rel_name, rel_value, rel_both };
-
-struct request {
-  const char* method;
-  char* arg;
-
-  struct request_header {
-    char *name, *value;
-    enum rp release_policy;
-  }* headers;
-  int hcount, hcapacity;
-};
-
-/* Create a new, empty request. Set the request's method and its
-   arguments.  METHOD should be a literal string (or it should outlive
-   the request) because it will not be freed.  ARG will be freed by
-   request_free.  */
-
-static struct request* request_new(const char* method, char* arg) {
-  struct request* req = xnew0(struct request);
-  req->hcapacity = 8;
-  req->headers = xnew_array(struct request_header, req->hcapacity);
-  req->method = method;
-  req->arg = arg;
-  return req;
-}
-
-/* Return the method string passed with the last call to
-   request_set_method.  */
-
-static const char* request_method(const struct request* req) {
-  return req->method;
-}
-
-/* Free one header according to the release policy specified with
-   request_set_header.  */
-
-static void release_header(struct request_header* hdr) {
-  switch (hdr->release_policy) {
-    case rel_none:
-      break;
-    case rel_name:
-      xfree(hdr->name);
-      break;
-    case rel_value:
-      xfree(hdr->value);
-      break;
-    case rel_both:
-      xfree(hdr->name);
-      xfree(hdr->value);
-      break;
-  }
-}
-
-/* Set the request named NAME to VALUE.  Specifically, this means that
-   a "NAME: VALUE\r\n" header line will be used in the request.  If a
-   header with the same name previously existed in the request, its
-   value will be replaced by this one.  A NULL value means do nothing.
-
-   RELEASE_POLICY determines whether NAME and VALUE should be released
-   (freed) with request_free.  Allowed values are:
-
-    - rel_none     - don't free NAME or VALUE
-    - rel_name     - free NAME when done
-    - rel_value    - free VALUE when done
-    - rel_both     - free both NAME and VALUE when done
-
-   Setting release policy is useful when arguments come from different
-   sources.  For example:
-
-     // Don't free literal strings!
-     request_set_header (req, "Pragma", "no-cache", rel_none);
-
-     // Don't free a global variable, we'll need it later.
-     request_set_header (req, "Referer", opt.referer, rel_none);
-
-     // Value freshly allocated, free it when done.
-     request_set_header (req, "Range",
-                         aprintf ("bytes=%s-", number_to_static_string (hs->restval)),
-                         rel_value);
-   */
-
-static void request_set_header(struct request* req, const char* name, const char* value, enum rp release_policy) {
-  struct request_header* hdr;
-  int i;
-
-  if (!value) {
-    /* A NULL value is a no-op; if freeing the name is requested,
-       free it now to avoid leaks.  */
-    if (release_policy == rel_name || release_policy == rel_both)
-      xfree(name);
-    return;
-  }
-
-  for (i = 0; i < req->hcount; i++) {
-    hdr = &req->headers[i];
-    if (0 == c_strcasecmp(name, hdr->name)) {
-      /* Replace existing header. */
-      release_header(hdr);
-      hdr->name = (void*)name;
-      hdr->value = (void*)value;
-      hdr->release_policy = release_policy;
-      return;
-    }
-  }
-
-  /* Install new header. */
-
-  if (req->hcount >= req->hcapacity) {
-    req->hcapacity <<= 1;
-    req->headers = xrealloc(req->headers, req->hcapacity * sizeof(*hdr));
-  }
-  hdr = &req->headers[req->hcount++];
-  hdr->name = (void*)name;
-  hdr->value = (void*)value;
-  hdr->release_policy = release_policy;
-}
-
-/* Like request_set_header, but sets the whole header line, as
-   provided by the user using the `--header' option.  For example,
-   request_set_user_header (req, "Foo: bar") works just like
-   request_set_header (req, "Foo", "bar").  */
-
-static void request_set_user_header(struct request* req, const char* header) {
-  const char *name, *p;
-
-  if (!(p = strchr(header, ':')))
-    return;
-
-  name = xstrndup(header, p - header);
-
-  ++p;
-  while (c_isspace(*p))
-    ++p;
-
-  request_set_header(req, name, p, rel_name);
-}
-
-/* Remove the header with specified name from REQ.  Returns true if
-   the header was actually removed, false otherwise.  */
-
-static bool request_remove_header(struct request* req, const char* name) {
-  int i;
-  for (i = 0; i < req->hcount; i++) {
-    struct request_header* hdr = &req->headers[i];
-    if (0 == c_strcasecmp(name, hdr->name)) {
-      release_header(hdr);
-      /* Move the remaining headers by one. */
-      if (i < req->hcount - 1)
-        memmove(hdr, hdr + 1, (req->hcount - i - 1) * sizeof(*hdr));
-      --req->hcount;
-      return true;
-    }
-  }
-  return false;
-}
-
-#define APPEND(p, str)       \
-  do {                       \
-    int A_len = strlen(str); \
-    memcpy(p, str, A_len);   \
-    p += A_len;              \
-  } while (0)
-
-/* Construct the request and write it to FD using fd_write.
-   If warc_tmp is set to a file pointer, the request string will
-   also be written to that file. */
-
-static int request_send(const struct request* req, int fd, FILE* warc_tmp) {
-  char *request_string, *p;
-  int i, size, write_error;
-
-  /* Count the request size. */
-  size = 0;
-
-  /* METHOD " " ARG " " "HTTP/1.0" "\r\n" */
-  size += strlen(req->method) + 1 + strlen(req->arg) + 1 + 8 + 2;
-
-  for (i = 0; i < req->hcount; i++) {
-    struct request_header* hdr = &req->headers[i];
-    /* NAME ": " VALUE "\r\n" */
-    size += strlen(hdr->name) + 2 + strlen(hdr->value) + 2;
-  }
-
-  /* "\r\n\0" */
-  size += 3;
-
-  p = request_string = xmalloc(size);
-
-  /* Generate the request. */
-
-  APPEND(p, req->method);
-  *p++ = ' ';
-  APPEND(p, req->arg);
-  *p++ = ' ';
-  memcpy(p, "HTTP/1.1\r\n", 10);
-  p += 10;
-
-  for (i = 0; i < req->hcount; i++) {
-    struct request_header* hdr = &req->headers[i];
-    APPEND(p, hdr->name);
-    *p++ = ':', *p++ = ' ';
-    APPEND(p, hdr->value);
-    *p++ = '\r', *p++ = '\n';
-  }
-
-  *p++ = '\r', *p++ = '\n', *p++ = '\0';
-  assert(p - request_string == size);
-
-#undef APPEND
-
-  DEBUGP(("\n---request begin---\n%s---request end---\n", request_string));
-
-  /* Send the request to the server. */
-
-  write_error = fd_write(fd, request_string, size - 1, -1);
-  if (write_error < 0)
-    logprintf(LOG_VERBOSE, _("Failed writing HTTP request: %s.\n"), fd_errstr(fd));
-  else if (warc_tmp != NULL) {
-    /* Write a copy of the data to the WARC record. */
-    int warc_tmp_written = fwrite(request_string, 1, size - 1, warc_tmp);
-    if (warc_tmp_written != size - 1)
-      write_error = -2;
-  }
-  xfree(request_string);
-  return write_error;
-}
-
-/* Release the resources used by REQ.
-   It is safe to call it with a valid pointer to a NULL pointer.
-   It is not safe to call it with an invalid or NULL pointer.  */
-
-static void request_free(struct request** req_ref) {
-  int i;
-  struct request* req = *req_ref;
-
-  if (!req)
-    return;
-
-  xfree(req->arg);
-  for (i = 0; i < req->hcount; i++)
-    release_header(&req->headers[i]);
-  xfree(req->headers);
-  xfree(req);
-  *req_ref = NULL;
-}
-
-static struct hash_table* basic_authed_hosts;
-
-/* Find out if this host has issued a Basic challenge yet; if so, give
- * it the username, password. A temporary measure until we can get
- * proper authentication in place. */
-
-static bool maybe_send_basic_creds(const char* hostname, const char* user, const char* passwd, struct request* req) {
-  bool do_challenge = false;
-
-  if (opt.auth_without_challenge) {
-    DEBUGP(("Auth-without-challenge set, sending Basic credentials.\n"));
-    do_challenge = true;
-  }
-  else if (basic_authed_hosts && hash_table_contains(basic_authed_hosts, hostname)) {
-    DEBUGP(("Found %s in basic_authed_hosts.\n", quote(hostname)));
-    do_challenge = true;
-  }
-  else {
-    DEBUGP(("Host %s has not issued a general basic challenge.\n", quote(hostname)));
-  }
-  if (do_challenge) {
-    request_set_header(req, "Authorization", basic_authentication_encode(user, passwd), rel_value);
-  }
-  return do_challenge;
-}
-
-static void register_basic_auth_host(const char* hostname) {
-  if (!basic_authed_hosts) {
-    basic_authed_hosts = make_nocase_string_hash_table(1);
-  }
-  if (!hash_table_contains(basic_authed_hosts, hostname)) {
-    hash_table_put(basic_authed_hosts, xstrdup(hostname), NULL);
-    DEBUGP(("Inserted %s into basic_authed_hosts\n", quote(hostname)));
-  }
-}
-
 /* Send the contents of FILE_NAME to SOCK.  Make sure that exactly
    PROMISED_SIZE bytes are sent over the wire -- if the file is
    longer, read only that much; if the file is shorter, report an error.
@@ -1399,51 +1115,6 @@ static bool persistent_available_p(const char* host, int port, bool ssl, bool* h
     fd = -1;                                  \
   } while (0)
 
-typedef enum {
-  ENC_INVALID = -1, /* invalid encoding */
-  ENC_NONE = 0,     /* no special encoding */
-  ENC_GZIP,         /* gzip compression */
-  ENC_DEFLATE,      /* deflate compression */
-  ENC_COMPRESS,     /* compress compression */
-  ENC_BROTLI        /* brotli compression */
-} encoding_t;
-
-struct http_stat {
-  wgint len;               /* received length */
-  wgint contlen;           /* expected length */
-  wgint restval;           /* the restart value */
-  int res;                 /* the result of last read */
-  char* rderrmsg;          /* error message from read error */
-  char* newloc;            /* new location (redirection) */
-  char* remote_time;       /* remote time-stamp string */
-  char* error;             /* textual HTTP error */
-  int statcode;            /* status code */
-  char* message;           /* status message */
-  wgint rd_size;           /* amount of data read from socket */
-  double dltime;           /* time it took to download the data */
-  const char* referer;     /* value of the referer header. */
-  char* local_file;        /* local file name. */
-  bool existence_checked;  /* true if we already checked for a file's
-                              existence after having begun to download
-                              (needed in gethttp for when connection is
-                              interrupted/restarted. */
-  bool timestamp_checked;  /* true if pre-download time-stamping checks
-                            * have already been performed */
-  char* orig_file_name;    /* name of file to compare for time-stamping
-                            * (might be != local_file if -K is set) */
-  wgint orig_file_size;    /* size of file to compare for time-stamping */
-  time_t orig_file_tstamp; /* time-stamp of file to compare for
-                            * time-stamping */
-#ifdef HAVE_METALINK
-  metalink_t* metalink;
-#endif
-
-  encoding_t local_encoding;  /* the encoding of the local file */
-  encoding_t remote_encoding; /* the encoding of the remote file */
-
-  bool temporary; /* downloading a temporary file */
-};
-
 static void free_hstat(struct http_stat* hs) {
   xfree(hs->newloc);
   xfree(hs->remote_time);
@@ -1469,132 +1140,6 @@ File %s already there; not retrieving.\n\n"),
   /* If its suffix is "html" or "htm" or similar, assume text/html.  */
   if (has_html_suffix_p(filename))
     *dt |= TEXTHTML;
-}
-
-/* Download the response body from the socket and writes it to
-   an output file.  The headers have already been read from the
-   socket.  If WARC is enabled, the response body will also be
-   written to a WARC response record.
-
-   hs, contlen, contrange, chunked_transfer_encoding and url are
-   parameters from the gethttp method.  fp is a pointer to the
-   output file.
-
-   url, warc_timestamp_str, warc_request_uuid, warc_ip, type
-   and statcode will be saved in the headers of the WARC record.
-   The head parameter contains the HTTP headers of the response.
-
-   If fp is NULL and WARC is enabled, the response body will be
-   written only to the WARC file.  If WARC is disabled and fp
-   is a file pointer, the data will be written to the file.
-   If fp is a file pointer and WARC is enabled, the body will
-   be written to both destinations.
-
-   Returns the error code.   */
-static int read_response_body(struct http_stat* hs,
-                              int sock,
-                              FILE* fp,
-                              wgint contlen,
-                              wgint contrange,
-                              bool chunked_transfer_encoding,
-                              char* url,
-                              char* warc_timestamp_str,
-                              char* warc_request_uuid,
-                              ip_address* warc_ip,
-                              char* type,
-                              int statcode,
-                              char* head) {
-  int warc_payload_offset = 0;
-  FILE* warc_tmp = NULL;
-  int warcerr = 0;
-  int flags = 0;
-
-  if (opt.warc_filename != NULL) {
-    /* Open a temporary file where we can write the response before we
-       add it to the WARC record.  */
-    warc_tmp = warc_tempfile();
-    if (warc_tmp == NULL)
-      warcerr = WARC_TMP_FOPENERR;
-
-    if (warcerr == 0) {
-      /* We should keep the response headers for the WARC record.  */
-      int head_len = strlen(head);
-      int warc_tmp_written = fwrite(head, 1, head_len, warc_tmp);
-      if (warc_tmp_written != head_len)
-        warcerr = WARC_TMP_FWRITEERR;
-      warc_payload_offset = head_len;
-    }
-
-    if (warcerr != 0) {
-      if (warc_tmp != NULL)
-        fclose(warc_tmp);
-      return warcerr;
-    }
-  }
-
-  if (fp != NULL) {
-    /* This confuses the timestamping code that checks for file size.
-       #### The timestamping code should be smarter about file size.  */
-    if (opt.save_headers && hs->restval == 0)
-      fwrite(head, 1, strlen(head), fp);
-  }
-
-  /* Read the response body.  */
-  if (contlen != -1)
-    /* If content-length is present, read that much; otherwise, read
-       until EOF.  The HTTP spec doesn't require the server to
-       actually close the connection when it's done sending data. */
-    flags |= rb_read_exactly;
-  if (fp != NULL && hs->restval > 0 && contrange == 0)
-    /* If the server ignored our range request, instruct fd_read_body
-       to skip the first RESTVAL bytes of body.  */
-    flags |= rb_skip_startpos;
-  if (chunked_transfer_encoding)
-    flags |= rb_chunked_transfer_encoding;
-
-  if (hs->remote_encoding == ENC_GZIP)
-    flags |= rb_compressed_gzip;
-
-  hs->len = hs->restval;
-  hs->rd_size = 0;
-  /* Download the response body and write it to fp.
-     If we are working on a WARC file, we simultaneously write the
-     response body to warc_tmp.  */
-  hs->res = fd_read_body(hs->local_file, sock, fp, contlen != -1 ? contlen : 0, hs->restval, &hs->rd_size, &hs->len, &hs->dltime, flags, warc_tmp);
-  if (hs->res >= 0) {
-    if (warc_tmp != NULL) {
-      /* Create a response record and write it to the WARC file.
-         Note: per the WARC standard, the request and response should share
-         the same date header.  We re-use the timestamp of the request.
-         The response record should also refer to the uuid of the request.  */
-      bool r = warc_write_response_record(url, warc_timestamp_str, warc_request_uuid, warc_ip, warc_tmp, warc_payload_offset, type, statcode, hs->newloc);
-
-      /* warc_write_response_record has closed warc_tmp. */
-
-      if (!r)
-        return WARC_ERR;
-    }
-
-    return RETRFINISHED;
-  }
-
-  if (warc_tmp != NULL)
-    fclose(warc_tmp);
-
-  if (hs->res == -2) {
-    /* Error while writing to fd. */
-    return FWRITEERR;
-  }
-  else if (hs->res == -3) {
-    /* Error while writing to warc_tmp. */
-    return WARC_TMP_FWRITEERR;
-  }
-  else {
-    /* A read error! */
-    xfree(hs->rderrmsg);
-    hs->rderrmsg = xstrdup(fd_errstr(sock));
-    return RETRFINISHED;
-  }
 }
 
 #define BEGINS_WITH(line, string_constant) (!c_strncasecmp(line, string_constant, sizeof(string_constant) - 1) && (c_isspace(line[sizeof(string_constant) - 1]) || !line[sizeof(string_constant) - 1]))
@@ -1768,7 +1313,7 @@ static struct request* initialize_request(const struct url* u,
   if (*user && *passwd && (!u->user || opt.auth_without_challenge)) {
     /* If this is a host for which we've already received a Basic
      * challenge, we'll go ahead and send Basic authentication creds. */
-    *basic_auth_finished = maybe_send_basic_creds(u->host, *user, *passwd, req);
+    *basic_auth_finished = http_auth_maybe_send_basic_creds(u->host, *user, *passwd, req);
   }
 
   if (inhibit_keep_alive)
@@ -1820,7 +1365,7 @@ static void initialize_proxy_configuration(const struct url* u, struct request* 
   /* #### This does not appear right.  Can't the proxy request,
      say, `Digest' authentication?  */
   if (proxy_user && proxy_passwd)
-    *proxyauth = basic_authentication_encode(proxy_user, proxy_passwd);
+    *proxyauth = http_auth_basic_encode(proxy_user, proxy_passwd);
 
   /* Proxy authorization over SSL is handled below. */
 #ifdef HAVE_SSL
@@ -2153,7 +1698,7 @@ check_auth(const struct url* u, char* user, char* passwd, struct response* resp,
 
         DEBUGP(("Auth scheme found '%.*s'\n", (int)(name.e - name.b), name.b));
 
-        if (known_authentication_scheme_p(name.b, name.e)) {
+        if (http_auth_known_scheme(name.b, name.e)) {
           if (BEGINS_WITH(name.b, "NTLM")) {
             ntlm = name.b;
             break; /* this is the most secure challenge, stop here */
@@ -2194,7 +1739,11 @@ check_auth(const struct url* u, char* user, char* passwd, struct response* resp,
 
       logprintf(LOG_NOTQUIET, _("Authentication selected: %s\n"), www_authenticate);
 
-      value = create_authorization_line(www_authenticate, user, passwd, request_method(req), pth, &auth_finished, auth_stat);
+      struct ntlmdata* ntlm_state = NULL;
+#ifdef ENABLE_NTLM
+      ntlm_state = &pconn.ntlm;
+#endif
+      value = http_auth_create_authorization_line(www_authenticate, user, passwd, request_method(req), pth, ntlm_state, &auth_finished, auth_stat);
 
       auth_err = *auth_stat;
       xfree(auth_stat);
@@ -2207,7 +1756,7 @@ check_auth(const struct url* u, char* user, char* passwd, struct response* resp,
         else if (!u->user && BEGINS_WITH(www_authenticate, "Basic")) {
           /* Need to register this host as using basic auth,
            * so we automatically send creds next time. */
-          register_basic_auth_host(u->host);
+          http_auth_register_basic_challenge(u->host);
         }
 
         *retry = true;
@@ -3182,7 +2731,7 @@ retry_with_auth:
     if (warc_enabled) {
       int _err;
       type = resp_header_strdup(resp, "Content-Type");
-      _err = read_response_body(hs, sock, NULL, contlen, 0, chunked_transfer_encoding, u->url, warc_timestamp_str, warc_request_uuid, warc_ip, type, statcode, head);
+      _err = http_body_download(hs, sock, NULL, contlen, 0, chunked_transfer_encoding, u->url, warc_timestamp_str, warc_request_uuid, warc_ip, type, statcode, head);
       xfree(type);
 
       if (_err != RETRFINISHED || hs->res < 0) {
@@ -3415,7 +2964,7 @@ retry_with_auth:
       /* Normally we are not interested in the response body of a redirect.
          But if we are writing a WARC file we are: we like to keep everything.  */
       if (warc_enabled) {
-        int _err = read_response_body(hs, sock, NULL, contlen, 0, chunked_transfer_encoding, u->url, warc_timestamp_str, warc_request_uuid, warc_ip, type, statcode, head);
+        int _err = http_body_download(hs, sock, NULL, contlen, 0, chunked_transfer_encoding, u->url, warc_timestamp_str, warc_request_uuid, warc_ip, type, statcode, head);
 
         if (_err != RETRFINISHED || hs->res < 0) {
           CLOSE_INVALIDATE(sock);
@@ -3622,7 +3171,7 @@ retry_with_auth:
     /* Normally we are not interested in the response body of a error responses.
        But if we are writing a WARC file we are: we like to keep everything.  */
     if (warc_enabled) {
-      int _err = read_response_body(hs, sock, NULL, contlen, 0, chunked_transfer_encoding, u->url, warc_timestamp_str, warc_request_uuid, warc_ip, type, statcode, head);
+      int _err = http_body_download(hs, sock, NULL, contlen, 0, chunked_transfer_encoding, u->url, warc_timestamp_str, warc_request_uuid, warc_ip, type, statcode, head);
 
       if (_err != RETRFINISHED || hs->res < 0) {
         CLOSE_INVALIDATE(sock);
@@ -3679,7 +3228,7 @@ retry_with_auth:
   }
 #endif
 
-  err = read_response_body(hs, sock, fp, contlen, contrange, chunked_transfer_encoding, u->url, warc_timestamp_str, warc_request_uuid, warc_ip, type, statcode, head);
+  err = http_body_download(hs, sock, fp, contlen, contrange, chunked_transfer_encoding, u->url, warc_timestamp_str, warc_request_uuid, warc_ip, type, statcode, head);
 
   if (hs->res >= 0)
     CLOSE_FINISH(sock);
@@ -4380,286 +3929,6 @@ time_t http_atotm(const char* time_string) {
   return ret;
 }
 
-/* Authorization support: We support three authorization schemes:
-
-   * `Basic' scheme, consisting of base64-ing USER:PASSWORD string;
-
-   * `Digest' scheme, added by Junio Hamano <junio@twinsun.com>,
-   consisting of answering to the server's challenge with the proper
-   MD5 digests.
-
-   * `NTLM' ("NT Lan Manager") scheme, based on code written by Daniel
-   Stenberg for libcurl.  Like digest, NTLM is based on a
-   challenge-response mechanism, but unlike digest, it is non-standard
-   (authenticates TCP connections rather than requests), undocumented
-   and Microsoft-specific.  */
-
-/* Create the authentication header contents for the `Basic' scheme.
-   This is done by encoding the string "USER:PASS" to base64 and
-   prepending the string "Basic " in front of it.  */
-
-static char* basic_authentication_encode(const char* user, const char* passwd) {
-  char buf_t1[256], buf_t2[256];
-  char *t1, *t2, *ret;
-  size_t len1 = strlen(user) + 1 + strlen(passwd);
-
-  if (len1 < sizeof(buf_t1))
-    t1 = buf_t1;
-  else
-    t1 = xmalloc(len1 + 1);
-
-  if (BASE64_LENGTH(len1) < sizeof(buf_t2))
-    t2 = buf_t2;
-  else
-    t2 = xmalloc(BASE64_LENGTH(len1) + 1);
-
-  sprintf(t1, "%s:%s", user, passwd);
-  wget_base64_encode(t1, len1, t2);
-
-  ret = concat_strings("Basic ", t2, (char*)0);
-
-  if (t2 != buf_t2)
-    xfree(t2);
-
-  if (t1 != buf_t1)
-    xfree(t1);
-
-  return ret;
-}
-
-#define SKIP_WS(x)          \
-  do {                      \
-    while (c_isspace(*(x))) \
-      ++(x);                \
-  } while (0)
-
-#ifdef ENABLE_DIGEST
-/* Dump the hexadecimal representation of HASH to BUF.  HASH should be
-   an array of 16 bytes containing the hash keys, and BUF should be a
-   buffer of 33 writable characters (32 for hex digits plus one for
-   zero termination).  */
-static void dump_hash(char* buf, const unsigned char* hash) {
-  int i;
-
-  for (i = 0; i < MD5_DIGEST_SIZE; i++, hash++) {
-    *buf++ = XNUM_TO_digit(*hash >> 4);
-    *buf++ = XNUM_TO_digit(*hash & 0xf);
-  }
-  *buf = '\0';
-}
-
-/* Take the line apart to find the challenge, and compose a digest
-   authorization header.  See RFC2069 section 2.1.2.  */
-static char* digest_authentication_encode(const char* au, const char* user, const char* passwd, const char* method, const char* path, uerr_t* auth_err) {
-  static char *realm, *opaque, *nonce, *qop, *algorithm;
-  static struct {
-    const char* name;
-    char** variable;
-  } options[] = {{"realm", &realm}, {"opaque", &opaque}, {"nonce", &nonce}, {"qop", &qop}, {"algorithm", &algorithm}};
-  char cnonce[16] = "";
-  char* res = NULL;
-  int res_len;
-  size_t res_size;
-  param_token name, value;
-
-  realm = opaque = nonce = algorithm = qop = NULL;
-
-  au += 6; /* skip over `Digest' */
-  while (extract_param(&au, &name, &value, ',', NULL)) {
-    size_t i;
-    size_t namelen = name.e - name.b;
-    for (i = 0; i < countof(options); i++)
-      if (namelen == strlen(options[i].name) && 0 == strncmp(name.b, options[i].name, namelen)) {
-        *options[i].variable = strdupdelim(value.b, value.e);
-        break;
-      }
-  }
-
-  if (qop && strcmp(qop, "auth")) {
-    logprintf(LOG_NOTQUIET, _("Unsupported quality of protection '%s'.\n"), qop);
-    xfree(qop); /* force freeing mem and continue */
-  }
-  else if (algorithm && strcmp(algorithm, "MD5") && strcmp(algorithm, "MD5-sess")) {
-    logprintf(LOG_NOTQUIET, _("Unsupported algorithm '%s'.\n"), algorithm);
-    xfree(algorithm); /* force freeing mem and continue */
-  }
-
-  if (!realm || !nonce || !user || !passwd || !path || !method) {
-    *auth_err = ATTRMISSING;
-    goto cleanup;
-  }
-
-  /* Calculate the digest value.  */
-  {
-    struct md5_ctx ctx;
-    unsigned char hash[MD5_DIGEST_SIZE];
-    char a1buf[MD5_DIGEST_SIZE * 2 + 1], a2buf[MD5_DIGEST_SIZE * 2 + 1];
-    char response_digest[MD5_DIGEST_SIZE * 2 + 1];
-
-    /* A1BUF = H(user ":" realm ":" password) */
-    md5_init_ctx(&ctx);
-    md5_process_bytes((unsigned char*)user, strlen(user), &ctx);
-    md5_process_bytes((unsigned char*)":", 1, &ctx);
-    md5_process_bytes((unsigned char*)realm, strlen(realm), &ctx);
-    md5_process_bytes((unsigned char*)":", 1, &ctx);
-    md5_process_bytes((unsigned char*)passwd, strlen(passwd), &ctx);
-    md5_finish_ctx(&ctx, hash);
-
-    dump_hash(a1buf, hash);
-
-    if (algorithm && !strcmp(algorithm, "MD5-sess")) {
-      /* A1BUF = H( H(user ":" realm ":" password) ":" nonce ":" cnonce ) */
-      snprintf(cnonce, sizeof(cnonce), "%08x", (unsigned)random_number(INT_MAX));
-
-      md5_init_ctx(&ctx);
-      /* md5_process_bytes (hash, MD5_DIGEST_SIZE, &ctx); */
-      md5_process_bytes(a1buf, MD5_DIGEST_SIZE * 2, &ctx);
-      md5_process_bytes((unsigned char*)":", 1, &ctx);
-      md5_process_bytes((unsigned char*)nonce, strlen(nonce), &ctx);
-      md5_process_bytes((unsigned char*)":", 1, &ctx);
-      md5_process_bytes((unsigned char*)cnonce, strlen(cnonce), &ctx);
-      md5_finish_ctx(&ctx, hash);
-
-      dump_hash(a1buf, hash);
-    }
-
-    /* A2BUF = H(method ":" path) */
-    md5_init_ctx(&ctx);
-    md5_process_bytes((unsigned char*)method, strlen(method), &ctx);
-    md5_process_bytes((unsigned char*)":", 1, &ctx);
-    md5_process_bytes((unsigned char*)path, strlen(path), &ctx);
-    md5_finish_ctx(&ctx, hash);
-    dump_hash(a2buf, hash);
-
-    if (qop && !strcmp(qop, "auth")) {
-      /* RFC 2617 Digest Access Authentication */
-      /* generate random hex string */
-      if (!*cnonce)
-        snprintf(cnonce, sizeof(cnonce), "%08x", (unsigned)random_number(INT_MAX));
-
-      /* RESPONSE_DIGEST = H(A1BUF ":" nonce ":" noncecount ":" clientnonce ":" qop ": " A2BUF) */
-      md5_init_ctx(&ctx);
-      md5_process_bytes((unsigned char*)a1buf, MD5_DIGEST_SIZE * 2, &ctx);
-      md5_process_bytes((unsigned char*)":", 1, &ctx);
-      md5_process_bytes((unsigned char*)nonce, strlen(nonce), &ctx);
-      md5_process_bytes((unsigned char*)":", 1, &ctx);
-      md5_process_bytes((unsigned char*)"00000001", 8, &ctx); /* TODO: keep track of server nonce values */
-      md5_process_bytes((unsigned char*)":", 1, &ctx);
-      md5_process_bytes((unsigned char*)cnonce, strlen(cnonce), &ctx);
-      md5_process_bytes((unsigned char*)":", 1, &ctx);
-      md5_process_bytes((unsigned char*)qop, strlen(qop), &ctx);
-      md5_process_bytes((unsigned char*)":", 1, &ctx);
-      md5_process_bytes((unsigned char*)a2buf, MD5_DIGEST_SIZE * 2, &ctx);
-      md5_finish_ctx(&ctx, hash);
-    }
-    else {
-      /* RFC 2069 Digest Access Authentication */
-      /* RESPONSE_DIGEST = H(A1BUF ":" nonce ":" A2BUF) */
-      md5_init_ctx(&ctx);
-      md5_process_bytes((unsigned char*)a1buf, MD5_DIGEST_SIZE * 2, &ctx);
-      md5_process_bytes((unsigned char*)":", 1, &ctx);
-      md5_process_bytes((unsigned char*)nonce, strlen(nonce), &ctx);
-      md5_process_bytes((unsigned char*)":", 1, &ctx);
-      md5_process_bytes((unsigned char*)a2buf, MD5_DIGEST_SIZE * 2, &ctx);
-      md5_finish_ctx(&ctx, hash);
-    }
-
-    dump_hash(response_digest, hash);
-
-    res_size = strlen(user) + strlen(realm) + strlen(nonce) + strlen(path) + 2 * MD5_DIGEST_SIZE /*strlen (response_digest)*/
-               + (opaque ? strlen(opaque) : 0) + (algorithm ? strlen(algorithm) : 0) + (qop ? 128 : 0) + strlen(cnonce) + 128;
-
-    res = xmalloc(res_size);
-
-    if (qop && !strcmp(qop, "auth")) {
-      res_len = snprintf(res, res_size,
-                         "Digest "
-                         "username=\"%s\", realm=\"%s\", nonce=\"%s\", uri=\"%s\", response=\"%s\""
-                         ", qop=auth, nc=00000001, cnonce=\"%s\"",
-                         user, realm, nonce, path, response_digest, cnonce);
-    }
-    else {
-      res_len = snprintf(res, res_size,
-                         "Digest "
-                         "username=\"%s\", realm=\"%s\", nonce=\"%s\", uri=\"%s\", response=\"%s\"",
-                         user, realm, nonce, path, response_digest);
-    }
-
-    if (opaque) {
-      res_len += snprintf(res + res_len, res_size - res_len, ", opaque=\"%s\"", opaque);
-    }
-
-    if (algorithm) {
-      snprintf(res + res_len, res_size - res_len, ", algorithm=\"%s\"", algorithm);
-    }
-  }
-
-cleanup:
-  xfree(realm);
-  xfree(opaque);
-  xfree(nonce);
-  xfree(qop);
-  xfree(algorithm);
-
-  return res;
-}
-#endif /* ENABLE_DIGEST */
-
-/* Computing the size of a string literal must take into account that
-   value returned by sizeof includes the terminating \0.  */
-#define STRSIZE(literal) (sizeof(literal) - 1)
-
-/* Whether chars in [b, e) begin with the literal string provided as
-   first argument and are followed by whitespace or terminating \0.
-   The comparison is case-insensitive.  */
-#define STARTS(literal, b, e) \
-  ((e > b) && ((size_t)((e) - (b))) >= STRSIZE(literal) && 0 == c_strncasecmp(b, literal, STRSIZE(literal)) && ((size_t)((e) - (b)) == STRSIZE(literal) || c_isspace(b[STRSIZE(literal)])))
-
-static bool known_authentication_scheme_p(const char* hdrbeg, const char* hdrend) {
-  return STARTS("Basic", hdrbeg, hdrend)
-#ifdef ENABLE_DIGEST
-         || STARTS("Digest", hdrbeg, hdrend)
-#endif
-#ifdef ENABLE_NTLM
-         || STARTS("NTLM", hdrbeg, hdrend)
-#endif
-      ;
-}
-
-#undef STARTS
-
-/* Create the HTTP authorization request header.  When the
-   `WWW-Authenticate' response header is seen, according to the
-   authorization scheme specified in that header (`Basic' and `Digest'
-   are supported by the current implementation), produce an
-   appropriate HTTP authorization request header.  */
-static char* create_authorization_line(const char* au, const char* user, const char* passwd, const char* method, const char* path, bool* finished, uerr_t* auth_err) {
-  /* We are called only with known schemes, so we can dispatch on the
-     first letter. */
-  switch (c_toupper(*au)) {
-    case 'B': /* Basic */
-      *finished = true;
-      return basic_authentication_encode(user, passwd);
-#ifdef ENABLE_DIGEST
-    case 'D': /* Digest */
-      *finished = true;
-      return digest_authentication_encode(au, user, passwd, method, path, auth_err);
-#endif
-#ifdef ENABLE_NTLM
-    case 'N': /* NTLM */
-      if (!ntlm_input(&pconn.ntlm, au)) {
-        *finished = true;
-        return NULL;
-      }
-      return ntlm_output(&pconn.ntlm, user, passwd, finished);
-#endif
-    default:
-      /* We shouldn't get here -- this function should be only called
-         with values approved by known_authentication_scheme_p.  */
-      abort();
-  }
-}
-
 #ifdef ENABLE_COOKIES
 static void load_cookies(void) {
   if (!wget_cookie_jar)
@@ -4688,14 +3957,7 @@ void http_cleanup(void) {
   }
 #endif
 
-  if (basic_authed_hosts) {
-    hash_table_iterator iter;
-    for (hash_table_iterate(basic_authed_hosts, &iter); hash_table_iter_next(&iter);) {
-      xfree(iter.key);
-    }
-    hash_table_destroy(basic_authed_hosts);
-    basic_authed_hosts = NULL;
-  }
+  http_auth_cleanup();
 }
 #endif
 

@@ -3,8 +3,18 @@
 ## Project Structure & Module Organization
 This tree is the trimmed downloader core. All implementation and headers live under `src/`, grouped roughly by protocol (`http.c`, `ftp.c`, `warc.c`), storage helpers (`cookies.c`, `hsts.c`, `xattr.c`), and utility layers (`utils.c`, `xalloc.c`, `progress.c`). Top-level `meson.build` and `meson_options.txt` describe the build graph and feature toggles, while `src/meson.build` lists concrete sources. Policy docs are at the root (`SECURITY.md`, `checklist.md`, `COPYING`, and this file). There are no `lib/`, `gnulib`, or autotools artifacts in this snapshot—keep it that way and avoid committing Meson build directories.
 
+The HTTP client is in the middle of being split into smaller, testable modules. As of now:
+
+* `src/http_request.c` + `src/http_request.h` own request construction (method, headers, serialization).
+* `src/http_auth.c` + `src/http_auth.h` own all authentication helpers (basic/digest/NTLM glue, cached host tracking, authorization header generation).
+* `src/http_body.c` + `src/http_body.h` handle response body streaming and WARC capture.
+
+`src/http.c` still orchestrates scheduling, connection reuse, and response parsing, but new work should prefer adding focused helpers next to the peers above. The next steps in this refactor are extracting response parsing/stat tracking (future `src/http_response.c`) and retry/state machine helpers, so keep upcoming changes framed around that trajectory instead of adding more ad-hoc helpers to `http.c`.
+
 ## Architecture & Event Loop Requirements
 `checklist.md` is the authoritative contract: libev and c-ares are mandatory, sockets/DNS/timers must be nonblocking, and the architecture must scale to thousands of concurrent transfers with minimal CPU. Every new subsystem (HTTP client, recursion, metalink, cookie persistence, redirect logic) needs to expose libev watchers plus async-safe callbacks, and blocking helpers like `sleep`, synchronous DNS, or buffered stdio calls belong only on worker threads. When in doubt, re-read the “Performance / Parallelism”, “Modern HTTP/TLS”, and “Transition / Cleanup” sections of the checklist and document which boxes your change advances.
+
+See `docs/blocking-helpers.md` for the current list of legacy synchronous helpers that still need to be removed during the refactor; treat anything tagged `LEGACY_BLOCKING` as tech debt.
 
 ## Build, Test, and Development Commands
 Meson is the only supported build system here. Create a build dir with `meson setup build -Denable_debug_logging=true -Denable_xattr=true` (adjust options from `meson_options.txt` as needed), rebuild via `meson compile -C build`, and install or run with `meson install -C build` or `./build/wget --version`. `meson test -C build` currently has no suites wired up, so lean on targeted manual runs (`./build/wget https://example.org`) before proposing patches. When you add options, wire them through Meson rather than reintroducing configure scripts. Remember that checklist hard requirements (c-ares, libev, optional TLS backends, worker pools) must be detectable/configurable from Meson, so extend `meson_options.txt` and `config.h` when new capabilities require toggles.
