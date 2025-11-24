@@ -187,26 +187,3 @@ sitemap_test = executable(
 )
 
 test('sitemap_parsing', sitemap_test)
-
-if metalink_dep.found()
-  metalink_checksum_sources = files(
-    'metalink_checksum_test.c',
-    'test_stubs.c',
-    '../src/metalink_checks.c',
-    '../src/digest.c',
-    '../src/utils.c',
-    '../src/xalloc.c',
-    '../src/threading.c',
-    '../src/evloop.c',
-  )
-
-  metalink_checksum_test = executable(
-    'metalink_checksum_test',
-    metalink_checksum_sources,
-    include_directories: test_includes,
-    dependencies: [libev_dep, threads_dep, metalink_dep],
-    install: false,
-  )
-
-  test('metalink_checksums', metalink_checksum_test)
-endif

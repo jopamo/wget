@@ -227,21 +227,13 @@ static const struct {
     {"inet6only", &opt.ipv6_only, cmd_boolean},
 #endif
     {"input", &opt.input_filename, cmd_file},
-#ifdef HAVE_METALINK
-    {"inputmetalink", &opt.input_metalink, cmd_file},
-#endif
     {"iri", &opt.enable_iri, cmd_boolean},
-    {"keepbadhash", &opt.keep_badhash, cmd_boolean},
     {"keepsessioncookies", &opt.keep_session_cookies, cmd_boolean},
     {"limitrate", &opt.limit_rate, cmd_bytes},
     {"loadcookies", &opt.cookies_input, cmd_file},
     {"localencoding", &opt.locale, cmd_string},
     {"logfile", &opt.lfilename, cmd_file},
     {"maxredirect", &opt.max_redirect, cmd_number},
-#ifdef HAVE_METALINK
-    {"metalinkindex", &opt.metalink_index, cmd_number_inf},
-    {"metalinkoverhttp", &opt.metalink_over_http, cmd_boolean},
-#endif
     {"method", &opt.method, cmd_string_uppercase},
     {"mirror", NULL, cmd_spec_mirror},
     {"netrc", &opt.netrc, cmd_boolean},
@@ -259,9 +251,6 @@ static const struct {
     {"postdata", &opt.post_data, cmd_string},
     {"postfile", &opt.post_file_name, cmd_file},
     {"preferfamily", NULL, cmd_spec_prefer_family},
-#ifdef HAVE_METALINK
-    {"preferredlocation", &opt.preferred_location, cmd_string},
-#endif
 #ifdef HAVE_SSL
     {"privatekey", &opt.private_key, cmd_file},
     {"privatekeytype", &opt.private_key_type, cmd_cert_type},
@@ -374,9 +363,6 @@ void defaults(void) {
      bit pattern will be the least of the implementors' worries.  */
   xzero(opt);
 
-#ifdef HAVE_METALINK
-  opt.metalink_index = -1;
-#endif
 
   opt.cookies = true;
   opt.verbose = -1;
@@ -1717,10 +1703,6 @@ void cleanup(void) {
   xfree(opt.lfilename);
   xfree(opt.dir_prefix);
   xfree(opt.input_filename);
-#ifdef HAVE_METALINK
-  xfree(opt.input_metalink);
-  xfree(opt.preferred_location);
-#endif
   xfree(opt.output_document);
   xfree(opt.default_page);
   if (opt.regex_type == regex_type_posix) {

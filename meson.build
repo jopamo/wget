@@ -11,7 +11,6 @@ conf.set_quoted('LOCALEDIR', get_option('locale_dir'))
 conf.set_quoted('OS_TYPE', host_machine.system())
 conf.set('SIZEOF_OFF_T', cc.sizeof('off_t'))
 
-metalink_opt = get_option('metalink')
 cookies_opt = get_option('cookies')
 psl_opt = get_option('psl')
 proxies_opt = get_option('proxies')
@@ -145,22 +144,6 @@ if pcre_dep.found()
   conf.set('HAVE_LIBPCRE', 1)
 endif
 
-if metalink_opt.disabled()
-  metalink_dep = disabler()
-  gpgme_dep = disabler()
-else
-  metalink_dep = dependency('libmetalink', required: metalink_opt.enabled())
-  if metalink_dep.found()
-    conf.set('HAVE_METALINK', 1)
-    gpgme_dep = dependency('gpgme', required: false)
-    if gpgme_dep.found()
-      conf.set('HAVE_GPGME', 1)
-    endif
-  else
-    gpgme_dep = disabler()
-  endif
-endif
-
 if cc.has_header('pthread.h')
   conf.set('HAVE_PTHREAD_H', 1)
 endif
@@ -269,12 +252,6 @@ if pcre2_dep.found()
   link_components += ['libpcre2']
 elif pcre_dep.found()
   link_components += ['libpcre']
-endif
-if metalink_dep.found()
-  link_components += ['libmetalink']
-endif
-if gpgme_dep.found()
-  link_components += ['gpgme']
 endif
 link_components += ['tls=openssl']
 link_string = ''

@@ -482,8 +482,4 @@ void http_stat_release(struct http_stat* hs) {
   hs->orig_file_name = NULL;
   xfree(hs->message);
   hs->message = NULL;
-#ifdef HAVE_METALINK
-  metalink_delete(hs->metalink);
-  hs->metalink = NULL;
-#endif
 }

@@ -2,7 +2,6 @@ option('system_wgetrc', type: 'string', value: '/etc/wgetrc', description: 'Loca
 option('locale_dir', type: 'string', value: '/usr/share/locale', description: 'Locale directory path')
 option('enable_debug_logging', type: 'boolean', value: false, description: 'Build with debug logging enabled')
 option('enable_xattr', type: 'boolean', value: true, description: 'Enable extended attribute support')
-option('metalink', type: 'feature', value: 'disabled', description: 'Metalink support via libmetalink')
 option('cookies', type: 'feature', value: 'enabled', description: 'Cookie jar support')
 option('psl', type: 'feature', value: 'auto', description: 'Public Suffix List (libpsl) integration')
 option('proxies', type: 'feature', value: 'auto', description: 'Proxy discovery via libproxy')

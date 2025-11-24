@@ -34,7 +34,6 @@ sources = [
   'recur.c',
   'res.c',
   'retr.c',
-  'metalink_checks.c',
   'scheduler.c',
   'socket_opts.c',
   'signals.c',
@@ -101,12 +100,6 @@ if pcre2_dep.found()
   deps += pcre2_dep
 elif pcre_dep.found()
   deps += pcre_dep
-endif
-if metalink_dep.found()
-  deps += metalink_dep
-endif
-if gpgme_dep.found()
-  deps += gpgme_dep
 endif
 
 executable('wget', sources,

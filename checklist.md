@@ -87,7 +87,6 @@ See `docs/blocking-helpers.md` for the design notes and outstanding call sites. 
 * [ ] Improved filename/content-type detection – update `src/http.c`, `src/retr.c`, `src/utils.c`
 * [ ] Rewrite redirect logic so all retries and hops run under libev timers with no sleeps – update `src/retr.c`, `src/evloop.c`
 * [ ] Parsing and traversal of RSS and Atom feeds – update `src/recur.c`, `src/html-parse.c`
-* [ ] Metalink multi-source engine driven by libev state machines – update `src/metalink.c`, `src/transfer.c`, `src/evloop.c`
 * [ ] Extended recursion filters and smarter crawl heuristics – update `src/recur.c`, `src/spider.c`
 * [ ] Ensure recursion is fully asynchronous (no blocking parsing or sleeps) – update `src/recur.c`, `src/evloop.c`
 
@@ -99,7 +98,6 @@ See `docs/blocking-helpers.md` for the design notes and outstanding call sites. 
 * [x] Per-connection rate-limiting (optional) implemented via timers/throttling watchers
 * [ ] Strict and consistent Content-Length enforcement – update `src/http.c`, `src/retr.c`
 * [ ] Retry and reconnection logic implemented via libev timers (never blocking) – update `src/retr.c`, `src/evloop.c`, `src/transfer.c`
-* [ ] Built-in checksum verification framework – update `src/transfer.c`, `src/hash.c`, `src/metalink.c`
 * [ ] Graceful shutdown orchestrated through non-blocking teardown of all watchers – update `src/evloop.c`, `src/main.c`
 * [ ] Per-host concurrency limiting enforced via non-blocking queue + watchers – update `src/host.c`, `src/transfer.c`
 
@@ -130,7 +128,7 @@ See `docs/blocking-helpers.md` for the design notes and outstanding call sites. 
   - [ ] Move response parsing + http_stat bookkeeping into a dedicated module (new `src/http_response.c` handles header parsing; wire remaining http_stat plumbing)
   - [ ] Lift retry/state-machine glue and persistent-connection helpers out of `src/http.c` so orchestration becomes the thin layer
 * [ ] Thread-safe, lock-minimized design around libev + worker pool – update `src/threading.c`, `src/evloop.c`
-* [ ] Confirm crypto codepaths (Metalink hashes, MD5/SHA variants) use unified crypto backend or are removed – update `src/metalink.c`, `src/hash.c`, `src/openssl.c`
+* [ ] Confirm crypto codepaths (MD5/SHA variants) use a unified crypto backend – update `src/hash.c`, `src/openssl.c`
 * [ ] Replace all legacy blocking patterns (`sleep`, blocking DNS, blocking poll, blocking writes) with libev timers or non-blocking calls – update `src/retr.c`, `src/threading.c`, `src/evhelpers.c`
 * [ ] Ensure all DNS code paths are 100% async under c-ares with no fallbacks – update `src/host.c`, `src/res.c`, `src/evloop.c`
 * [ ] Verify that no file operations stall the event loop (I/O batching, worker delegation) – update `src/transfer.c`, `src/threading.c`, `src/evloop.c`
@@ -139,7 +137,7 @@ See `docs/blocking-helpers.md` for the design notes and outstanding call sites. 
 
 ## **7. Validation, observability, and release readiness**
 
-* [ ] Document a repeatable manual test matrix (libev/c-ares builds, HTTPS targets, recursion, Metalink) and capture commands/logs in `docs/testing.md` or a new `docs/test-matrix.md`.
+* [ ] Document a repeatable manual test matrix (libev/c-ares builds, HTTPS targets, recursion) and capture commands/logs in `docs/testing.md` or a new `docs/test-matrix.md`.
 * [ ] Add libev/c-ares integration tests that assert watchers fire as expected (extend `tests/evloop_transfer_test.c` or add new suites under `tests/`).
 * [ ] Instrument the scheduler with debug logging / stats hooks so we can prove per-host limits, queue depth, and throughput against the “thousands of concurrent transfers” goal (`src/scheduler.c`, `src/log.c`).
 * [ ] Automate ASan/Valgrind smoke runs in CI scripts or Meson targets to catch regressions before release (`meson.build`, `tests/` helpers).

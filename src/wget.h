@@ -242,7 +242,6 @@ enum {
   ADDED_HTML_EXTENSION = 0x0020, /* added ".html" extension due to -E */
   TEXTCSS = 0x0040,              /* document is of type text/css */
   IF_MODIFIED_SINCE = 0x0080,    /* use if-modified-since header */
-  METALINK_METADATA = 0x0100,    /* use HTTP response for Metalink metadata */
   TEXTXML = 0x0200               /* document is XML (sitemaps, feeds, etc.) */
 };
 
@@ -305,14 +304,7 @@ typedef enum {
   WARC_ERR,
   WARC_TMP_FOPENERR,
   WARC_TMP_FWRITEERR,
-  TIMECONV_ERR,
-  METALINK_PARSE_ERROR,
-  METALINK_RETR_ERROR,
-  METALINK_CHKSUM_ERROR,
-  METALINK_SIG_ERROR,
-  METALINK_MISSING_RESOURCE,
-  RETR_WITH_METALINK,
-  METALINK_SIZE_ERROR
+  TIMECONV_ERR
 } uerr_t;
 
 /* 2005-02-19 SMS.
