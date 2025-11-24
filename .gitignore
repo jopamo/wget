@@ -110,3 +110,4 @@ fuzz/Makefile.in
 # others
 /tags
 /cscope.out
+.aider*
