@@ -129,7 +129,7 @@ bool ssl_init(void) {
   /* Init the PRNG and bail out on failure */
   init_prng();
   if (RAND_status() != 1) {
-    logprintf(LOG_NOTQUIET, _("Could not seed PRNG; consider using --random-file.\n"));
+    logprintf(LOG_NOTQUIET, "%s", _("Could not seed PRNG; consider using --random-file.\n"));
     goto error;
   }
 
@@ -208,13 +208,13 @@ bool ssl_init(void) {
 
     default:
       logprintf(LOG_NOTQUIET, _("OpenSSL: unimplemented 'secure-protocol' option value %d\n"), opt.secure_protocol);
-      logprintf(LOG_NOTQUIET, _("Please report this issue to bug-wget@gnu.org\n"));
+      logprintf(LOG_NOTQUIET, "%s", _("Please report this issue to bug-wget@gnu.org\n"));
       abort();
   }
 
   if (!meth) {
     logprintf(LOG_NOTQUIET, _("Your OpenSSL version does not support option '%s'.\n"), opt.secure_protocol_name);
-    logprintf(LOG_NOTQUIET, _("Rebuilding Wget and/or OpenSSL may help in this situation.\n"));
+    logprintf(LOG_NOTQUIET, "%s", _("Rebuilding Wget and/or OpenSSL may help in this situation.\n"));
     exit(WGET_EXIT_GENERIC_ERROR);
   }
 
@@ -263,11 +263,11 @@ bool ssl_init(void) {
   if (param) {
     (void)X509_VERIFY_PARAM_set_flags(param, X509_V_FLAG_TRUSTED_FIRST | X509_V_FLAG_PARTIAL_CHAIN);
     if (SSL_CTX_set1_param(ssl_ctx, param) == 0)
-      logprintf(LOG_NOTQUIET, _("OpenSSL: Failed set trust to partial chain\n"));
+      logprintf(LOG_NOTQUIET, "%s", _("OpenSSL: Failed set trust to partial chain\n"));
     X509_VERIFY_PARAM_free(param);
   }
   else {
-    logprintf(LOG_NOTQUIET, _("OpenSSL: Failed to allocate verification param\n"));
+    logprintf(LOG_NOTQUIET, "%s", _("OpenSSL: Failed to allocate verification param\n"));
   }
 #endif
 
@@ -661,7 +661,7 @@ bool ssl_connect_wget(int fd, const char* hostname, int* continue_session) {
   /* Re-seed PRNG just before handshake */
   init_prng();
   if (RAND_status() != 1) {
-    logprintf(LOG_NOTQUIET, _("WARNING: Could not seed PRNG. Consider using --random-file.\n"));
+    logprintf(LOG_NOTQUIET, "%s", _("WARNING: Could not seed PRNG. Consider using --random-file.\n"));
     goto error;
   }
 
@@ -822,17 +822,17 @@ bool ssl_check_certificate(int fd, const char* host) {
 
     switch (vresult) {
       case X509_V_ERR_UNABLE_TO_GET_ISSUER_CERT_LOCALLY:
-        logprintf(LOG_NOTQUIET, _("  Unable to locally verify the issuer's authority.\n"));
+        logprintf(LOG_NOTQUIET, "%s", _("  Unable to locally verify the issuer's authority.\n"));
         break;
       case X509_V_ERR_SELF_SIGNED_CERT_IN_CHAIN:
       case X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT:
-        logprintf(LOG_NOTQUIET, _("  Self-signed certificate encountered.\n"));
+        logprintf(LOG_NOTQUIET, "%s", _("  Self-signed certificate encountered.\n"));
         break;
       case X509_V_ERR_CERT_NOT_YET_VALID:
-        logprintf(LOG_NOTQUIET, _("  Issued certificate not yet valid.\n"));
+        logprintf(LOG_NOTQUIET, "%s", _("  Issued certificate not yet valid.\n"));
         break;
       case X509_V_ERR_CERT_HAS_EXPIRED:
-        logprintf(LOG_NOTQUIET, _("  Issued certificate has expired.\n"));
+        logprintf(LOG_NOTQUIET, "%s", _("  Issued certificate has expired.\n"));
         break;
       default:
         logprintf(LOG_NOTQUIET, "  %s\n", X509_verify_cert_error_string(vresult));
