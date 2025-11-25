@@ -20,10 +20,6 @@
 #endif
 #endif
 
-#if ((defined _WIN32 || defined __WIN32__) && !defined __CYGWIN__)
-#define WINDOWS
-#endif
-
 /* Include these, so random files need not include them.  */
 #include "sysdep.h"
 
@@ -122,7 +118,7 @@
    don't necessarily want to tie having a 64-bit type for internal
    calculations to having LFS support.  */
 
-/* Gnulib's stdint.h module essentially guarantees the existence of int64_t.
+/* The C99 standard guarantees the existence of int64_t.
  * Thus we can simply assume it always exists and use it.
  */
 #include <stdint.h>
@@ -328,11 +324,7 @@ typedef enum {
    Note that code in various places assumes that this string is five
    characters long.
 */
-#ifdef __VMS
-#define ORIG_SFX "_orig"
-#else /* def __VMS */
 #define ORIG_SFX ".orig"
-#endif /* def __VMS [else] */
 
 /* ".NNN" unique-ifying suffix separator character for unique_name() in
    url.c (and anywhere else).  Note that on VMS, the file system's
@@ -340,9 +332,7 @@ typedef enum {
    handle, obviating this whole exercise.  Other systems may specify a
    character different from "." here, if desired.
 */
-#ifndef __VMS
 #define UNIQ_SEP '.'
-#endif /* ndef __VMS */
 
 #if defined FUZZING && defined TESTING
 /* Rename fopen so we can have our own version in fuzz/main.c to

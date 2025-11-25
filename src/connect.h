@@ -7,7 +7,7 @@
 
 #include <stdbool.h>
 
-#include "host.h" /* for definition of ip_address */
+#include "host.h" /* ip_address definition */
 
 #ifdef __cplusplus
 extern "C" {
@@ -54,7 +54,7 @@ bool socket_ip_address(int sock, ip_address* ip, int endpoint);
  */
 int socket_family(int sock, int endpoint);
 
-/* Return true if a connect error is considered retryable by wget
+/* Return true if a connect error is considered retryable by the client
  * Non retryable include protocol support errors and optionally
  * connection refused / unreachable depending on opt.retry_connrefused
  */
@@ -69,7 +69,12 @@ enum { WAIT_FOR_READ = 1, WAIT_FOR_WRITE = 2 };
  */
 int select_fd(int fd, double maxtime, int wait_for);
 
-/* Lightweight test that a socket is still open from wget's point of view
+/* Nonblocking variant used by code that manages O_NONBLOCK explicitly
+ * Semantics match select_fd, but may avoid resetting socket flags
+ */
+int select_fd_nb(int fd, double maxtime, int wait_for);
+
+/* Lightweight test that a socket is still open from the client's view
  * Returns true if the connection appears open, false if it has pending
  * data or EOF/error ready to be read
  */
@@ -77,8 +82,8 @@ bool test_socket_open(int sock);
 
 /* Transport abstraction for non plain file descriptor backends
  *
- * Implementations typically wrap an underlying socket with SSL or
- * another transport, while preserving fd based APIs for the caller
+ * Implementations typically wrap an underlying socket with TLS or
+ * another transport, while preserving fd oriented APIs for callers
  */
 struct transport_implementation {
   /* Read at most BUF_LEN bytes into BUF
@@ -102,17 +107,17 @@ struct transport_implementation {
   int (*peeker)(int fd, char* buf, int buf_len, void* ctx, double timeout);
 
   /* Optional transport specific error description
-   * Returns a borrowed pointer which must remain valid until fd_close
+   * Returns a borrowed pointer which remains valid until fd_close
    */
   const char* (*errstr)(int fd, void* ctx);
 
-  /* Close the underlying transport and release any associated state */
+  /* Close the underlying transport and release associated state */
   void (*closer)(int fd, void* ctx);
 };
 
 /* Register a transport implementation for an existing socket like FD
  * After registration, fd_read/fd_write/fd_peek/fd_errstr/fd_close will
- * dispatch to the provided implementation where possible
+ * dispatch to the provided implementation when available
  */
 void fd_register_transport(int fd, struct transport_implementation* imp, void* ctx);
 
@@ -153,12 +158,6 @@ void fd_close(int fd);
  */
 #if defined DEBUG_MALLOC || defined TESTING
 void connect_cleanup(void);
-#endif
-
-#ifdef WINDOWS
-int select_fd_nb(int fd, double maxtime, int wait_for);
-#else
-#define select_fd_nb select_fd
 #endif
 
 #ifdef __cplusplus

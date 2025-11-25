@@ -301,9 +301,6 @@ struct options {
   const char* locale;
 
   bool trustservernames;
-#ifdef __VMS
-  int ftp_stmlf; /* Force Stream_LF format for binary FTP. */
-#endif           /* def __VMS */
 
   bool useservertimestamps; /* Update downloaded files' timestamps to
                                match those on server? */
