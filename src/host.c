@@ -1,4 +1,4 @@
-/* Host name resolution and matching.
+/* Host name resolution and matching
  * src/host.c
  */
 
@@ -45,52 +45,61 @@
 extern int h_errno;
 #endif
 
-/* Lists of IP addresses that result from running DNS queries.  See
-   lookup_host for details.  */
+/* Lists of IP addresses that result from running DNS queries
+   See lookup_host for details */
 
 struct address_list {
   int count;             /* number of addresses */
   ip_address* addresses; /* pointer to the string of addresses */
 
-  int faulty;     /* number of addresses known not to work. */
+  int faulty;     /* number of addresses known not to work */
   bool connected; /* whether we were able to connect to
                      one of the addresses in the list,
-                     at least once. */
+                     at least once */
 
   int refcount; /* reference count; when it drops to
-                   0, the entry is freed. */
+                   0, the entry is freed */
 };
 
-/* Get the bounds of the address list.  */
+/* Get the bounds of the address list */
 
 void address_list_get_bounds(const struct address_list* al, int* start, int* end) {
+  assert(al);
+  assert(start);
+  assert(end);
+
   *start = al->faulty;
   *end = al->count;
 }
 
-/* Return a pointer to the address at position POS.  */
+/* Return a pointer to the address at position POS */
 
 const ip_address* address_list_address_at(const struct address_list* al, int pos) {
+  assert(al);
   assert(pos >= al->faulty && pos < al->count);
   return al->addresses + pos;
 }
 
-/* Return true if AL contains IP, false otherwise.  */
+/* Return true if AL contains IP, false otherwise */
 
 bool address_list_contains(const struct address_list* al, const ip_address* ip) {
   int i;
+
+  assert(al);
+  assert(ip);
+
   switch (ip->family) {
     case AF_INET:
       for (i = 0; i < al->count; i++) {
-        ip_address* cur = al->addresses + i;
-        if (cur->family == AF_INET && (cur->data.d4.s_addr == ip->data.d4.s_addr))
+        const ip_address* cur = al->addresses + i;
+        if (cur->family == AF_INET && cur->data.d4.s_addr == ip->data.d4.s_addr)
           return true;
       }
       return false;
 #ifdef ENABLE_IPV6
     case AF_INET6:
       for (i = 0; i < al->count; i++) {
-        ip_address* cur = al->addresses + i;
+        const ip_address* cur = al->addresses + i;
         if (cur->family == AF_INET6
 #ifdef HAVE_SOCKADDR_IN6_SCOPE_ID
             && cur->ipv6_scope == ip->ipv6_scope
@@ -106,16 +115,17 @@ bool address_list_contains(const struct address_list* al, const ip_address* ip) 
 }
 
 /* Mark the INDEXth element of AL as faulty, so that the next time
-   this address list is used, the faulty element will be skipped.  */
+   this address list is used, the faulty element will be skipped */
 
 void address_list_set_faulty(struct address_list* al, int index) {
   /* We assume that the address list is traversed in order, so that a
      "faulty" attempt is always preceded with all-faulty addresses,
-     and this is how Wget uses it.  */
-  assert(index == al->faulty);
+     and this is how Wget uses it */
+  assert(al);
+
   if (index != al->faulty) {
     logprintf(LOG_ALWAYS, "index: %d\nal->faulty: %d\n", index, al->faulty);
-    logprintf(LOG_ALWAYS, _("Error in handling the address list.\n"));
+    logprintf(LOG_ALWAYS, _("Error in handling the address list\n"));
     logprintf(LOG_ALWAYS, _("Please report this issue to bug-wget@gnu.org\n"));
     abort();
   }
@@ -125,33 +135,38 @@ void address_list_set_faulty(struct address_list* al, int index) {
     /* All addresses have been proven faulty.  Since there's not much
        sense in returning the user an empty address list the next
        time, we'll rather make them all clean, so that they can be
-       retried anew.  */
+       retried anew */
     al->faulty = 0;
 }
 
-/* Set the "connected" flag to true.  This flag used by connect.c to
-   see if the host perhaps needs to be resolved again.  */
+/* Set the "connected" flag to true.  This flag is used by connect.c to
+   see if the host perhaps needs to be resolved again */
 
 void address_list_set_connected(struct address_list* al) {
+  assert(al);
   al->connected = true;
 }
 
-/* Return the value of the "connected" flag. */
+/* Return the value of the "connected" flag */
 
 bool address_list_connected_p(const struct address_list* al) {
+  assert(al);
   return al->connected;
 }
 
 #ifdef ENABLE_IPV6
 
 /* Create an address_list from the addresses in the given struct
-   addrinfo.  */
+   addrinfo */
 
 static struct address_list* address_list_from_addrinfo(const struct addrinfo* ai) {
   struct address_list* al;
   const struct addrinfo* ptr;
   int cnt;
   ip_address* ip;
+
+  if (!ai)
+    return NULL;
 
   cnt = 0;
   for (ptr = ai; ptr != NULL; ptr = ptr->ai_next)
@@ -182,27 +197,27 @@ static struct address_list* address_list_from_addrinfo(const struct addrinfo* ai
       ip->data.d4 = sin->sin_addr;
       ++ip;
     }
+
   assert(ip - al->addresses == cnt);
   return al;
 }
 
-#define IS_IPV4(addr) (((const ip_address*)addr)->family == AF_INET)
+#define IS_IPV4(addr) (((const ip_address*)(addr))->family == AF_INET)
 
 /* Compare two IP addresses by family, giving preference to the IPv4
    address (sorting it first).  In other words, return -1 if ADDR1 is
    IPv4 and ADDR2 is IPv6, +1 if ADDR1 is IPv6 and ADDR2 is IPv4, and
    0 otherwise.
-
    This is intended to be used as the comparator arg to a qsort-like
-   sorting function, which is why it accepts generic pointers.  */
+   sorting function, which is why it accepts generic pointers */
 
 static int cmp_prefer_ipv4(const void* addr1, const void* addr2) {
   return !IS_IPV4(addr1) - !IS_IPV4(addr2);
 }
 
-#define IS_IPV6(addr) (((const ip_address*)addr)->family == AF_INET6)
+#define IS_IPV6(addr) (((const ip_address*)(addr))->family == AF_INET6)
 
-/* Like the above, but give preference to the IPv6 address.  */
+/* Like the above, but give preference to the IPv6 address */
 
 static int cmp_prefer_ipv6(const void* addr1, const void* addr2) {
   return !IS_IPV6(addr1) - !IS_IPV6(addr2);
@@ -211,11 +226,15 @@ static int cmp_prefer_ipv6(const void* addr1, const void* addr2) {
 #else /* not ENABLE_IPV6 */
 
 /* Create an address_list from a NULL-terminated vector of IPv4
-   addresses.  This kind of vector is returned by gethostbyname.  */
+   addresses.  This kind of vector is returned by gethostbyname */
 
-static struct address_list* address_list_from_ipv4_addresses(char** vec) {
+static struct address_list* address_list_from_ipv4_addresses(char* const* vec) {
   int count, i;
-  struct address_list* al = xnew0(struct address_list);
+  struct address_list* al;
+
+  assert(vec);
+
+  al = xnew0(struct address_list);
 
   count = 0;
   while (vec[count])
@@ -229,7 +248,7 @@ static struct address_list* address_list_from_ipv4_addresses(char** vec) {
   for (i = 0; i < count; i++) {
     ip_address* ip = &al->addresses[i];
     ip->family = AF_INET;
-    memcpy(IP_INADDR_DATA(ip), vec[i], 4);
+    memcpy(IP_INADDR_DATA(ip), vec[i], sizeof(ip->data.d4));
   }
 
   return al;
@@ -238,24 +257,39 @@ static struct address_list* address_list_from_ipv4_addresses(char** vec) {
 #endif /* not ENABLE_IPV6 */
 
 static void address_list_delete(struct address_list* al) {
+  if (!al)
+    return;
+
   xfree(al->addresses);
+  al->addresses = NULL;
+  al->count = 0;
+  al->faulty = 0;
+  al->connected = false;
   xfree(al);
 }
 
 /* Mark the address list as being no longer in use.  This will reduce
    its reference count which will cause the list to be freed when the
-   count reaches 0.  */
+   count reaches 0 */
 
 void address_list_release(struct address_list* al) {
-  --al->refcount;
-  DEBUGP(("Releasing 0x%0*lx (new refcount %d).\n", PTR_FORMAT(al), al->refcount));
+  if (!al)
+    return;
+
   if (al->refcount <= 0) {
-    DEBUGP(("Deleting unused 0x%0*lx.\n", PTR_FORMAT(al)));
+    DEBUGP(("Ignoring release of 0x%0*lx with non-positive refcount %d\n", PTR_FORMAT(al), al->refcount));
+    return;
+  }
+
+  --al->refcount;
+  DEBUGP(("Releasing 0x%0*lx (new refcount %d)\n", PTR_FORMAT(al), al->refcount));
+  if (al->refcount <= 0) {
+    DEBUGP(("Deleting unused 0x%0*lx\n", PTR_FORMAT(al)));
     address_list_delete(al);
   }
 }
 
-/* Versions of gethostbyname and getaddrinfo that support timeout. */
+/* Versions of gethostbyname and getaddrinfo that support timeout */
 
 #ifndef ENABLE_IPV6
 
@@ -266,17 +300,24 @@ struct ghbnwt_context {
 
 static void gethostbyname_with_timeout_callback(void* arg) {
   struct ghbnwt_context* ctx = (struct ghbnwt_context*)arg;
+
+  assert(ctx);
+  assert(ctx->host_name);
+
   ctx->hptr = gethostbyname(ctx->host_name);
 }
 
 /* Just like gethostbyname, except it times out after TIMEOUT seconds.
    In case of timeout, NULL is returned and errno is set to ETIMEDOUT.
    The function makes sure that when NULL is returned for reasons
-   other than timeout, errno is reset.  */
+   other than timeout, errno is reset */
 
 static struct hostent* gethostbyname_with_timeout(const char* host_name, double timeout) {
   struct ghbnwt_context ctx;
+
   ctx.host_name = host_name;
+  ctx.hptr = NULL;
+
   if (run_with_timeout(timeout, gethostbyname_with_timeout_callback, &ctx)) {
     SET_H_ERRNO(HOST_NOT_FOUND);
     errno = ETIMEDOUT;
@@ -287,16 +328,17 @@ static struct hostent* gethostbyname_with_timeout(const char* host_name, double 
   return ctx.hptr;
 }
 
-/* Print error messages for host errors.  */
+/* Print error messages for host errors */
+
 static const char* host_errstr(int error) {
   /* Can't use switch since some of these constants can be equal,
      which makes the compiler complain about duplicate case
-     values.  */
+     values */
   if (error == HOST_NOT_FOUND || error == NO_RECOVERY || error == NO_DATA || error == NO_ADDRESS)
     return _("Unknown host");
   else if (error == TRY_AGAIN)
     /* Message modeled after what gai_strerror returns in similar
-       circumstances.  */
+       circumstances */
     return _("Temporary failure in name resolution");
   else
     return _("Unknown error");
@@ -314,19 +356,23 @@ struct gaiwt_context {
 
 static void getaddrinfo_with_timeout_callback(void* arg) {
   struct gaiwt_context* ctx = (struct gaiwt_context*)arg;
+
+  assert(ctx);
   ctx->exit_code = getaddrinfo(ctx->node, ctx->service, ctx->hints, ctx->res);
 }
 
 /* Just like getaddrinfo, except it times out after TIMEOUT seconds.
    In case of timeout, the EAI_SYSTEM error code is returned and errno
-   is set to ETIMEDOUT.  */
+   is set to ETIMEDOUT */
 
 static int getaddrinfo_with_timeout(const char* node, const char* service, const struct addrinfo* hints, struct addrinfo** res, double timeout) {
   struct gaiwt_context ctx;
+
   ctx.node = node;
   ctx.service = service;
   ctx.hints = hints;
   ctx.res = res;
+  ctx.exit_code = 0;
 
   if (run_with_timeout(timeout, getaddrinfo_with_timeout_callback, &ctx)) {
     errno = ETIMEDOUT;
@@ -339,24 +385,32 @@ static int getaddrinfo_with_timeout(const char* node, const char* service, const
 
 /* Return a textual representation of ADDR, i.e. the dotted quad for
    IPv4 addresses, and the colon-separated list of hex words (with all
-   zeros omitted, etc.) for IPv6 addresses.  */
+   zeros omitted, etc.) for IPv6 addresses */
 
 const char* print_address(const ip_address* addr) {
   static char buf[64];
 
-  if (!inet_ntop(addr->family, IP_INADDR_DATA(addr), buf, sizeof buf))
-    snprintf(buf, sizeof buf, "<error: %s>", strerror(errno));
+  if (!addr)
+    return "<error: null address>";
+
+  buf[0] = '\0';
+
+  if (!inet_ntop(addr->family, IP_INADDR_DATA(addr), buf, sizeof(buf)))
+    snprintf(buf, sizeof(buf), "<error: %s>", strerror(errno));
 
   return buf;
 }
 
 /* The following two functions were adapted from glibc's
-   implementation of inet_pton, written by Paul Vixie. */
+   implementation of inet_pton, written by Paul Vixie */
 
 static bool is_valid_ipv4_address(const char* str, const char* end) {
   bool saw_digit = false;
   int octets = 0;
   int val = 0;
+
+  if (!str || !end || str >= end)
+    return false;
 
   while (str < end) {
     int ch = *str++;
@@ -388,7 +442,7 @@ static bool is_valid_ipv4_address(const char* str, const char* end) {
 }
 
 bool is_valid_ipv6_address(const char* str, const char* end) {
-  /* Use lower-case for these to avoid clash with system headers.  */
+  /* Use lower-case for these to avoid clash with system headers */
   enum { ns_inaddrsz = 4, ns_in6addrsz = 16, ns_int16sz = 2 };
 
   const char* curtok;
@@ -397,13 +451,16 @@ bool is_valid_ipv6_address(const char* str, const char* end) {
   bool saw_xdigit;
   unsigned int val;
 
+  if (!str || !end)
+    return false;
+
   tp = 0;
   colonp = NULL;
 
   if (str == end)
     return false;
 
-  /* Leading :: requires some special handling. */
+  /* Leading :: requires some special handling */
   if (*str == ':') {
     ++str;
     if (str == end || *str != ':')
@@ -417,7 +474,7 @@ bool is_valid_ipv6_address(const char* str, const char* end) {
   while (str < end) {
     int ch = *str++;
 
-    /* if ch is a number, add it to val. */
+    /* if ch is a number, add it to val */
     if (c_isxdigit(ch)) {
       val <<= 4;
       val |= _unhex(ch);
@@ -447,7 +504,7 @@ bool is_valid_ipv6_address(const char* str, const char* end) {
     }
 
     /* if ch is a dot ... */
-    if (ch == '.' && (tp <= ns_in6addrsz - ns_inaddrsz) && is_valid_ipv4_address(curtok, end) == 1) {
+    if (ch == '.' && (tp <= ns_in6addrsz - ns_inaddrsz) && is_valid_ipv4_address(curtok, end)) {
       tp += ns_inaddrsz;
       saw_xdigit = false;
       break;
@@ -477,23 +534,35 @@ bool is_valid_ipv6_address(const char* str, const char* end) {
 /* Simple host cache, used by lookup_host to speed up resolving.  The
    cache doesn't handle TTL because Wget is a fairly short-lived
    application.  Refreshing is attempted when connect fails, though --
-   see connect_to_host.  */
+   see connect_to_host */
 
-/* Mapping between known hosts and to lists of their addresses. */
+/* Mapping between known hosts and lists of their addresses */
 static struct hash_table* host_name_addresses_map;
 static wget_mutex_t dns_cache_lock = WGET_MUTEX_INITIALIZER;
 
 /* Return the host's resolved addresses from the cache, if
-   available.  */
+   available */
 
 static struct address_list* cache_query(const char* host) {
   struct address_list* al = NULL;
 
+  if (!host)
+    return NULL;
+
   wget_mutex_lock(&dns_cache_lock);
   if (host_name_addresses_map) {
     al = hash_table_get(host_name_addresses_map, host);
-    if (al)
-      ++al->refcount;
+    if (al) {
+      if (al->refcount <= 0) {
+        DEBUGP(("Found cached entry for %s with non-positive refcount %d, dropping\n", host, al->refcount));
+        /* drop this broken entry */
+        hash_table_remove(host_name_addresses_map, host);
+        al = NULL;
+      }
+      else {
+        ++al->refcount;
+      }
+    }
   }
   wget_mutex_unlock(&dns_cache_lock);
 
@@ -504,9 +573,12 @@ static struct address_list* cache_query(const char* host) {
 }
 
 /* Cache the DNS lookup of HOST.  Subsequent invocations of
-   lookup_host will return the cached value.  */
+   lookup_host will return the cached value */
 
 static void cache_store(const char* host, struct address_list* al) {
+  if (!host || !al || al->count <= 0)
+    return;
+
   wget_mutex_lock(&dns_cache_lock);
   if (!host_name_addresses_map)
     host_name_addresses_map = make_nocase_string_hash_table(0);
@@ -524,11 +596,15 @@ static void cache_store(const char* host, struct address_list* al) {
   }
 }
 
-/* Remove HOST from the DNS cache.  Does nothing is HOST is not in
-   the cache.  */
+/* Remove HOST from the DNS cache.  Does nothing if HOST is not in
+   the cache */
 
 static void cache_remove(const char* host) {
   struct address_list* al;
+
+  if (!host)
+    return;
+
   wget_mutex_lock(&dns_cache_lock);
   if (!host_name_addresses_map) {
     wget_mutex_unlock(&dns_cache_lock);
@@ -586,7 +662,7 @@ static void ares_track_socket_state(ares_socket_t fd, int readable, int writable
   ++ares_watch_count;
 }
 
-static void ares_clear_socket_state(void) _GL_UNUSED;
+static void ares_clear_socket_state(void) WGET_ATTR_UNUSED;
 static void ares_clear_socket_state(void) {
   xfree(ares_watches);
   ares_watches = NULL;
@@ -598,6 +674,9 @@ static struct address_list* address_list_from_ares_nodes(const struct ares_addri
   const struct ares_addrinfo_node* ptr;
   ip_address* ip;
   int count = 0;
+
+  if (!nodes)
+    return NULL;
 
   for (ptr = nodes; ptr != NULL; ptr = ptr->ai_next)
     if (ptr->ai_family == AF_INET
@@ -639,8 +718,14 @@ static struct address_list* address_list_from_ares_nodes(const struct ares_addri
   return al;
 }
 
-static void wget_ares_addrinfo_callback(void* arg, int status, int timeouts _GL_UNUSED, struct ares_addrinfo* info) {
+static void wget_ares_addrinfo_callback(void* arg, int status, int timeouts WGET_ATTR_UNUSED, struct ares_addrinfo* info) {
   struct address_list** al = (struct address_list**)arg;
+
+  if (!al) {
+    if (info)
+      ares_freeaddrinfo(info);
+    return;
+  }
 
   if (!info || status != ARES_SUCCESS) {
     *al = NULL;
@@ -653,12 +738,12 @@ static void wget_ares_addrinfo_callback(void* arg, int status, int timeouts _GL_
   ares_freeaddrinfo(info);
 }
 
-static void host_ares_socket_state_cb(void* data _GL_UNUSED, ares_socket_t socket_fd, int readable, int writable) {
+static void host_ares_socket_state_cb(void* data WGET_ATTR_UNUSED, ares_socket_t socket_fd, int readable, int writable) {
   ares_track_socket_state(socket_fd, readable, writable);
 }
 
 /* Since GnuLib's select() (i.e. rpl_select()) cannot handle socket-numbers
- * returned from C-ares, we must use the original select() from Winsock.
+ * returned from C-ares, we must use the original select() from Winsock
  */
 #ifdef WINDOWS
 #undef select
@@ -667,7 +752,7 @@ static void host_ares_socket_state_cb(void* data _GL_UNUSED, ares_socket_t socke
 static void wait_ares(ares_channel channel) {
   struct ptimer* timer = NULL;
 
-  if (opt.dns_timeout)
+  if (opt.dns_timeout > 0)
     timer = ptimer_new();
 
   for (;;) {
@@ -683,7 +768,7 @@ static void wait_ares(ares_channel channel) {
     FD_ZERO(&write_fds);
 
     for (i = 0; i < ares_watch_count; ++i) {
-      struct ares_socket_watch* watch = &ares_watches[i];
+      const struct ares_socket_watch* watch = &ares_watches[i];
       if (watch->readable) {
         FD_SET(watch->fd, &read_fds);
         if ((int)watch->fd + 1 > nfds)
@@ -700,53 +785,61 @@ static void wait_ares(ares_channel channel) {
       break;
 
     if (timer) {
-      double max = opt.dns_timeout - ptimer_measure(timer);
+      double elapsed = ptimer_measure(timer);
+      double remaining = opt.dns_timeout - elapsed;
 
-      tv.tv_sec = (long)max;
-      tv.tv_usec = 1000000 * (max - (long)max);
+      if (remaining <= 0) {
+        ares_cancel(channel);
+        break;
+      }
+
+      tv.tv_sec = (long)remaining;
+      tv.tv_usec = (long)((remaining - (double)tv.tv_sec) * 1000000.0);
       tvp = ares_timeout(channel, &tv, &tv);
     }
     else
       tvp = ares_timeout(channel, NULL, &tv);
 
-    int rc = select(nfds, &read_fds, &write_fds, NULL, tvp);
+    {
+      int rc = select(nfds, &read_fds, &write_fds, NULL, tvp);
+      ares_fd_events_t* events = NULL;
+      size_t event_count = 0;
 
-    if (rc == 0) {
-      if (timer && ptimer_measure(timer) >= opt.dns_timeout) {
-        ares_cancel(channel);
+      if (rc == 0) {
+        if (timer && ptimer_measure(timer) >= opt.dns_timeout) {
+          ares_cancel(channel);
+          break;
+        }
         continue;
       }
-    }
-    else if (rc < 0) {
-      if (errno == EINTR)
-        continue;
-      break;
-    }
+      else if (rc < 0) {
+        if (errno == EINTR)
+          continue;
+        break;
+      }
 
-    ares_fd_events_t* events = NULL;
-    size_t event_count = 0;
+      if (rc > 0) {
+        events = xnew_array(ares_fd_events_t, ares_watch_count);
+        for (i = 0; i < ares_watch_count; ++i) {
+          unsigned int mask = 0;
+          const struct ares_socket_watch* watch = &ares_watches[i];
 
-    if (rc > 0) {
-      events = xnew_array(ares_fd_events_t, ares_watch_count);
-      for (i = 0; i < ares_watch_count; ++i) {
-        unsigned int mask = 0;
-        struct ares_socket_watch* watch = &ares_watches[i];
+          if (watch->readable && FD_ISSET(watch->fd, &read_fds))
+            mask |= ARES_FD_EVENT_READ;
+          if (watch->writable && FD_ISSET(watch->fd, &write_fds))
+            mask |= ARES_FD_EVENT_WRITE;
 
-        if (watch->readable && FD_ISSET(watch->fd, &read_fds))
-          mask |= ARES_FD_EVENT_READ;
-        if (watch->writable && FD_ISSET(watch->fd, &write_fds))
-          mask |= ARES_FD_EVENT_WRITE;
-
-        if (mask != 0) {
-          events[event_count].fd = watch->fd;
-          events[event_count].events = mask;
-          ++event_count;
+          if (mask != 0) {
+            events[event_count].fd = watch->fd;
+            events[event_count].events = mask;
+            ++event_count;
+          }
         }
       }
-    }
 
-    ares_process_fds(channel, events, event_count, ARES_PROCESS_FLAG_NONE);
-    xfree(events);
+      ares_process_fds(channel, events, event_count, ARES_PROCESS_FLAG_NONE);
+      xfree(events);
+    }
   }
 
   if (timer)
@@ -761,47 +854,50 @@ void host_prepare_ares_options(struct ares_options* options, int* optmask) {
   options->sock_state_cb_data = NULL;
   *optmask |= ARES_OPT_SOCK_STATE_CB;
 }
-#endif
+#endif /* HAVE_LIBCARES */
 
 /* Look up HOST in DNS and return a list of IP addresses.
-
    This function caches its result so that, if the same host is passed
    the second time, the addresses are returned without DNS lookup.
    (Use LH_REFRESH to force lookup, or set opt.dns_cache to 0 to
    globally disable caching.)
-
    The order of the returned addresses is affected by the setting of
    opt.prefer_family: if it is set to prefer_ipv4, IPv4 addresses are
    placed at the beginning; if it is prefer_ipv6, IPv6 ones are placed
    at the beginning; otherwise, the order is left intact.  The
    relative order of addresses with the same family is left
    undisturbed in either case.
-
    FLAGS can be a combination of:
-     LH_SILENT  - don't print the "resolving ... done" messages.
+     LH_SILENT  - don't print the "resolving ... done" messages
      LH_BIND    - resolve addresses for use with bind, which under
-                  IPv6 means to use AI_PASSIVE flag to getaddrinfo.
-                  Passive lookups are not cached under IPv6.
+                  IPv6 means to use AI_PASSIVE flag to getaddrinfo
+                  Passive lookups are not cached under IPv6
      LH_REFRESH - if HOST is cached, remove the entry from the cache
-                  and resolve it anew.  */
+                  and resolve it anew */
 
 struct address_list* lookup_host(const char* host, int flags) {
   struct address_list* al;
-  bool silent = !!(flags & LH_SILENT);
+  bool silent;
   bool use_cache;
   bool numeric_address = false;
-  double timeout = opt.dns_timeout;
+  double timeout;
+
+  if (!host || !*host)
+    return NULL;
+
+  silent = !!(flags & LH_SILENT);
+  timeout = opt.dns_timeout;
 
 #ifndef ENABLE_IPV6
   /* If we're not using getaddrinfo, first check if HOST specifies a
      numeric IPv4 address.  Some implementations of gethostbyname
      (e.g. the Ultrix one and possibly Winsock) don't accept
-     dotted-decimal IPv4 addresses.  */
+     dotted-decimal IPv4 addresses */
   {
     uint32_t addr_ipv4 = (uint32_t)inet_addr(host);
     if (addr_ipv4 != (uint32_t)-1) {
       /* No need to cache host->addr relation, just return the
-         address.  */
+         address */
       char* vec[2];
       vec[0] = (char*)&addr_ipv4;
       vec[1] = NULL;
@@ -813,7 +909,7 @@ struct address_list* lookup_host(const char* host, int flags) {
      already numeric, in which case there is no need to print the
      "Resolving..." output.  (This comes at no additional cost since
      the is_valid_ipv*_address are already required for
-     url_parse.)  */
+     url_parse.) */
   {
     const char* end = host + strlen(host);
     if (is_valid_ipv4_address(host, end) || is_valid_ipv6_address(host, end))
@@ -822,7 +918,7 @@ struct address_list* lookup_host(const char* host, int flags) {
 #endif
 
   /* Cache is normally on, but can be turned off with --no-dns-cache.
-     Don't cache passive lookups under IPv6.  */
+     Don't cache passive lookups under IPv6 */
   use_cache = opt.dns_cache;
 #ifdef ENABLE_IPV6
   if ((flags & LH_BIND) || numeric_address)
@@ -831,7 +927,7 @@ struct address_list* lookup_host(const char* host, int flags) {
 
   /* Try to find the host in the cache so we don't need to talk to the
      resolver.  If LH_REFRESH is requested, remove HOST from the cache
-     instead.  */
+     instead */
   if (use_cache) {
     if (!(flags & LH_REFRESH)) {
       al = cache_query(host);
@@ -842,7 +938,7 @@ struct address_list* lookup_host(const char* host, int flags) {
       cache_remove(host);
   }
 
-  /* No luck with the cache; resolve HOST. */
+  /* No luck with the cache; resolve HOST */
 
   if (!silent && !numeric_address) {
     char *str = NULL, *name;
@@ -894,7 +990,7 @@ struct address_list* lookup_host(const char* host, int flags) {
     else
       /* We tried using AI_ADDRCONFIG, but removed it because: it
          misinterprets IPv6 loopbacks, it is broken on AIX 5.1, and
-         it's unneeded since we sort the addresses anyway.  */
+         it's unneeded since we sort the addresses anyway */
       hints.ai_family = AF_UNSPEC;
 
     if (flags & LH_BIND)
@@ -903,11 +999,11 @@ struct address_list* lookup_host(const char* host, int flags) {
 #ifdef AI_NUMERICHOST
     if (numeric_address) {
       /* Where available, the AI_NUMERICHOST hint can prevent costly
-         access to DNS servers.  */
+         access to DNS servers */
       hints.ai_flags |= AI_NUMERICHOST;
       timeout = 0; /* no timeout needed when "resolving"
-                               numeric hosts -- avoid setting up
-                               signal handlers and such. */
+                      numeric hosts -- avoid setting up
+                      signal handlers and such */
     }
 #endif
 
@@ -915,7 +1011,7 @@ struct address_list* lookup_host(const char* host, int flags) {
 
     if (err != 0 || res == NULL) {
       if (!silent)
-        logprintf(LOG_VERBOSE, _("failed: %s.\n"), err != EAI_SYSTEM ? gai_strerror(err) : strerror(errno));
+        logprintf(LOG_VERBOSE, _("failed: %s\n"), err != EAI_SYSTEM ? gai_strerror(err) : strerror(errno));
       return NULL;
     }
     al = address_list_from_addrinfo(res);
@@ -923,13 +1019,13 @@ struct address_list* lookup_host(const char* host, int flags) {
   }
 
   if (!al) {
-    logprintf(LOG_VERBOSE, _("failed: No IPv4/IPv6 addresses for host.\n"));
+    logprintf(LOG_VERBOSE, _("failed: No IPv4/IPv6 addresses for host\n"));
     return NULL;
   }
 
   /* Reorder addresses so that IPv4 ones (or IPv6 ones, as per
      --prefer-family) come first.  Sorting is stable so the order of
-     the addresses with the same family is undisturbed.  */
+     the addresses with the same family is undisturbed */
   if (al->count > 1 && opt.prefer_family != prefer_none)
     stable_sort(al->addresses, al->count, sizeof(ip_address), opt.prefer_family == prefer_ipv4 ? cmp_prefer_ipv4 : cmp_prefer_ipv6);
 #else /* not ENABLE_IPV6 */
@@ -953,20 +1049,20 @@ struct address_list* lookup_host(const char* host, int flags) {
     if (!hptr) {
       if (!silent) {
         if (errno != ETIMEDOUT)
-          logprintf(LOG_VERBOSE, _("failed: %s.\n"), host_errstr(h_errno));
+          logprintf(LOG_VERBOSE, _("failed: %s\n"), host_errstr(h_errno));
         else
-          logputs(LOG_VERBOSE, _("failed: timed out.\n"));
+          logputs(LOG_VERBOSE, _("failed: timed out\n"));
       }
       return NULL;
     }
-    /* Do older systems have h_addr_list?  */
+    /* Do older systems have h_addr_list? */
     al = address_list_from_ipv4_addresses(hptr->h_addr_list);
   }
 #endif /* not ENABLE_IPV6 */
 
   /* Print the addresses determined by DNS lookup, but no more than
-     three if show_all_dns_entries is not specified.  */
-  if (!silent && !numeric_address) {
+     three if show_all_dns_entries is not specified */
+  if (!silent && !numeric_address && al) {
     int i;
     int printmax = al->count;
 
@@ -983,17 +1079,20 @@ struct address_list* lookup_host(const char* host, int flags) {
     logputs(LOG_VERBOSE, "\n");
   }
 
-  /* Cache the lookup information. */
-  if (use_cache)
+  /* Cache the lookup information */
+  if (use_cache && al)
     cache_store(host, al);
 
   return al;
 }
 
 /* Determine whether a URL is acceptable to be followed, according to
-   a list of domains to accept.  */
+   a list of domains to accept */
+
 bool accept_domain(struct url* u) {
+  assert(u);
   assert(u->host != NULL);
+
   if (opt.domains) {
     if (!sufmatch((const char**)opt.domains, u->host))
       return false;
@@ -1008,10 +1107,13 @@ bool accept_domain(struct url* u) {
 /* Check whether WHAT is matched in LIST, each element of LIST being a
    pattern to match WHAT against, using backward matching (see
    match_backwards() in utils.c).
+   If an element of LIST matched, 1 is returned, 0 otherwise */
 
-   If an element of LIST matched, 1 is returned, 0 otherwise.  */
 bool sufmatch(const char** list, const char* what) {
   int i, j, k, lw;
+
+  if (!list || !what)
+    return false;
 
   lw = strlen(what);
 
@@ -1060,6 +1162,9 @@ void host_cleanup(void) {
 
 bool is_valid_ip_address(const char* name) {
   const char* endp;
+
+  if (!name || !*name)
+    return false;
 
   endp = name + strlen(name);
   if (is_valid_ipv4_address(name, endp))
