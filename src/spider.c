@@ -66,7 +66,7 @@ void print_broken_links(void) {
   int num_elems;
 
   if (!nonexisting_urls_set) {
-    logprintf(LOG_NOTQUIET, _("Found no broken links.\n\n"));
+    logprintf(LOG_NOTQUIET, "%s", _("Found no broken links.\n\n"));
     return;
   }
 
