@@ -52,7 +52,7 @@
    variables.  -- explanation partly taken from GNU make.  */
 #define N_(string) string
 
-#if HAVE_WCWIDTH && HAVE_MBTOWC
+#if HAVE_WCWIDTH && HAVE_MBTOWC && HAVE_LIBUNISTRING
 #define USE_NLS_PROGRESS_BAR 1
 #else
 /* Just to be a little paranoid about it. */

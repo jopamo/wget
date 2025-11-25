@@ -105,6 +105,9 @@ if pcre2_dep.found()
 elif pcre_dep.found()
   deps += pcre_dep
 endif
+if libunistring_dep.found()
+  deps += libunistring_dep
+endif
 
 executable('wget', sources,
   include_directories: incdirs,

@@ -55,6 +55,12 @@ libcares_dep = dependency('libcares', required: true)
 libev_dep = dependency('libev', required: true)
 uuid_dep = dependency('uuid', required: false)
 
+# Check for GNU libunistring for multi-byte character support in progress bars
+libunistring_dep = dependency('libunistring', required: false)
+if libunistring_dep.found()
+  conf.set('HAVE_LIBUNISTRING', 1)
+endif
+
 pcre2_dep = dependency('libpcre2-8', required: false)
 pcre_dep = dependency('libpcre', required: not pcre2_dep.found())
 
