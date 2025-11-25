@@ -48,8 +48,7 @@ uerr_t ftp_response(int fd, char** ret_line) {
       DEBUGP(("%s\n", quotearg_style(escape_quoting_style, line)));
 
     /* Robustly check for a 3-digit code followed by a space */
-    if (line[0] && line[1] && line[2] && line[3] &&
-        c_isdigit(line[0]) && c_isdigit(line[1]) && c_isdigit(line[2]) && line[3] == ' ') {
+    if (line[0] && line[1] && line[2] && line[3] && c_isdigit(line[0]) && c_isdigit(line[1]) && c_isdigit(line[2]) && line[3] == ' ') {
       *ret_line = line;
       return FTPOK;
     }
@@ -92,11 +91,7 @@ static char* ftp_request(const char* command, const char* value) {
         if (*p == '\r' || *p == '\n')
           *p = ' ';
 
-      DEBUGP(("\nDetected newlines in %s \"%s\"; changing to %s \"%s\"\n",
-              command,
-              quotearg_style(escape_quoting_style, value),
-              command,
-              quotearg_style(escape_quoting_style, defanged)));
+      DEBUGP(("\nDetected newlines in %s \"%s\"; changing to %s \"%s\"\n", command, quotearg_style(escape_quoting_style, value), command, quotearg_style(escape_quoting_style, defanged)));
 
       /* Make VALUE point to the defanged copy of the string */
       value = defanged;
@@ -235,14 +230,7 @@ static void ip_address_to_port_repr(const ip_address* addr, int port, char* buf,
   assert(buflen >= 6 * 4);
 
   ptr = IP_INADDR_DATA(addr);
-  snprintf(buf, buflen,
-           "%d,%d,%d,%d,%d,%d",
-           ptr[0],
-           ptr[1],
-           ptr[2],
-           ptr[3],
-           (port & 0xff00) >> 8,
-           port & 0xff);
+  snprintf(buf, buflen, "%d,%d,%d,%d,%d,%d", ptr[0], ptr[1], ptr[2], ptr[3], (port & 0xff00) >> 8, port & 0xff);
   buf[buflen - 1] = '\0';
 }
 
@@ -315,44 +303,11 @@ static void ip_address_to_lprt_repr(const ip_address* addr, int port, char* buf,
   /* Construct the argument of LPRT (of the form af,n,h1,h2,...,hn,p1,p2) */
   switch (addr->family) {
     case AF_INET:
-      snprintf(buf,
-               buflen,
-               "%d,%d,%d,%d,%d,%d,%d,%d,%d",
-               4,
-               4,
-               ptr[0],
-               ptr[1],
-               ptr[2],
-               ptr[3],
-               2,
-               (port & 0xff00) >> 8,
-               port & 0xff);
+      snprintf(buf, buflen, "%d,%d,%d,%d,%d,%d,%d,%d,%d", 4, 4, ptr[0], ptr[1], ptr[2], ptr[3], 2, (port & 0xff00) >> 8, port & 0xff);
       break;
     case AF_INET6:
-      snprintf(buf,
-               buflen,
-               "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
-               6,
-               16,
-               ptr[0],
-               ptr[1],
-               ptr[2],
-               ptr[3],
-               ptr[4],
-               ptr[5],
-               ptr[6],
-               ptr[7],
-               ptr[8],
-               ptr[9],
-               ptr[10],
-               ptr[11],
-               ptr[12],
-               ptr[13],
-               ptr[14],
-               ptr[15],
-               2,
-               (port & 0xff00) >> 8,
-               port & 0xff);
+      snprintf(buf, buflen, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d", 6, 16, ptr[0], ptr[1], ptr[2], ptr[3], ptr[4], ptr[5], ptr[6], ptr[7], ptr[8], ptr[9], ptr[10], ptr[11],
+               ptr[12], ptr[13], ptr[14], ptr[15], 2, (port & 0xff00) >> 8, port & 0xff);
       break;
     default:
       abort();

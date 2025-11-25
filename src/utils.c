@@ -45,20 +45,20 @@
 #endif
 
 #ifndef HAVE_SIGSETJMP
-# ifdef sigsetjmp
-#  define HAVE_SIGSETJMP
-# endif
+#ifdef sigsetjmp
+#define HAVE_SIGSETJMP
+#endif
 #endif
 
 #if defined HAVE_SIGSETJMP || defined HAVE_SIGBLOCK
-# define USE_SIGNAL_TIMEOUT
+#define USE_SIGNAL_TIMEOUT
 #endif
 
 #ifdef HAVE_MMAP
 #include <sys/mman.h>
-# ifndef MAP_FAILED
-#  define MAP_FAILED ((void*)-1)
-# endif
+#ifndef MAP_FAILED
+#define MAP_FAILED ((void*)-1)
+#endif
 #endif
 
 #include "utils.h"
@@ -81,11 +81,10 @@ _Noreturn static void memfatal(const char* context, long attempted_size) {
   log_set_save_context(false);
 
   if (attempted_size == UNKNOWN_ATTEMPTED_SIZE) {
-    logprintf(LOG_ALWAYS, _("%s: %s: Failed to allocate enough memory; memory exhausted\n"),
-              exec_name, context);
-  } else {
-    logprintf(LOG_ALWAYS, _("%s: %s: Failed to allocate %ld bytes; memory exhausted\n"),
-              exec_name, context, attempted_size);
+    logprintf(LOG_ALWAYS, _("%s: %s: Failed to allocate enough memory; memory exhausted\n"), exec_name, context);
+  }
+  else {
+    logprintf(LOG_ALWAYS, _("%s: %s: Failed to allocate %ld bytes; memory exhausted\n"), exec_name, context, attempted_size);
   }
 
   exit(WGET_EXIT_GENERIC_ERROR);
@@ -102,24 +101,13 @@ _Noreturn static void memfatal(const char* context, long attempted_size) {
  * - 0x40: Uppercase letters
  * - 0x80: Digits
  */
-unsigned char char_prop[256] = {
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  2, 1, 1, 1, 16, 1, 1, 1, 1, 1, 0, 1, 1, 16, 4, 0,
-  80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 1, 1, 1, 1, 1, 1,
-  1, 80, 80, 80, 80, 80, 80, 16, 16, 16, 16, 16, 16, 16, 16, 16,
-  16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 1, 1, 1, 1, 16,
-  1, 96, 96, 96, 96, 96, 96, 32, 32, 32, 32, 32, 32, 32, 32, 32,
-  32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 1, 1, 1, 17, 8,
-  8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
-  8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
-  8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8
-};
+unsigned char char_prop[256] = {0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 0,  0,  0,  0,  0,  0,  0,  0,  0,  2,  1,  1,  1,  16,
+                                1,  1,  1,  1,  1,  0,  1,  1,  16, 4,  0,  80, 80, 80, 80, 80, 80, 80, 80, 80, 80, 1,  1, 1,  1,  1,  1,  1,  80, 80, 80, 80, 80, 80, 16, 16, 16,
+                                16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 1,  1,  1,  1,  16, 1, 96, 96, 96, 96, 96, 96, 32, 32, 32, 32, 32, 32, 32, 32,
+                                32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 1,  1,  1,  17, 8,  8,  8,  8,  8,  8,  8, 8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,
+                                8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  8,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+                                0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+                                0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 0,  0,  0,  0,  0,  0,  0,  0,  8};
 
 /*
  * Duplicate a string and convert it to lowercase.
@@ -181,7 +169,8 @@ char** sepstring(const char* s) {
       while (c_isspace(*s))
         ++s;
       p = s;
-    } else
+    }
+    else
       ++s;
   }
   res = xrealloc(res, (i + 2) * sizeof(char*));
@@ -212,7 +201,7 @@ char* aprintf(const char* fmt, ...) {
     return NULL;
   return str;
 #else
-# define FMT_MAX_LENGTH 1048576
+#define FMT_MAX_LENGTH 1048576
 
   int size = 32;
   char* str = xmalloc((size_t)size);
@@ -231,11 +220,10 @@ char* aprintf(const char* fmt, ...) {
     if (n > -1)
       size = n + 1;
     else if (size >= FMT_MAX_LENGTH) {
-      logprintf(LOG_ALWAYS,
-                _("%s: aprintf: text buffer is too big (%d bytes), aborting\n"),
-                exec_name, size);
+      logprintf(LOG_ALWAYS, _("%s: aprintf: text buffer is too big (%d bytes), aborting\n"), exec_name, size);
       abort();
-    } else {
+    }
+    else {
       size <<= 1;
     }
     str = xrealloc(str, (size_t)size);
@@ -325,7 +313,8 @@ bool fork_to_background(void) {
   if (pid < 0) {
     perror("fork");
     exit(WGET_EXIT_GENERIC_ERROR);
-  } else if (pid != 0) {
+  }
+  else if (pid != 0) {
     printf(_("Continuing in background, pid %d\n"), (int)pid);
     if (logfile_changed)
       printf(_("Output will be written to %s\n"), quote(opt.lfilename));
@@ -367,8 +356,7 @@ int remove_link(const char* file) {
     DEBUGP(("Unlinking %s (symlink)\n", file));
     err = unlink(file);
     if (err != 0)
-      logprintf(LOG_VERBOSE, _("Failed to unlink symlink %s: %s\n"),
-                quote(file), strerror(errno));
+      logprintf(LOG_VERBOSE, _("Failed to unlink symlink %s: %s\n"), quote(file), strerror(errno));
   }
   return err;
 }
@@ -413,18 +401,16 @@ bool file_exists_p(const char* filename, file_stats_t* fstats) {
     return false;
 
   errno = 0;
-  if (stat(filename, &buf) == 0 &&
-      S_ISREG(buf.st_mode) &&
-      (((S_IRUSR & buf.st_mode) && (getuid() == buf.st_uid)) ||
-       ((S_IRGRP & buf.st_mode) && is_group_member(buf.st_gid)) ||
-       (S_IROTH & buf.st_mode))) {
+  if (stat(filename, &buf) == 0 && S_ISREG(buf.st_mode) &&
+      (((S_IRUSR & buf.st_mode) && (getuid() == buf.st_uid)) || ((S_IRGRP & buf.st_mode) && is_group_member(buf.st_gid)) || (S_IROTH & buf.st_mode))) {
     if (fstats != NULL) {
       fstats->access_err = 0;
       fstats->st_ino = buf.st_ino;
       fstats->st_dev = buf.st_dev;
     }
     return true;
-  } else {
+  }
+  else {
     if (fstats != NULL)
       fstats->access_err = (errno == 0 ? EACCES : errno);
     errno = 0;
@@ -513,7 +499,8 @@ FILE* unique_create(const char* name, bool binary, char** opened_name) {
       *opened_name = NULL;
       xfree(uname);
     }
-  } else
+  }
+  else
     xfree(uname);
 
   return fp;
@@ -566,11 +553,8 @@ FILE* fopen_stat(const char* fname, const char* mode, file_stats_t* fstats) {
     return NULL;
   }
 
-  if (fstats != NULL &&
-      (fdstats.st_dev != fstats->st_dev || fdstats.st_ino != fstats->st_ino)) {
-    logprintf(LOG_NOTQUIET,
-              _("File %s changed since the last check. Security check failed\n"),
-              fname);
+  if (fstats != NULL && (fdstats.st_dev != fstats->st_dev || fdstats.st_ino != fstats->st_ino)) {
+    logprintf(LOG_NOTQUIET, _("File %s changed since the last check. Security check failed\n"), fname);
     fclose(fp);
     return NULL;
   }
@@ -584,25 +568,19 @@ int open_stat(const char* fname, int flags, mode_t mode, file_stats_t* fstats) {
 
   fd = open(fname, flags, mode);
   if (fd < 0) {
-    logprintf(LOG_NOTQUIET, _("Failed to open file %s, reason :%s\n"),
-              fname, strerror(errno));
+    logprintf(LOG_NOTQUIET, _("Failed to open file %s, reason :%s\n"), fname, strerror(errno));
     return -1;
   }
 
   memset(&fdstats, 0, sizeof(fdstats));
   if (fstat(fd, &fdstats) == -1) {
-    logprintf(LOG_NOTQUIET,
-              _("Failed to stat file %s, error: %s\n"),
-              fname, strerror(errno));
+    logprintf(LOG_NOTQUIET, _("Failed to stat file %s, error: %s\n"), fname, strerror(errno));
     close(fd);
     return -1;
   }
 
-  if (fstats != NULL &&
-      (fdstats.st_dev != fstats->st_dev || fdstats.st_ino != fstats->st_ino)) {
-    logprintf(LOG_NOTQUIET,
-              _("Trying to open file %s but it changed since last check. Security check failed\n"),
-              fname);
+  if (fstats != NULL && (fdstats.st_dev != fstats->st_dev || fdstats.st_ino != fstats->st_ino)) {
+    logprintf(LOG_NOTQUIET, _("Trying to open file %s but it changed since last check. Security check failed\n"), fname);
     close(fd);
     return -1;
   }
@@ -619,7 +597,8 @@ int make_directory(const char* directory) {
   if (len < sizeof(buf)) {
     memcpy(buf, directory, len + 1);
     dir = buf;
-  } else
+  }
+  else
     dir = xstrdup(directory);
 
   for (i = (*dir == '/'); 1; ++i) {
@@ -678,11 +657,11 @@ bool acceptable(const char* s) {
 
   if (opt.accepts) {
     if (opt.rejects)
-      return (in_acclist((const char* const*)opt.accepts, s, true) &&
-              !in_acclist((const char* const*)opt.rejects, s, true));
+      return (in_acclist((const char* const*)opt.accepts, s, true) && !in_acclist((const char* const*)opt.rejects, s, true));
     else
       return in_acclist((const char* const*)opt.accepts, s, true);
-  } else if (opt.rejects)
+  }
+  else if (opt.rejects)
     return !in_acclist((const char* const*)opt.rejects, s, true);
 
   return true;
@@ -704,7 +683,8 @@ bool subdir_p(const char* d1, const char* d2) {
   if (!opt.ignore_case) {
     for (; *d1 && *d2 && (*d1 == *d2); ++d1, ++d2)
       ;
-  } else {
+  }
+  else {
     for (; *d1 && *d2 && (c_tolower(*d1) == c_tolower(*d2)); ++d1, ++d2)
       ;
   }
@@ -714,15 +694,15 @@ bool subdir_p(const char* d1, const char* d2) {
 
 static bool dir_matches_p(const char** dirlist, const char* dir) {
   const char** x;
-  int (*matcher)(const char*, const char*, int) =
-      opt.ignore_case ? fnmatch_nocase : fnmatch;
+  int (*matcher)(const char*, const char*, int) = opt.ignore_case ? fnmatch_nocase : fnmatch;
 
   for (x = dirlist; *x; x++) {
     const char* p = *x + (**x == '/');
     if (has_wildcards_p(p)) {
       if (matcher(p, dir, FNM_PATHNAME) == 0)
         break;
-    } else {
+    }
+    else {
       if (subdir_p(p, dir))
         break;
     }
@@ -760,19 +740,18 @@ bool match_tail(const char* string, const char* tail, bool fold_case) {
 static bool in_acclist(const char* const* accepts, const char* s, bool backward) {
   for (; *accepts; accepts++) {
     if (has_wildcards_p(*accepts)) {
-      int res = opt.ignore_case
-                    ? fnmatch_nocase(*accepts, s, 0)
-                    : fnmatch(*accepts, s, 0);
+      int res = opt.ignore_case ? fnmatch_nocase(*accepts, s, 0) : fnmatch(*accepts, s, 0);
 
       if (res == 0)
         return true;
-    } else {
+    }
+    else {
       if (backward) {
         if (match_tail(s, *accepts, opt.ignore_case))
           return true;
-      } else {
-        int cmp = opt.ignore_case ? strcasecmp(s, *accepts)
-                                  : strcmp(s, *accepts);
+      }
+      else {
+        int cmp = opt.ignore_case ? strcasecmp(s, *accepts) : strcmp(s, *accepts);
         if (cmp == 0)
           return true;
       }
@@ -832,7 +811,8 @@ struct file_memory* wget_read_from_file(const char* file, bool* left_open) {
   if (HYPHENP(file)) {
     fd = fileno(stdin);
     inhibit_close = true;
-  } else
+  }
+  else
 #endif
     fd = open(file, O_RDONLY);
 
@@ -850,9 +830,7 @@ struct file_memory* wget_read_from_file(const char* file, bool* left_open) {
       goto mmap_lose;
     fm->length = buf.st_size;
 
-    fm->content = mmap(NULL, fm->length,
-                       PROT_READ | PROT_WRITE,
-                       MAP_PRIVATE, fd, 0);
+    fm->content = mmap(NULL, fm->length, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
     if (fm->content == (char*)MAP_FAILED)
       goto mmap_lose;
     if (!inhibit_close)
@@ -880,15 +858,18 @@ mmap_lose:
     nread = read(fd, fm->content + fm->length, (size_t)(size - fm->length));
     if (nread > 0) {
       fm->length += nread;
-    } else if (nread < 0) {
+    }
+    else if (nread < 0) {
       if (errno == EAGAIN) {
         if (left_open)
           *left_open = true;
         break;
-      } else {
+      }
+      else {
         goto lose;
       }
-    } else {
+    }
+    else {
       if (left_open)
         *left_open = false;
       break;
@@ -916,7 +897,8 @@ void wget_read_file_free(struct file_memory* fm) {
 #ifdef HAVE_MMAP
   if (fm->mmap_p) {
     munmap(fm->content, fm->length);
-  } else
+  }
+  else
 #endif
   {
     xfree(fm->content);
@@ -970,7 +952,8 @@ char** vec_append(char** vec, const char* str) {
     for (cnt = 0; vec[cnt]; cnt++)
       ;
     ++cnt;
-  } else
+  }
+  else
     cnt = 1;
 
   vec = xrealloc(vec, (size_t)(cnt + 1) * sizeof(char*));
@@ -1096,7 +1079,7 @@ const char* with_thousand_seps(wgint n) {
  * @return: Pointer to static buffer containing formatted string
  */
 char* human_readable(wgint n, const int acc, const int decimals) {
-  static char powers[] = { 'K', 'M', 'G', 'T', 'P', 'E' };
+  static char powers[] = {'K', 'M', 'G', 'T', 'P', 'E'};
   static char buf[8];
   size_t i;
 
@@ -1108,8 +1091,7 @@ char* human_readable(wgint n, const int acc, const int decimals) {
   for (i = 0; i < countof(powers); i++) {
     if ((n / 1024) < 1024 || i == countof(powers) - 1) {
       double val = n / 1024.0;
-      snprintf(buf, sizeof(buf), "%.*f%c",
-               val < acc ? decimals : 0, val, powers[i]);
+      snprintf(buf, sizeof(buf), "%.*f%c", val < acc ? decimals : 0, val, powers[i]);
       return buf;
     }
     n /= 1024;
@@ -1315,17 +1297,15 @@ double random_float(void) {
   }
   return drand48();
 #else
-  return (random_number(10000) / 10000.0 +
-          random_number(10000) / (10000.0 * 10000.0) +
-          random_number(10000) / (10000.0 * 10000.0 * 10000.0) +
+  return (random_number(10000) / 10000.0 + random_number(10000) / (10000.0 * 10000.0) + random_number(10000) / (10000.0 * 10000.0 * 10000.0) +
           random_number(10000) / (10000.0 * 10000.0 * 10000.0 * 10000.0));
 #endif
 }
 
 #ifdef USE_SIGNAL_TIMEOUT
 
-# ifdef HAVE_SIGSETJMP
-#  define SETJMP(env) sigsetjmp(env, 1)
+#ifdef HAVE_SIGSETJMP
+#define SETJMP(env) sigsetjmp(env, 1)
 
 static sigjmp_buf run_with_timeout_env;
 
@@ -1333,8 +1313,8 @@ _Noreturn static void abort_run_with_timeout(int sig WGET_ATTR_UNUSED) {
   assert(sig == SIGALRM);
   siglongjmp(run_with_timeout_env, -1);
 }
-# else
-#  define SETJMP(env) setjmp(env)
+#else
+#define SETJMP(env) setjmp(env)
 
 static jmp_buf run_with_timeout_env;
 
@@ -1348,7 +1328,7 @@ _Noreturn static void abort_run_with_timeout(int sig WGET_ATTR_UNUSED) {
 
   longjmp(run_with_timeout_env, -1);
 }
-# endif
+#endif
 
 static void alarm_set(double timeout) {
 #ifdef ITIMER_REAL
@@ -1449,12 +1429,8 @@ void xsleep(double seconds) {
  * @return: Length of encoded string (excluding null terminator)
  */
 size_t wget_base64_encode(const void* data, size_t length, char* dest) {
-  static const char tbl[64] = {
-    'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P',
-    'Q','R','S','T','U','V','W','X','Y','Z','a','b','c','d','e','f',
-    'g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v',
-    'w','x','y','z','0','1','2','3','4','5','6','7','8','9','+','/'
-  };
+  static const char tbl[64] = {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f',
+                               'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '/'};
 
   const unsigned char* s = data;
   const unsigned char* end = (const unsigned char*)data + length - 2;
@@ -1502,21 +1478,10 @@ size_t wget_base64_encode(const void* data, size_t length, char* dest) {
  * @return: Number of bytes decoded, or -1 on error
  */
 ssize_t wget_base64_decode(const char* base64, void* dest, size_t size) {
-  static const signed char base64_char_to_value[128] = {
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-    -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
-    -1,-1,-1,62,-1,-1,-1,63,52,53,
-    54,55,56,57,58,59,60,61,-1,-1,
-    -1,-1,-1,-1,-1, 0, 1, 2, 3, 4,
-     5, 6, 7, 8, 9,10,11,12,13,14,
-    15,16,17,18,19,20,21,22,23,24,
-    25,-1,-1,-1,-1,-1,-1,26,27,28,
-    29,30,31,32,33,34,35,36,37,38,
-    39,40,41,42,43,44,45,46,47,48,
-    49,50,51,-1,-1,-1,-1,-1
-  };
+  static const signed char base64_char_to_value[128] = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+                                                        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 62, -1, -1, -1, 63, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, -1, -1, -1, -1, -1, -1,
+                                                        -1, 0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, -1, -1, -1, -1, -1,
+                                                        -1, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, -1, -1, -1, -1, -1};
 #define BASE64_CHAR_TO_VALUE(c) ((int)base64_char_to_value[c])
 #define IS_BASE64(c) ((IS_ASCII(c) && BASE64_CHAR_TO_VALUE(c) >= 0) || (c) == '=')
 
@@ -1598,12 +1563,9 @@ ssize_t wget_base64_decode(const char* base64, void* dest, size_t size) {
 void* compile_pcre2_regex(const char* str) {
   int errornumber;
   PCRE2_SIZE erroroffset;
-  pcre2_code* regex =
-      pcre2_compile((PCRE2_SPTR)str, PCRE2_ZERO_TERMINATED, 0,
-                    &errornumber, &erroroffset, NULL);
+  pcre2_code* regex = pcre2_compile((PCRE2_SPTR)str, PCRE2_ZERO_TERMINATED, 0, &errornumber, &erroroffset, NULL);
   if (!regex)
-    fprintf(stderr, _("Invalid regular expression %s, PCRE2 error %d\n"),
-            quote(str), errornumber);
+    fprintf(stderr, _("Invalid regular expression %s, PCRE2 error %d\n"), quote(str), errornumber);
   return regex;
 }
 #endif
@@ -1614,8 +1576,7 @@ void* compile_pcre_regex(const char* str) {
   int erroffset;
   pcre* regex = pcre_compile(str, 0, &errbuf, &erroffset, 0);
   if (!regex)
-    fprintf(stderr, _("Invalid regular expression %s, %s\n"),
-            quote(str), errbuf);
+    fprintf(stderr, _("Invalid regular expression %s, %s\n"), quote(str), errbuf);
   return regex;
 }
 #endif
@@ -1630,8 +1591,7 @@ void* compile_posix_regex(const char* str) {
     size_t errbuf_size = regerror(errcode, regex, NULL, 0);
     char* errbuf = xmalloc(errbuf_size);
     regerror(errcode, regex, errbuf, errbuf_size);
-    fprintf(stderr, _("Invalid regular expression %s, %s\n"),
-            quote(str), errbuf);
+    fprintf(stderr, _("Invalid regular expression %s, %s\n"), quote(str), errbuf);
     xfree(errbuf);
     xfree(regex);
     return NULL;
@@ -1648,15 +1608,14 @@ bool match_pcre2_regex(const void* regex, const char* str) {
   match_data = pcre2_match_data_create_from_pattern(regex, NULL);
 
   if (match_data) {
-    rc = pcre2_match(regex, (PCRE2_SPTR)str, strlen(str),
-                     0, 0, match_data, NULL);
+    rc = pcre2_match(regex, (PCRE2_SPTR)str, strlen(str), 0, 0, match_data, NULL);
     pcre2_match_data_free(match_data);
-  } else
+  }
+  else
     rc = PCRE2_ERROR_NOMEMORY;
 
   if (rc < 0 && rc != PCRE2_ERROR_NOMATCH)
-    logprintf(LOG_VERBOSE,
-              _("Error while matching %s: %d\n"), quote(str), rc);
+    logprintf(LOG_VERBOSE, _("Error while matching %s: %d\n"), quote(str), rc);
 
   return rc >= 0;
 }
@@ -1669,15 +1628,14 @@ bool match_pcre_regex(const void* regex, const char* str) {
   size_t l = strlen(str);
   int ovector[OVECCOUNT];
 
-  int rc = pcre_exec((const pcre*)regex, 0, str, (int)l,
-                     0, 0, ovector, OVECCOUNT);
+  int rc = pcre_exec((const pcre*)regex, 0, str, (int)l, 0, 0, ovector, OVECCOUNT);
   if (rc == PCRE_ERROR_NOMATCH)
     return false;
   else if (rc < 0) {
-    logprintf(LOG_VERBOSE,
-              _("Error while matching %s: %d\n"), quote(str), rc);
+    logprintf(LOG_VERBOSE, _("Error while matching %s: %d\n"), quote(str), rc);
     return false;
-  } else
+  }
+  else
     return true;
 }
 
@@ -1694,16 +1652,13 @@ bool match_posix_regex(const void* regex, const char* str) {
     size_t errbuf_size = regerror(rc, opt.acceptregex, NULL, 0);
     char* errbuf = xmalloc(errbuf_size);
     regerror(rc, opt.acceptregex, errbuf, errbuf_size);
-    logprintf(LOG_VERBOSE,
-              _("Error while matching %s: %d\n"), quote(str), rc);
+    logprintf(LOG_VERBOSE, _("Error while matching %s: %d\n"), quote(str), rc);
     xfree(errbuf);
     return false;
   }
 }
 
-static void mergesort_internal(void* base, void* temp, size_t size,
-                               size_t from, size_t to,
-                               int (*cmpfun)(const void*, const void*)) {
+static void mergesort_internal(void* base, void* temp, size_t size, size_t from, size_t to, int (*cmpfun)(const void*, const void*)) {
 #define ELT(array, pos) ((char*)(array) + (pos) * (size))
   if (from < to) {
     size_t i, j, k;
@@ -1728,8 +1683,7 @@ static void mergesort_internal(void* base, void* temp, size_t size,
 #undef ELT
 }
 
-void stable_sort(void* base, size_t nmemb, size_t size,
-                 int (*cmpfun)(const void*, const void*)) {
+void stable_sort(void* base, size_t nmemb, size_t size, int (*cmpfun)(const void*, const void*)) {
   if (nmemb > 1 && size > 1) {
     void* temp = xmalloc(nmemb * size);
     mergesort_internal(base, temp, size, 0, nmemb - 1, cmpfun);
@@ -1810,9 +1764,7 @@ void wg_hex_to_string(char* str_buffer, const char* hex_buffer, size_t hex_len) 
 
 #ifdef HAVE_SSL
 
-static bool wg_pubkey_pem_to_der(const char* pem,
-                                 unsigned char** der,
-                                 size_t* der_len) {
+static bool wg_pubkey_pem_to_der(const char* pem, unsigned char** der, size_t* der_len) {
   char *stripped_pem, *begin_pos, *end_pos;
   size_t pem_count, stripped_pem_count = 0, pem_len;
   ssize_t size;
@@ -1852,12 +1804,12 @@ static bool wg_pubkey_pem_to_der(const char* pem,
 
   base64data = xmalloc(BASE64_LENGTH(stripped_pem_count));
 
-  size = wget_base64_decode(stripped_pem, base64data,
-                            BASE64_LENGTH(stripped_pem_count));
+  size = wget_base64_decode(stripped_pem, base64data, BASE64_LENGTH(stripped_pem_count));
 
   if (size < 0) {
     xfree(base64data);
-  } else {
+  }
+  else {
     *der = base64data;
     *der_len = (size_t)size;
   }
@@ -1866,9 +1818,7 @@ static bool wg_pubkey_pem_to_der(const char* pem,
   return *der_len > 0;
 }
 
-bool wg_pin_peer_pubkey(const char* pinnedpubkey,
-                        const char* pubkey,
-                        size_t pubkeylen) {
+bool wg_pin_peer_pubkey(const char* pinnedpubkey, const char* pubkey, size_t pubkeylen) {
   struct file_memory* fm;
   unsigned char *buf = NULL, *pem_ptr = NULL;
   size_t size, pem_len;
@@ -1901,21 +1851,16 @@ bool wg_pin_peer_pubkey(const char* pinnedpubkey,
       if (end_pos)
         end_pos[0] = '\0';
 
-      decoded_hash_length = wget_base64_decode(begin_pos + 8,
-                                               expectedsha256sumdigest,
-                                               SHA256_DIGEST_SIZE);
+      decoded_hash_length = wget_base64_decode(begin_pos + 8, expectedsha256sumdigest, SHA256_DIGEST_SIZE);
 
       if (SHA256_DIGEST_SIZE == decoded_hash_length) {
-        if (!memcmp(sha256sumdigest, expectedsha256sumdigest,
-                    SHA256_DIGEST_SIZE)) {
+        if (!memcmp(sha256sumdigest, expectedsha256sumdigest, SHA256_DIGEST_SIZE)) {
           result = true;
           break;
         }
-      } else {
-        logprintf(LOG_VERBOSE,
-                  _("Skipping key with wrong size (%d/%d): %s\n"),
-                  (int)((strlen(begin_pos + 8) * 3) / 4),
-                  SHA256_DIGEST_SIZE, quote(begin_pos + 8));
+      }
+      else {
+        logprintf(LOG_VERBOSE, _("Skipping key with wrong size (%d/%d): %s\n"), (int)((strlen(begin_pos + 8) * 3) / 4), SHA256_DIGEST_SIZE, quote(begin_pos + 8));
       }
 
       if (end_pos) {
@@ -1977,9 +1922,9 @@ const char* test_subdir_p(void) {
     const char* d2;
     bool result;
   } test_array[] = {
-    { "/somedir",    "/somedir",    true  },
-    { "/somedir",    "/somedir/d2", true  },
-    { "/somedir/d1", "/somedir",    false },
+      {"/somedir", "/somedir", true},
+      {"/somedir", "/somedir/d2", true},
+      {"/somedir/d1", "/somedir", false},
   };
   unsigned i;
 
@@ -1997,21 +1942,21 @@ const char* test_dir_matches_p(void) {
     const char* dir;
     bool result;
   } test_array[] = {
-    { { "/somedir", "/someotherdir", NULL }, "somedir",         true  },
-    { { "/somedir", "/someotherdir", NULL }, "anotherdir",      false },
-    { { "/somedir", "/*otherdir",    NULL }, "anotherdir",      true  },
-    { { "/somedir/d1", "/someotherdir", NULL }, "somedir/d1",   true  },
-    { { "*/*d1", "/someotherdir", NULL },     "somedir/d1",     true  },
-    { { "/somedir/d1", "/someotherdir", NULL }, "d1",           false },
-    { { "!COMPLETE", NULL, NULL },            "!COMPLETE",      true  },
-    { { "*COMPLETE", NULL, NULL },            "!COMPLETE",      true  },
-    { { "*/!COMPLETE", NULL, NULL },          "foo/!COMPLETE",  true  },
-    { { "*COMPLETE", NULL, NULL },            "foo/!COMPLETE",  false },
-    { { "*/*COMPLETE", NULL, NULL },          "foo/!COMPLETE",  true  },
-    { { "/dir with spaces", NULL, NULL },     "dir with spaces", true },
-    { { "/dir*with*spaces", NULL, NULL },     "dir with spaces", true },
-    { { "/Tmp/has", NULL, NULL },             "/Tmp/has space", false },
-    { { "/Tmp/has", NULL, NULL },             "/Tmp/has,comma", false },
+      {{"/somedir", "/someotherdir", NULL}, "somedir", true},
+      {{"/somedir", "/someotherdir", NULL}, "anotherdir", false},
+      {{"/somedir", "/*otherdir", NULL}, "anotherdir", true},
+      {{"/somedir/d1", "/someotherdir", NULL}, "somedir/d1", true},
+      {{"*/*d1", "/someotherdir", NULL}, "somedir/d1", true},
+      {{"/somedir/d1", "/someotherdir", NULL}, "d1", false},
+      {{"!COMPLETE", NULL, NULL}, "!COMPLETE", true},
+      {{"*COMPLETE", NULL, NULL}, "!COMPLETE", true},
+      {{"*/!COMPLETE", NULL, NULL}, "foo/!COMPLETE", true},
+      {{"*COMPLETE", NULL, NULL}, "foo/!COMPLETE", false},
+      {{"*/*COMPLETE", NULL, NULL}, "foo/!COMPLETE", true},
+      {{"/dir with spaces", NULL, NULL}, "dir with spaces", true},
+      {{"/dir*with*spaces", NULL, NULL}, "dir with spaces", true},
+      {{"/Tmp/has", NULL, NULL}, "/Tmp/has space", false},
+      {{"/Tmp/has", NULL, NULL}, "/Tmp/has,comma", false},
   };
   unsigned i;
 

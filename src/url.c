@@ -26,12 +26,7 @@
 #include "../tests/unit-tests.h"
 #endif
 
-enum {
-  scm_disabled = 1,
-  scm_has_params = 2,
-  scm_has_query = 4,
-  scm_has_fragment = 8
-};
+enum { scm_disabled = 1, scm_has_params = 2, scm_has_query = 4, scm_has_fragment = 8 };
 
 struct scheme_data {
   const char* name;
@@ -40,59 +35,35 @@ struct scheme_data {
   int flags;
 };
 
-static struct scheme_data supported_schemes[] = {
-  { "http", "http://",  DEFAULT_HTTP_PORT, scm_has_query | scm_has_fragment },
+static struct scheme_data supported_schemes[] = {{"http", "http://", DEFAULT_HTTP_PORT, scm_has_query | scm_has_fragment},
 #ifdef HAVE_SSL
-  { "https", "https://", DEFAULT_HTTPS_PORT, scm_has_query | scm_has_fragment },
+                                                 {"https", "https://", DEFAULT_HTTPS_PORT, scm_has_query | scm_has_fragment},
 #endif
-  { "ftp", "ftp://", DEFAULT_FTP_PORT, scm_has_params | scm_has_fragment },
+                                                 {"ftp", "ftp://", DEFAULT_FTP_PORT, scm_has_params | scm_has_fragment},
 #ifdef HAVE_SSL
-  { "ftps", "ftps://", DEFAULT_FTP_PORT, scm_has_params | scm_has_fragment },
+                                                 {"ftps", "ftps://", DEFAULT_FTP_PORT, scm_has_params | scm_has_fragment},
 #endif
-  { NULL, NULL, -1, 0 }
-};
+                                                 {NULL, NULL, -1, 0}};
 
 static bool path_simplify(enum url_scheme, char*);
 
-enum {
-  urlchr_reserved = 1,
-  urlchr_unsafe = 2
-};
+enum { urlchr_reserved = 1, urlchr_unsafe = 2 };
 
 #define urlchr_test(c, mask) (urlchr_table[(unsigned char)(c)] & (mask))
 #define URL_RESERVED_CHAR(c) urlchr_test(c, urlchr_reserved)
-#define URL_UNSAFE_CHAR(c)   urlchr_test(c, urlchr_unsafe)
+#define URL_UNSAFE_CHAR(c) urlchr_test(c, urlchr_unsafe)
 
-#define R  urlchr_reserved
-#define U  urlchr_unsafe
+#define R urlchr_reserved
+#define U urlchr_unsafe
 #define RU (R | U)
 
 static const unsigned char urlchr_table[256] = {
-  U,  U, U,  U,  U, U,  U, U,
-  U,  U, U,  U,  U, U,  U, U,
-  U,  U, U,  U,  U, U,  U, U,
-  U,  U, U,  U,  U, U,  U, U,
-  U,  0, U,  RU, R, U,  R, 0,
-  0,  0, 0,  R,  R, 0,  0, R,
-  0,  0, 0,  0,  0, 0,  0, 0,
-  0,  0, RU, R,  U, R,  U, R,
-  RU, 0, 0,  0,  0, 0,  0, 0,
-  0,  0, 0,  0,  0, 0,  0, 0,
-  0,  0, 0,  0,  0, 0,  0, 0,
-  0,  0, 0,  RU, U, RU, U, 0,
-  U,  0, 0,  0,  0, 0,  0, 0,
-  0,  0, 0,  0,  0, 0,  0, 0,
-  0,  0, 0,  0,  0, 0,  0, 0,
-  0,  0, 0,  U,  U, U,  0, U,
+    U,  U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U,  U, U,  U, U, U, 0, U, RU, R, U, R, 0, 0, 0, 0, R, R, 0, 0, R, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, RU, R, U, R, U, R,
+    RU, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, RU, U, RU, U, 0, U, 0, 0, 0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,  U, U, U, 0, U,
 
-  U,  U, U,  U,  U, U,  U, U, U, U, U, U, U, U, U, U,
-  U,  U, U,  U,  U, U,  U, U, U, U, U, U, U, U, U, U,
-  U,  U, U,  U,  U, U,  U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U,
+    U,  U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U,  U, U,  U, U, U, U, U, U,  U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U,  U, U, U,
 
-  U,  U, U,  U,  U, U,  U, U, U, U, U, U, U, U, U, U,
-  U,  U, U,  U,  U, U,  U, U, U, U, U, U, U, U, U, U,
-  U,  U, U,  U,  U, U,  U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U
-};
+    U,  U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U,  U, U,  U, U, U, U, U, U,  U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U,  U, U, U};
 #undef R
 #undef U
 #undef RU
@@ -105,7 +76,8 @@ static void url_unescape_1(char* s, unsigned char mask) {
     if (*h != '%') {
     copychar:
       *t = *h;
-    } else {
+    }
+    else {
       unsigned char c;
 
       if (!h[1] || !h[2] || !(c_isxdigit(h[1]) && c_isxdigit(h[2])))
@@ -155,7 +127,8 @@ static char* url_escape_1(const char* s, unsigned char mask, bool allow_passthro
       *p2++ = '%';
       *p2++ = XNUM_TO_DIGIT(c >> 4);
       *p2++ = XNUM_TO_DIGIT(c & 0xf);
-    } else {
+    }
+    else {
       *p2++ = *p1++;
     }
   }
@@ -182,7 +155,8 @@ static inline bool char_needs_escaping(const char* p) {
     if (c_isxdigit(*(p + 1)) && c_isxdigit(*(p + 2)))
       return false;
     return true;
-  } else if (URL_UNSAFE_CHAR(*p) && !URL_RESERVED_CHAR(*p)) {
+  }
+  else if (URL_UNSAFE_CHAR(*p) && !URL_RESERVED_CHAR(*p)) {
     return true;
   }
   return false;
@@ -215,7 +189,8 @@ static char* reencode_escapes(const char* s) {
       *p2++ = '%';
       *p2++ = XNUM_TO_DIGIT(c >> 4);
       *p2++ = XNUM_TO_DIGIT(c & 0xf);
-    } else {
+    }
+    else {
       *p2++ = *p1++;
     }
   }
@@ -313,7 +288,8 @@ static bool parse_credentials(const char* beg, const char* end, char** user, cha
     *passwd = strdupdelim(colon + 1, end);
     userend = colon;
     url_unescape(*passwd);
-  } else {
+  }
+  else {
     *passwd = NULL;
     userend = end;
   }
@@ -400,19 +376,17 @@ enum {
   PE_INVALID_IPV6_ADDRESS
 };
 
-static const char* parse_errors[] = {
-  [PE_NO_ERROR]                 = N_("No error"),
-  [PE_UNSUPPORTED_SCHEME]       = N_("Unsupported scheme"),
-  [PE_UNSUPPORTED_SCHEME_HTTPS] = N_("HTTPS support not compiled in"),
-  [PE_UNSUPPORTED_SCHEME_FTPS]  = N_("FTPS support not compiled in"),
-  [PE_MISSING_SCHEME]           = N_("Scheme missing"),
-  [PE_INVALID_HOST_NAME]        = N_("Invalid host name"),
-  [PE_BAD_PORT_NUMBER]          = N_("Bad port number"),
-  [PE_INVALID_USER_NAME]        = N_("Invalid user name"),
-  [PE_UNTERMINATED_IPV6_ADDRESS]= N_("Unterminated IPv6 numeric address"),
-  [PE_IPV6_NOT_SUPPORTED]       = N_("IPv6 addresses not supported"),
-  [PE_INVALID_IPV6_ADDRESS]     = N_("Invalid IPv6 numeric address")
-};
+static const char* parse_errors[] = {[PE_NO_ERROR] = N_("No error"),
+                                     [PE_UNSUPPORTED_SCHEME] = N_("Unsupported scheme"),
+                                     [PE_UNSUPPORTED_SCHEME_HTTPS] = N_("HTTPS support not compiled in"),
+                                     [PE_UNSUPPORTED_SCHEME_FTPS] = N_("FTPS support not compiled in"),
+                                     [PE_MISSING_SCHEME] = N_("Scheme missing"),
+                                     [PE_INVALID_HOST_NAME] = N_("Invalid host name"),
+                                     [PE_BAD_PORT_NUMBER] = N_("Bad port number"),
+                                     [PE_INVALID_USER_NAME] = N_("Invalid user name"),
+                                     [PE_UNTERMINATED_IPV6_ADDRESS] = N_("Unterminated IPv6 numeric address"),
+                                     [PE_IPV6_NOT_SUPPORTED] = N_("IPv6 addresses not supported"),
+                                     [PE_INVALID_IPV6_ADDRESS] = N_("Invalid IPv6 numeric address")};
 
 struct url* url_parse(const char* url, int* error, struct iri* iri, bool percent_encode) {
   struct url* u;
@@ -516,7 +490,8 @@ struct url* url_parse(const char* url, int* error, struct iri* iri, bool percent
       error_code = PE_INVALID_HOST_NAME;
       goto error;
     }
-  } else {
+  }
+  else {
     p = strpbrk_or_eos(p, seps);
     host_e = p;
   }
@@ -625,7 +600,8 @@ struct url* url_parse(const char* url, int* error, struct iri* iri, bool percent
 
     if (url_encoded != url)
       xfree(url_encoded);
-  } else {
+  }
+  else {
     if (url_encoded == url)
       u->url = xstrdup(url);
     else
@@ -656,7 +632,8 @@ static void split_path(const char* path, char** dir, char** file) {
   if (!last_slash) {
     *dir = xstrdup("");
     *file = xstrdup(path);
-  } else {
+  }
+  else {
     *dir = strdupdelim(path, last_slash);
     *file = xstrdup(last_slash + 1);
   }
@@ -669,7 +646,7 @@ static int full_path_length(const struct url* url) {
 
 #define FROB(el) \
   if (url->el)   \
-    len += 1 + (int)strlen(url->el)
+  len += 1 + (int)strlen(url->el)
 
   FROB(path);
   FROB(params);
@@ -681,15 +658,15 @@ static int full_path_length(const struct url* url) {
 }
 
 static void full_path_write(const struct url* url, char* where) {
-#define FROB(el, chr)                \
-  do {                               \
-    char* f_el = url->el;            \
-    if (f_el) {                      \
-      int l = (int)strlen(f_el);     \
-      *where++ = (chr);              \
-      memcpy(where, f_el, (size_t)l);\
-      where += l;                    \
-    }                                \
+#define FROB(el, chr)                 \
+  do {                                \
+    char* f_el = url->el;             \
+    if (f_el) {                       \
+      int l = (int)strlen(f_el);      \
+      *where++ = (chr);               \
+      memcpy(where, f_el, (size_t)l); \
+      where += l;                     \
+    }                                 \
   } while (0)
 
   FROB(path, '/');
@@ -718,7 +695,8 @@ static void unescape_single_char(char* str, char chr) {
     if (h[0] == '%' && h[1] == c1 && h[2] == c2) {
       *t = chr;
       h += 2;
-    } else {
+    }
+    else {
       *t = *h;
     }
   }
@@ -817,7 +795,8 @@ int mkalldirs(const char* path) {
     if (S_ISDIR(st.st_mode)) {
       xfree(t);
       return 0;
-    } else {
+    }
+    else {
       DEBUGP(("Removing %s because of directory danger!\n", t));
       if (unlink(t))
         logprintf(LOG_NOTQUIET, "Failed to unlink %s (%d): %s\n", t, errno, strerror(errno));
@@ -836,10 +815,10 @@ struct growable {
   int tail;
 };
 
-#define GROW(g, append_size)                                         \
-  do {                                                               \
-    struct growable* G_ = (g);                                       \
-    DO_REALLOC(G_->base, G_->size, G_->tail + (append_size), char);  \
+#define GROW(g, append_size)                                        \
+  do {                                                              \
+    struct growable* G_ = (g);                                      \
+    DO_REALLOC(G_->base, G_->size, G_->tail + (append_size), char); \
   } while (0)
 
 #define TAIL(r) ((r)->base + (r)->tail)
@@ -874,10 +853,7 @@ static void append_string(const char* str, struct growable* dest) {
 
 /* Linux/Unix only filename character handling */
 
-enum {
-  filechr_not_unix = 1,
-  filechr_control = 2
-};
+enum { filechr_not_unix = 1, filechr_control = 2 };
 
 static bool file_char_needs_escape(unsigned char c, int mask) {
   if (opt.restrict_files_nonascii && !c_isascii(c))
@@ -955,7 +931,8 @@ static void append_uri_pathel(const char* b, const char* e, bool escaped, struct
 
   if (!quoted) {
     memcpy(TAIL(dest), b, (size_t)outlen);
-  } else {
+  }
+  else {
     char* q = TAIL(dest);
     int i;
 
@@ -965,9 +942,11 @@ static void append_uri_pathel(const char* b, const char* e, bool escaped, struct
           break;
         *q++ = *p;
         i++;
-      } else if (i + 3 > outlen) {
+      }
+      else if (i + 3 > outlen) {
         break;
-      } else {
+      }
+      else {
         unsigned char ch = (unsigned char)*p;
         *q++ = '%';
         *q++ = XNUM_TO_DIGIT(ch >> 4);
@@ -1040,12 +1019,14 @@ static char* convert_fname(char* fname) {
       xfree(converted_fname);
       converted_fname = (char*)orig_fname;
       break;
-    } else if (errno == E2BIG) {
+    }
+    else if (errno == E2BIG) {
       done = len;
       len = outlen = done + inlen * 2;
       converted_fname = xrealloc(converted_fname, outlen + 1);
       s = converted_fname + done;
-    } else {
+    }
+    else {
       logprintf(LOG_VERBOSE, _("Unhandled errno %d\n"), errno);
       xfree(converted_fname);
       converted_fname = (char*)orig_fname;
@@ -1135,7 +1116,8 @@ char* url_file_name(const struct url* u, char* replaced_filename) {
       fname_len_check = concat_strings(u_file, FN_QUERY_SEP_STR, u->query, NULL);
     else
       fname_len_check = strdupdelim(u_file, u_file + strlen(u_file));
-  } else {
+  }
+  else {
     u_file = replaced_filename;
     fname_len_check = strdupdelim(u_file, u_file + strlen(u_file));
   }
@@ -1166,7 +1148,8 @@ char* url_file_name(const struct url* u, char* replaced_filename) {
 
   if (ALLOW_CLOBBER && !(file_exists_p(fname, NULL) && !file_non_directory_p(fname))) {
     unique = fname;
-  } else {
+  }
+  else {
     unique = unique_name_passthrough(fname);
     if (unique != fname)
       xfree(fname);
@@ -1186,13 +1169,15 @@ static bool path_simplify(enum url_scheme scheme, char* path) {
     if (h[0] == '.' && (h[1] == '/' || h[1] == '\0')) {
       h += 2;
       modified = true;
-    } else if (h[0] == '.' && h[1] == '.' && (h[2] == '/' || h[2] == '\0')) {
+    }
+    else if (h[0] == '.' && h[1] == '.' && (h[2] == '/' || h[2] == '\0')) {
       if (t > beg) {
         for (--t; t > beg && t[-1] != '/'; t--)
           ;
-      } else if (scheme == SCHEME_FTP
+      }
+      else if (scheme == SCHEME_FTP
 #ifdef HAVE_SSL
-                 || scheme == SCHEME_FTPS
+               || scheme == SCHEME_FTPS
 #endif
       ) {
         beg = t + 3;
@@ -1200,14 +1185,16 @@ static bool path_simplify(enum url_scheme scheme, char* path) {
       }
       h += 3;
       modified = true;
-    } else {
+    }
+    else {
     regular:
       if (t == h) {
         while (h < end && *h != '/')
           t++, h++;
         if (h < end)
           t++, h++;
-      } else {
+      }
+      else {
         while (h < end && *h != '/')
           *t++ = *h++;
         if (h < end)
@@ -1249,13 +1236,15 @@ char* uri_merge(const char* base, const char* link) {
 
   if (!*link) {
     return xstrdup(base);
-  } else if (*link == '?') {
+  }
+  else if (*link == '?') {
     int baselength = (int)(end - base);
     merge = xmalloc((size_t)baselength + (size_t)linklength + 1);
     memcpy(merge, base, (size_t)baselength);
     memcpy(merge + baselength, link, (size_t)linklength);
     merge[baselength + linklength] = '\0';
-  } else if (*link == '#') {
+  }
+  else if (*link == '#') {
     int baselength;
     const char* end1 = strchr(base, '#');
     if (!end1)
@@ -1265,7 +1254,8 @@ char* uri_merge(const char* base, const char* link) {
     memcpy(merge, base, (size_t)baselength);
     memcpy(merge + baselength, link, (size_t)linklength);
     merge[baselength + linklength] = '\0';
-  } else if (*link == '/' && *(link + 1) == '/') {
+  }
+  else if (*link == '/' && *(link + 1) == '/') {
     int span;
     const char* slash;
     const char* start_insert;
@@ -1282,13 +1272,14 @@ char* uri_merge(const char* base, const char* link) {
       memcpy(merge, base, (size_t)span);
     memcpy(merge + span, link, (size_t)linklength);
     merge[span + linklength] = '\0';
-  } else if (*link == '/') {
+  }
+  else if (*link == '/') {
     int span;
     const char* slash;
     const char* start_insert = NULL;
     const char* pos = base;
     bool seen_slash_slash = false;
-again:
+  again:
     slash = memchr(pos, '/', (size_t)(end - pos));
     if (slash && !seen_slash_slash)
       if (*(slash + 1) == '/') {
@@ -1312,17 +1303,20 @@ again:
       memcpy(merge, base, (size_t)span);
     memcpy(merge + span, link, (size_t)linklength);
     merge[span + linklength] = '\0';
-  } else {
+  }
+  else {
     bool need_explicit_slash = false;
     int span;
     const char* start_insert;
     const char* last_slash = find_last_char(base, end, '/');
     if (!last_slash) {
       start_insert = base;
-    } else if (last_slash && last_slash >= base + 2 && last_slash[-2] == ':' && last_slash[-1] == '/') {
+    }
+    else if (last_slash && last_slash >= base + 2 && last_slash[-2] == ':' && last_slash[-1] == '/') {
       start_insert = end + 1;
       need_explicit_slash = true;
-    } else {
+    }
+    else {
       start_insert = last_slash + 1;
     }
 
@@ -1339,11 +1333,11 @@ again:
   return merge;
 }
 
-#define APPEND(p, s)                    \
-  do {                                  \
-    int len = (int)strlen(s);           \
-    memcpy((p), (s), (size_t)len);      \
-    (p) += len;                         \
+#define APPEND(p, s)               \
+  do {                             \
+    int len = (int)strlen(s);      \
+    memcpy((p), (s), (size_t)len); \
+    (p) += len;                    \
   } while (0)
 
 #define HIDDEN_PASSWORD "*password*"
@@ -1446,7 +1440,8 @@ static int getchar_from_escaped_string(const char* str, char* c) {
     if (!c_isxdigit(p[1]) || !c_isxdigit(p[2])) {
       *c = '%';
       return 1;
-    } else {
+    }
+    else {
       if (p[2] == 0)
         return 0;
 
@@ -1457,7 +1452,8 @@ static int getchar_from_escaped_string(const char* str, char* c) {
       }
       return 3;
     }
-  } else {
+  }
+  else {
     *c = p[0];
   }
 
@@ -1473,10 +1469,7 @@ bool are_urls_equal(const char* u1, const char* u2) {
   p = u1;
   q = u2;
 
-  while (*p && *q &&
-         (pp = getchar_from_escaped_string(p, &ch1)) &&
-         (qq = getchar_from_escaped_string(q, &ch2)) &&
-         (c_tolower(ch1) == c_tolower(ch2))) {
+  while (*p && *q && (pp = getchar_from_escaped_string(p, &ch1)) && (qq = getchar_from_escaped_string(q, &ch2)) && (c_tolower(ch1) == c_tolower(ch2))) {
     p += pp;
     q += qq;
   }
@@ -1510,35 +1503,33 @@ const char* test_path_simplify(void) {
     const char *test, *result;
     enum url_scheme scheme;
     bool should_modify;
-  } tests[] = {
-    { "", "", SCHEME_HTTP, false },
-    { ".", "", SCHEME_HTTP, true },
-    { "./", "", SCHEME_HTTP, true },
-    { "..", "", SCHEME_HTTP, true },
-    { "../", "", SCHEME_HTTP, true },
-    { "..", "..", SCHEME_FTP, false },
-    { "../", "../", SCHEME_FTP, false },
-    { "foo", "foo", SCHEME_HTTP, false },
-    { "foo/bar", "foo/bar", SCHEME_HTTP, false },
-    { "foo///bar", "foo///bar", SCHEME_HTTP, false },
-    { "foo/.", "foo/", SCHEME_HTTP, true },
-    { "foo/./", "foo/", SCHEME_HTTP, true },
-    { "foo./", "foo./", SCHEME_HTTP, false },
-    { "foo/../bar", "bar", SCHEME_HTTP, true },
-    { "foo/../bar/", "bar/", SCHEME_HTTP, true },
-    { "foo/bar/..", "foo/", SCHEME_HTTP, true },
-    { "foo/bar/../x", "foo/x", SCHEME_HTTP, true },
-    { "foo/bar/../x/", "foo/x/", SCHEME_HTTP, true },
-    { "foo/..", "", SCHEME_HTTP, true },
-    { "foo/../..", "", SCHEME_HTTP, true },
-    { "foo/../../..", "", SCHEME_HTTP, true },
-    { "foo/../../bar/../../baz", "baz", SCHEME_HTTP, true },
-    { "foo/../..", "..", SCHEME_FTP, true },
-    { "foo/../../..", "../..", SCHEME_FTP, true },
-    { "foo/../../bar/../../baz", "../../baz", SCHEME_FTP, true },
-    { "a/b/../../c", "c", SCHEME_HTTP, true },
-    { "./a/../b", "b", SCHEME_HTTP, true }
-  };
+  } tests[] = {{"", "", SCHEME_HTTP, false},
+               {".", "", SCHEME_HTTP, true},
+               {"./", "", SCHEME_HTTP, true},
+               {"..", "", SCHEME_HTTP, true},
+               {"../", "", SCHEME_HTTP, true},
+               {"..", "..", SCHEME_FTP, false},
+               {"../", "../", SCHEME_FTP, false},
+               {"foo", "foo", SCHEME_HTTP, false},
+               {"foo/bar", "foo/bar", SCHEME_HTTP, false},
+               {"foo///bar", "foo///bar", SCHEME_HTTP, false},
+               {"foo/.", "foo/", SCHEME_HTTP, true},
+               {"foo/./", "foo/", SCHEME_HTTP, true},
+               {"foo./", "foo./", SCHEME_HTTP, false},
+               {"foo/../bar", "bar", SCHEME_HTTP, true},
+               {"foo/../bar/", "bar/", SCHEME_HTTP, true},
+               {"foo/bar/..", "foo/", SCHEME_HTTP, true},
+               {"foo/bar/../x", "foo/x", SCHEME_HTTP, true},
+               {"foo/bar/../x/", "foo/x/", SCHEME_HTTP, true},
+               {"foo/..", "", SCHEME_HTTP, true},
+               {"foo/../..", "", SCHEME_HTTP, true},
+               {"foo/../../..", "", SCHEME_HTTP, true},
+               {"foo/../../bar/../../baz", "baz", SCHEME_HTTP, true},
+               {"foo/../..", "..", SCHEME_FTP, true},
+               {"foo/../../..", "../..", SCHEME_FTP, true},
+               {"foo/../../bar/../../baz", "../../baz", SCHEME_FTP, true},
+               {"a/b/../../c", "c", SCHEME_HTTP, true},
+               {"./a/../b", "b", SCHEME_HTTP, true}};
   unsigned i;
 
   for (i = 0; i < countof(tests); i++) {
@@ -1563,7 +1554,7 @@ const char* test_append_uri_pathel(void) {
     bool escaped;
     const char* expected_result;
   } test_array[] = {
-    { "http://www.yoyodyne.com/path/", "somepage.html", false, "http://www.yoyodyne.com/path/somepage.html" },
+      {"http://www.yoyodyne.com/path/", "somepage.html", false, "http://www.yoyodyne.com/path/somepage.html"},
   };
 
   for (i = 0; i < countof(test_array); ++i) {
@@ -1589,12 +1580,9 @@ const char* test_are_urls_equal(void) {
     const char* url2;
     bool expected_result;
   } test_array[] = {
-    { "http://www.adomain.com/apath/", "http://www.adomain.com/apath/", true },
-    { "http://www.adomain.com/apath/", "http://www.adomain.com/anotherpath/", false },
-    { "http://www.adomain.com/apath/", "http://www.anotherdomain.com/path/", false },
-    { "http://www.adomain.com/~path/", "http://www.adomain.com/%7epath/", true },
-    { "http://www.adomain.com/longer-path/", "http://www.adomain.com/path/", false },
-    { "http://www.adomain.com/path%2f", "http://www.adomain.com/path/", false },
+      {"http://www.adomain.com/apath/", "http://www.adomain.com/apath/", true},       {"http://www.adomain.com/apath/", "http://www.adomain.com/anotherpath/", false},
+      {"http://www.adomain.com/apath/", "http://www.anotherdomain.com/path/", false}, {"http://www.adomain.com/~path/", "http://www.adomain.com/%7epath/", true},
+      {"http://www.adomain.com/longer-path/", "http://www.adomain.com/path/", false}, {"http://www.adomain.com/path%2f", "http://www.adomain.com/path/", false},
   };
 
   for (i = 0; i < countof(test_array); ++i) {
@@ -1610,9 +1598,9 @@ const char* test_uri_merge(void) {
     const char* link;
     const char* expected;
   } test_data[] = {
-    { "http://www.yoyodyne.com/path/", "somepage.html", "http://www.yoyodyne.com/path/somepage.html" },
-    { "http://example.com/path/", "//other.com/somepage.html", "http://other.com/somepage.html" },
-    { "https://example.com/path/", "//other.com/somepage.html", "https://other.com/somepage.html" },
+      {"http://www.yoyodyne.com/path/", "somepage.html", "http://www.yoyodyne.com/path/somepage.html"},
+      {"http://example.com/path/", "//other.com/somepage.html", "http://other.com/somepage.html"},
+      {"https://example.com/path/", "//other.com/somepage.html", "https://other.com/somepage.html"},
   };
 
   for (unsigned i = 0; i < countof(test_data); ++i) {

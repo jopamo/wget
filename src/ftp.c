@@ -108,97 +108,9 @@ static wgint ftp_expected_bytes(const char* s) {
 }
 
 #ifdef ENABLE_IPV6
-/*
- * This function sets up a passive data connection with the FTP server.
- * It is merely a wrapper around ftp_epsv, ftp_lpsv and ftp_pasv.
- */
-static uerr_t ftp_do_pasv(int csock, ip_address* addr, int* port) {
-  uerr_t err;
-
-  /* We need to determine the address family and need to call
-     getpeername, so while we're at it, store the address to ADDR.
-     ftp_pasv and ftp_lpsv can simply override it.  */
-  if (!socket_ip_address(csock, addr, ENDPOINT_PEER))
-    abort();
-
-  /* If our control connection is over IPv6, then we first try EPSV and then
-   * LPSV if the former is not supported. If the control connection is over
-   * IPv4, we simply issue the good old PASV request. */
-  switch (addr->family) {
-    case AF_INET:
-      if (!opt.server_response)
-        logputs(LOG_VERBOSE, "==> PASV ... ");
-      err = ftp_pasv(csock, addr, port);
-      break;
-    case AF_INET6:
-      if (!opt.server_response)
-        logputs(LOG_VERBOSE, "==> EPSV ... ");
-      err = ftp_epsv(csock, addr, port);
-
-      /* If EPSV is not supported try LPSV */
-      if (err == FTPNOPASV) {
-        if (!opt.server_response)
-          logputs(LOG_VERBOSE, "==> LPSV ... ");
-        err = ftp_lpsv(csock, addr, port);
-      }
-      break;
-    default:
-      abort();
-  }
-
-  return err;
-}
-
-/*
- * This function sets up an active data connection with the FTP server.
- * It is merely a wrapper around ftp_eprt, ftp_lprt and ftp_port.
- */
-static uerr_t ftp_do_port(int csock, int* local_sock) {
-  uerr_t err;
-  ip_address cip;
-
-  if (!socket_ip_address(csock, &cip, ENDPOINT_PEER))
-    abort();
-
-  /* If our control connection is over IPv6, then we first try EPRT and then
-   * LPRT if the former is not supported. If the control connection is over
-   * IPv4, we simply issue the good old PORT request. */
-  switch (cip.family) {
-    case AF_INET:
-      if (!opt.server_response)
-        logputs(LOG_VERBOSE, "==> PORT ... ");
-      err = ftp_port(csock, local_sock);
-      break;
-    case AF_INET6:
-      if (!opt.server_response)
-        logputs(LOG_VERBOSE, "==> EPRT ... ");
-      err = ftp_eprt(csock, local_sock);
-
-      /* If EPRT is not supported try LPRT */
-      if (err == FTPPORTERR) {
-        if (!opt.server_response)
-          logputs(LOG_VERBOSE, "==> LPRT ... ");
-        err = ftp_lprt(csock, local_sock);
-      }
-      break;
-    default:
-      abort();
-  }
-  return err;
-}
+/* ftp_do_pasv and ftp_do_port are now implemented in ftp-commands.c */
 #else
-
-static uerr_t ftp_do_pasv(int csock, ip_address* addr, int* port) {
-  if (!opt.server_response)
-    logputs(LOG_VERBOSE, "==> PASV ... ");
-  return ftp_pasv(csock, addr, port);
-}
-
-static uerr_t ftp_do_port(int csock, int* local_sock) {
-  if (!opt.server_response)
-    logputs(LOG_VERBOSE, "==> PORT ... ");
-  return ftp_port(csock, local_sock);
-}
+/* ftp_do_pasv and ftp_do_port are now implemented in ftp-commands.c */
 #endif
 
 static void print_length(wgint size, wgint start, bool authoritative) {
@@ -1744,9 +1656,6 @@ static uerr_t ftp_loop_internal(struct url* u, struct url* original_url, struct 
       if (count > 1)
         sprintf(tmp, _("(try:%2d)"), count);
       logprintf(LOG_VERBOSE, "--%s--  %s\n  %s => %s\n", tms, hurl, tmp, quote(locf));
-#ifdef WINDOWS
-      ws_changetitle(hurl);
-#endif
       xfree(hurl);
     }
     /* Send getftp the proper length, if fileinfo was provided.  */
@@ -2048,11 +1957,6 @@ static uerr_t ftp_retrieve_list(struct url* u, struct url* original_url, struct 
         /* Else, get it from the file.  */
         local_size = st.st_size;
         tml = st.st_mtime;
-#ifdef WINDOWS
-        /* Modification time granularity is 2 seconds for Windows, so
-           increase local time by 1 second for later comparison. */
-        tml++;
-#endif
         /* Compare file sizes only for servers that tell us correct
            values. Assume sizes being equal for servers that lie
            about file size.  */
@@ -2266,7 +2170,7 @@ Not descending to %s as it is excluded/not-included.\n"),
     odir = xstrdup(u->dir); /* because url_set_dir will free
                                u->dir. */
     url_set_dir(u, newdir);
-    ftp_retrieve_glob(u, original_url, con, GLOB_GETALL);
+    ftp_retrieve_glob(u, original_url, con, 2); /* GLOB_GETALL */
     url_set_dir(u, odir);
     xfree(odir);
 
@@ -2392,7 +2296,7 @@ static uerr_t ftp_retrieve_glob(struct url* u, struct url* original_url, ccon* c
     /* Now weed out the files that do not match our globbing pattern.
        If we are dealing with a globbing pattern, that is.  */
     if (*u->file) {
-      if (action == GLOB_GLOBALL) {
+      if (action == 1) { /* GLOB_GLOBALL */
         int matchres = matcher(u->file, f->name, 0);
         if (matchres == -1) {
           logprintf(LOG_NOTQUIET, _("Error matching %s against %s: %s\n"), u->file, quotearg_style(escape_quoting_style, f->name), strerror(errno));
@@ -2404,7 +2308,7 @@ static uerr_t ftp_retrieve_glob(struct url* u, struct url* original_url, ccon* c
           continue;
         }
       }
-      else if (action == GLOB_GETONE) {
+      else if (action == 0) { /* GLOB_GETONE */
         if (0 != cmp(u->file, f->name)) {
           f = delelement(&f, &start);
           continue;
@@ -2423,13 +2327,13 @@ static uerr_t ftp_retrieve_glob(struct url* u, struct url* original_url, ccon* c
     res = ftp_retrieve_list(u, original_url, start, con);
   }
   else {
-    if (action == GLOB_GLOBALL) {
+    if (action == 1) { /* GLOB_GLOBALL */
       /* No luck.  */
       /* #### This message SUCKS.  We should see what was the
          reason that nothing was retrieved.  */
       logprintf(LOG_VERBOSE, _("No matches on pattern %s.\n"), quote(u->file));
     }
-    else if (action == GLOB_GETONE) /* GLOB_GETONE or GLOB_GETALL */
+    else if (action == 0) /* GLOB_GETONE or GLOB_GETALL */
     {
       /* Let's try retrieving it anyway.  */
       con->st |= ON_YOUR_OWN;
@@ -2512,7 +2416,7 @@ uerr_t ftp_loop(struct url* u, struct url* original_url, char** local_file, int*
       /* ftp_retrieve_glob is a catch-all function that gets called
          if we need globbing, time-stamping, recursion or preserve
          permissions.  Its third argument is just what we really need.  */
-      res = ftp_retrieve_glob(u, original_url, &con, ispattern ? GLOB_GLOBALL : GLOB_GETONE);
+      res = ftp_retrieve_glob(u, original_url, &con, ispattern ? 1 : 0); /* GLOB_GLOBALL : GLOB_GETONE */
     }
     else {
       res = ftp_loop_internal(u, original_url, NULL, &con, local_file, false);
