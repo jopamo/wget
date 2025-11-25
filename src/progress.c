@@ -75,9 +75,14 @@ static struct progress_implementation implementations[] = {{"dot", 0, dot_create
                                                            {"bar", 1, bar_create, bar_update, bar_draw, bar_finish, bar_set_params}};
 static struct progress_implementation* current_impl;
 static int current_impl_locked;
-static wget_mutex_t progress_mutex = WGET_MUTEX_INITIALIZER;
+static wget_mutex_t progress_mutex;
 
 static void progress_lock(void) {
+  static bool initialized = false;
+  if (!initialized) {
+    wget_mutex_init(&progress_mutex);
+    initialized = true;
+  }
   wget_mutex_lock(&progress_mutex);
 }
 
