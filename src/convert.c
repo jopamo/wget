@@ -700,8 +700,9 @@ static char* local_quote_string(const char* file, bool no_html_quote) {
   }
   *to = '\0';
 
-  if (newname == buf)
+  if (newname == buf) {
     return no_html_quote ? xstrdup(newname) : html_quote_string(newname);
+  }
 
   if (no_html_quote)
     return newname;
