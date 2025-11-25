@@ -1,43 +1,18 @@
-/* HTTP Strict Transport Security (HSTS) support.
-   Copyright (C) 1996-2012, 2015, 2018-2024 Free Software Foundation,
-   Inc.
+/* HTTP Strict Transport Security (HSTS) support
+ * src/hsts.c
+ */
 
-This file is part of GNU Wget.
-
-GNU Wget is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 3 of the License, or
- (at your option) any later version.
-
-GNU Wget is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Wget.  If not, see <http://www.gnu.org/licenses/>.
-
-Additional permission under GNU GPL version 3 section 7
-
-If you modify this program, or any covered work, by linking or
-combining it with the OpenSSL project's OpenSSL library (or a
-modified version of that library), containing parts covered by the
-terms of the OpenSSL or SSLeay licenses, the Free Software Foundation
-grants you additional permission to convey the resulting work.
-Corresponding Source for a non-source form of such a combination
-shall include the source code for the parts of OpenSSL used as well
-as that of the covered work.  */
 #include "wget.h"
 
 #ifdef HAVE_HSTS
 #include "hsts.h"
 #include "utils.h"
-#include "host.h" /* for is_valid_ip_address() */
+#include "host.h" /* is_valid_ip_address */
 #include "hash.h"
 #include "c-ctype.h"
 #include "threading.h"
 #ifdef TESTING
-#include "init.h" /* for ajoin_dir_file() */
+#include "init.h" /* ajoin_dir_file */
 #include "../tests/unit-tests.h"
 #endif
 
@@ -84,7 +59,7 @@ enum hsts_kh_match { NO_MATCH, SUPERDOMAIN_MATCH, CONGRUENT_MATCH };
 
 #define DEFAULT_HTTP_PORT 80
 #define DEFAULT_SSL_PORT 443
-#define MAKE_EXPLICIT_PORT(s, p) (s == SCHEME_HTTPS ? (p == DEFAULT_SSL_PORT ? 0 : p) : (p == DEFAULT_HTTP_PORT ? 0 : p))
+#define MAKE_EXPLICIT_PORT(s, p) (s == SCHEME_HTTPS ? (p == DEFAULT_SSL_PORT ? 0 : (p)) : (p == DEFAULT_HTTP_PORT ? 0 : (p)))
 
 /* Hashing and comparison functions for the hash table */
 
@@ -92,35 +67,37 @@ enum hsts_kh_match { NO_MATCH, SUPERDOMAIN_MATCH, CONGRUENT_MATCH };
 __attribute__((no_sanitize("integer")))
 #endif
 static unsigned long hsts_hash_func(const void* key) {
-  struct hsts_kh* k = (struct hsts_kh*)key;
-  const char* h = NULL;
-  unsigned int hash = k->explicit_port;
+  const struct hsts_kh* k = (const struct hsts_kh*)key;
+  const unsigned char* h = (const unsigned char*)k->host;
+  unsigned long hash = (unsigned long)k->explicit_port;
 
-  for (h = k->host; *h; h++)
-    hash = hash * 31 + *h;
+  while (*h) {
+    hash = hash * 31u + *h;
+    ++h;
+  }
 
   return hash;
 }
 
 static int hsts_cmp_func(const void* h1, const void* h2) {
-  struct hsts_kh *kh1 = (struct hsts_kh*)h1, *kh2 = (struct hsts_kh*)h2;
+  const struct hsts_kh* kh1 = (const struct hsts_kh*)h1;
+  const struct hsts_kh* kh2 = (const struct hsts_kh*)h2;
 
   return (!strcmp(kh1->host, kh2->host)) && (kh1->explicit_port == kh2->explicit_port);
 }
 
-/* Private functions. Feel free to make some of these public when needed. */
+/* Private functions */
 
 static struct hsts_kh_info* hsts_find_entry(hsts_store_t store, const char* host, int explicit_port, enum hsts_kh_match* match_type, struct hsts_kh* kh) {
-  struct hsts_kh* k = NULL;
+  struct hsts_kh* k = xnew(struct hsts_kh);
   struct hsts_kh_info* khi = NULL;
   enum hsts_kh_match match = NO_MATCH;
-  char* org_ptr = NULL;
+  char* org_ptr;
 
-  k = (struct hsts_kh*)xnew(struct hsts_kh);
   k->host = xstrdup_lower(host);
   k->explicit_port = explicit_port;
 
-  /* save pointer so that we don't get into trouble later when freeing */
+  /* keep original pointer so substring matching does not break free */
   org_ptr = k->host;
 
   khi = (struct hsts_kh_info*)hash_table_get(store->table, k);
@@ -139,12 +116,11 @@ static struct hsts_kh_info* hsts_find_entry(hsts_store_t store, const char* host
   }
 
 end:
-  /* restore pointer or we'll get a SEGV */
   k->host = org_ptr;
 
-  /* copy parameters to previous frame */
   if (match_type)
     *match_type = match;
+
   if (kh)
     memcpy(kh, k, sizeof(struct hsts_kh));
   else
@@ -167,7 +143,6 @@ hsts_new_entry_internal(hsts_store_t store, const char* host, int port, int64_t 
   khi->max_age = max_age;
   khi->include_subdomains = include_subdomains;
 
-  /* Check validity */
   if (check_validity && !hsts_is_host_name_valid(host))
     goto bail;
 
@@ -177,13 +152,11 @@ hsts_new_entry_internal(hsts_store_t store, const char* host, int port, int64_t 
   if (check_duplicates && hash_table_contains(store->table, kh))
     goto bail;
 
-  /* Now store the new entry */
   hash_table_put(store->table, kh, khi);
   success = true;
 
 bail:
   if (!success) {
-    /* abort! */
     xfree(kh->host);
     xfree(kh);
     xfree(khi);
@@ -192,18 +165,19 @@ bail:
   return success;
 }
 
-/*
-   Creates a new entry, but does not check whether that entry already exists.
-   This function assumes that check has already been done by the caller.
+/* Creates a new entry without duplicate checks
+   Caller must ensure it is not inserting an existing host/port
  */
 static bool hsts_add_entry(hsts_store_t store, const char* host, int port, int64_t max_age, bool include_subdomains) {
   int64_t t = (int64_t)time(NULL);
 
-  /* It might happen time() returned -1 */
-  return (t == -1) ? false : hsts_new_entry_internal(store, host, port, t, max_age, include_subdomains, false, true, false);
+  if (t == -1)
+    return false;
+
+  return hsts_new_entry_internal(store, host, port, t, max_age, include_subdomains, false, true, false);
 }
 
-/* Creates a new entry, unless an identical one already exists. */
+/* Creates a new entry, unless an identical one already exists */
 static bool hsts_new_entry(hsts_store_t store, const char* host, int port, int64_t created, int64_t max_age, bool include_subdomains) {
   return hsts_new_entry_internal(store, host, port, created, max_age, include_subdomains, true, true, true);
 }
@@ -214,27 +188,28 @@ static void hsts_remove_entry(hsts_store_t store, struct hsts_kh* kh) {
 
 static bool hsts_store_merge(hsts_store_t store, const char* host, int port, int64_t created, int64_t max_age, bool include_subdomains) {
   enum hsts_kh_match match_type = NO_MATCH;
-  struct hsts_kh_info* khi = NULL;
+  struct hsts_kh_info* khi;
   bool success = false;
 
   port = MAKE_EXPLICIT_PORT(SCHEME_HTTPS, port);
   khi = hsts_find_entry(store, host, port, &match_type, NULL);
   if (khi && match_type == CONGRUENT_MATCH && created > khi->created) {
-    /* update the entry with the new info */
+    /* update the entry with newer information */
     khi->created = created;
     khi->max_age = max_age;
     khi->include_subdomains = include_subdomains;
-
     success = true;
   }
-  else if (!khi)
+  else if (!khi) {
     success = hsts_new_entry(store, host, port, created, max_age, include_subdomains);
+  }
 
   return success;
 }
 
 static bool hsts_read_database(hsts_store_t store, FILE* fp, bool merge_with_existing_entries) {
-  char *line = NULL, *p;
+  char* line = NULL;
+  char* p;
   size_t len = 0;
   int items_read;
   bool result = false;
@@ -242,10 +217,11 @@ static bool hsts_read_database(hsts_store_t store, FILE* fp, bool merge_with_exi
 
   char host[256];
   int port;
-  int64_t created, max_age;
+  int64_t created;
+  int64_t max_age;
   int include_subdomains;
 
-  func = (merge_with_existing_entries ? hsts_store_merge : hsts_new_entry);
+  func = merge_with_existing_entries ? hsts_store_merge : hsts_new_entry;
 
   while (getline(&line, &len, fp) > 0) {
     for (p = line; c_isspace(*p); p++)
@@ -269,54 +245,39 @@ static bool hsts_read_database(hsts_store_t store, FILE* fp, bool merge_with_exi
 static void hsts_store_dump(hsts_store_t store, FILE* fp) {
   hash_table_iterator it;
 
-  /* Print preliminary comments. We don't care if any of these fail. */
-  fputs("# HSTS 1.0 Known Hosts database for GNU Wget.\n", fp);
-  fputs("# Edit at your own risk.\n", fp);
+  /* header comments are best effort only */
+  fputs("# HSTS 1.0 Known Hosts database\n", fp);
+  fputs("# Edit at your own risk\n", fp);
   fputs("# <hostname>\t<port>\t<incl. subdomains>\t<created>\t<max-age>\n", fp);
 
-  /* Now cycle through the HSTS store in memory and dump the entries */
   for (hash_table_iterate(store->table, &it); hash_table_iter_next(&it);) {
     struct hsts_kh* kh = (struct hsts_kh*)it.key;
     struct hsts_kh_info* khi = (struct hsts_kh_info*)it.value;
 
     if (fprintf(fp, "%s\t%d\t%d\t%" PRId64 "\t%" PRId64 "\n", kh->host, kh->explicit_port, khi->include_subdomains, khi->created, khi->max_age) < 0) {
-      logprintf(LOG_ALWAYS, "Could not write the HSTS database correctly.\n");
+      logprintf(LOG_ALWAYS, "Could not write the HSTS database correctly\n");
       break;
     }
   }
 }
 
-/*
- * Test:
- *  - The file is a regular file (ie. not a symlink), and
- *  - The file is not world-writable.
- */
+/* Require a regular, non world-writable file */
 static bool hsts_file_access_valid(const char* filename) {
   struct stat st;
 
   if (stat(filename, &st) == -1)
     return false;
 
-  return
-#ifndef WINDOWS
-      /*
-       * The world-writable concept is a Unix-centric notion.
-       * We bypass this test on Windows.
-       */
-      !(st.st_mode & S_IWOTH) &&
-#endif
-      S_ISREG(st.st_mode);
+  return S_ISREG(st.st_mode) && !(st.st_mode & S_IWOTH);
 }
 
 /* HSTS API */
 
 /*
-   Changes the given URLs according to the HSTS policy.
+   Apply HSTS policy to the given URL
 
-   If there's no host in the store that either congruently
-   or not, matches the given URL, no changes are made.
-   Returns true if the URL was changed, or false
-   if it was left intact.
+   If there is a matching host in the store and the entry is still
+   valid, rewrite the URL to HTTPS and update port defaults
  */
 bool hsts_match(hsts_store_t store, struct url* u) {
   bool url_changed = false;
@@ -332,17 +293,17 @@ bool hsts_match(hsts_store_t store, struct url* u) {
 
   hsts_lock(store);
 
-  /* avoid doing any computation if we're already in HTTPS */
+  /* skip work if already HTTPS */
   if (!hsts_is_scheme_valid(u->scheme)) {
     entry = hsts_find_entry(store, u->host, port, &match, kh);
     if (entry) {
-      if ((entry->created + entry->max_age) >= time(NULL)) {
-        if ((match == CONGRUENT_MATCH) || (match == SUPERDOMAIN_MATCH && entry->include_subdomains)) {
-          /* we found a matching Known HSTS Host
-             rewrite the URL */
+      time_t now = time(NULL);
+
+      if (now != (time_t)-1 && (entry->created + entry->max_age) >= now) {
+        if (match == CONGRUENT_MATCH || (match == SUPERDOMAIN_MATCH && entry->include_subdomains)) {
           u->scheme = SCHEME_HTTPS;
-          if (u->port == 80)
-            u->port = 443;
+          if (u->port == DEFAULT_HTTP_PORT)
+            u->port = DEFAULT_SSL_PORT;
           url_changed = true;
           store->changed = true;
         }
@@ -362,27 +323,11 @@ bool hsts_match(hsts_store_t store, struct url* u) {
 }
 
 /*
-   Add a new HSTS Known Host to the HSTS store.
+   Add or update an HSTS Known Host entry
 
-   If the host already exists, its information is updated,
-   or it'll be removed from the store if max_age is zero.
-
-   Bear in mind that the store is kept in memory, and will not
-   be written to disk until hsts_store_save is called.
-   This function regrows the in-memory HSTS store if necessary.
-
-   Currently, for a host to be taken into consideration,
-   two conditions have to be met:
-     - Connection must be through a secure channel (HTTPS).
-     - The host must not be an IPv4 or IPv6 address.
-
-   The RFC 6797 states that hosts that match IPv4 or IPv6 format
-   should be discarded at URI rewrite time. But we short-circuit
-   that check here, since there's no point in storing a host that
-   will never be matched.
-
-   Returns true if a new entry was actually created, or false
-   if an existing entry was updated/deleted. */
+   If max_age is zero and an entry exists, it is removed from the store
+   Callers must explicitly flush to disk via hsts_store_save
+ */
 bool hsts_store_entry(hsts_store_t store, enum url_scheme scheme, const char* host, int port, int64_t max_age, bool include_subdomains) {
   bool result = false;
   enum hsts_kh_match match = NO_MATCH;
@@ -399,17 +344,13 @@ bool hsts_store_entry(hsts_store_t store, enum url_scheme scheme, const char* ho
   if (hsts_is_host_eligible(scheme, host)) {
     port = MAKE_EXPLICIT_PORT(scheme, port);
     entry = hsts_find_entry(store, host, port, &match, kh);
+
     if (entry && match == CONGRUENT_MATCH) {
       if (max_age == 0) {
         hsts_remove_entry(store, kh);
         store->changed = true;
       }
       else if (max_age > 0) {
-        /* RFC 6797 states that 'max_age' is a TTL relative to the
-         * reception of the STS header so we have to update the
-         * 'created' field too. The RFC also states that we have to
-         * update the entry each time we see HSTS header.
-         * See also Section 11.2. */
         int64_t t = (int64_t)time(NULL);
 
         if (t != -1 && t != entry->created) {
@@ -419,21 +360,14 @@ bool hsts_store_entry(hsts_store_t store, enum url_scheme scheme, const char* ho
           store->changed = true;
         }
       }
-      /* we ignore negative max_ages */
     }
     else if (entry == NULL || match == SUPERDOMAIN_MATCH) {
-      /* Either we didn't find a matching host,
-         or we got a superdomain match.
-         In either case, we create a new entry.
-
-         We have to perform an explicit check because it might
-         happen we got a non-existent entry with max_age == 0.
-      */
+      /* create a new entry when there is no congruent match */
       result = hsts_add_entry(store, host, port, max_age, include_subdomains);
       if (result)
         store->changed = true;
     }
-    /* we ignore new entries with max_age == 0 */
+
     xfree(kh->host);
   }
 
@@ -444,10 +378,9 @@ bool hsts_store_entry(hsts_store_t store, enum url_scheme scheme, const char* ho
 }
 
 hsts_store_t hsts_store_open(const char* filename) {
-  hsts_store_t store = NULL;
+  hsts_store_t store = xnew0(struct hsts_store);
   file_stats_t fstats;
 
-  store = xnew0(struct hsts_store);
   wget_mutex_init(&store->lock);
   store->table = hash_table_new(0, hsts_hash_func, hsts_cmp_func);
   store->last_mtime = 0;
@@ -459,12 +392,11 @@ hsts_store_t hsts_store_open(const char* filename) {
       FILE* fp = fopen_stat(filename, "r", &fstats);
 
       if (!fp || !hsts_read_database(store, fp, false)) {
-        /* abort! */
         hsts_store_close(store);
         xfree(store);
         if (fp)
           fclose(fp);
-        goto out;
+        return NULL;
       }
 
       if (fstat(fileno(fp), &st) == 0)
@@ -473,27 +405,23 @@ hsts_store_t hsts_store_open(const char* filename) {
       fclose(fp);
     }
     else {
-      /*
-       * If we're not reading the HSTS database,
-       * then by all means act as if HSTS was disabled.
-       */
       hsts_store_close(store);
       xfree(store);
 
       logprintf(LOG_NOTQUIET,
                 "Will not apply HSTS. "
-                "The HSTS database must be a regular and non-world-writable file.\n");
+                "The HSTS database must be a regular and non-world-writable file\n");
+      return NULL;
     }
   }
 
-out:
   return store;
 }
 
 void hsts_store_save(hsts_store_t store, const char* filename) {
   struct stat st;
-  FILE* fp = NULL;
-  int fd = 0;
+  FILE* fp;
+  int fd;
 
   if (!store)
     return;
@@ -503,26 +431,18 @@ void hsts_store_save(hsts_store_t store, const char* filename) {
   if (filename && hash_table_count(store->table) > 0) {
     fp = fopen(filename, "a+");
     if (fp) {
-      /* Lock the file to avoid potential race conditions */
       fd = fileno(fp);
       flock(fd, LOCK_EX);
 
-      /* If the file has changed, merge the changes with our in-memory data
-         before dumping them to the file.
-         Otherwise we could potentially overwrite the data stored by other Wget processes.
-       */
+      /* merge any external updates from other processes before truncating */
       if (store->last_mtime && stat(filename, &st) == 0 && st.st_mtime > store->last_mtime)
         hsts_read_database(store, fp, true);
 
-      /* We've merged the latest changes so we can now truncate the file
-         and dump everything. */
       fseek(fp, 0, SEEK_SET);
       ftruncate(fd, 0);
 
-      /* now dump to the file */
       hsts_store_dump(store, fp);
 
-      /* fclose is expected to unlock the file for us */
       fclose(fp);
     }
   }
@@ -539,6 +459,7 @@ bool hsts_store_has_changed(hsts_store_t store) {
   hsts_lock(store);
   changed = store->changed;
   hsts_unlock(store);
+
   return changed;
 }
 
@@ -550,7 +471,6 @@ void hsts_store_close(hsts_store_t store) {
 
   hsts_lock(store);
 
-  /* free all the host fields */
   for (hash_table_iterate(store->table, &it); hash_table_iter_next(&it);) {
     xfree(((struct hsts_kh*)it.key)->host);
     xfree(it.key);
@@ -565,19 +485,21 @@ void hsts_store_close(hsts_store_t store) {
 }
 
 #ifdef TESTING
-/* I know I'm really evil because I'm writing macros
-   that change control flow. But we're testing, who will tell? :D
- */
-#define TEST_URL_RW(s, u, p)                  \
-  do {                                        \
-    if (test_url_rewrite(s, u, p, true))      \
-      return test_url_rewrite(s, u, p, true); \
+
+/* Test helpers that wrap URL rewrite checks and forward the first failure */
+
+#define TEST_URL_RW(s, u, p)                         \
+  do {                                               \
+    const char* _msg = test_url_rewrite(s, u, p, 1); \
+    if (_msg)                                        \
+      return _msg;                                   \
   } while (0)
 
-#define TEST_URL_NORW(s, u, p)                 \
-  do {                                         \
-    if (test_url_rewrite(s, u, p, false))      \
-      return test_url_rewrite(s, u, p, false); \
+#define TEST_URL_NORW(s, u, p)                       \
+  do {                                               \
+    const char* _msg = test_url_rewrite(s, u, p, 0); \
+    if (_msg)                                        \
+      return _msg;                                   \
   } while (0)
 
 static char* get_hsts_store_filename(void) {
@@ -595,20 +517,16 @@ static char* get_hsts_store_filename(void) {
 }
 
 static hsts_store_t open_hsts_test_store(void) {
-  char* filename = NULL;
-  hsts_store_t table = NULL;
-
-  filename = get_hsts_store_filename();
-  table = hsts_store_open(filename);
+  char* filename = get_hsts_store_filename();
+  hsts_store_t table = hsts_store_open(filename);
   xfree(filename);
-
   return table;
 }
 
 static void close_hsts_test_store(hsts_store_t store) {
-  char* filename;
+  char* filename = get_hsts_store_filename();
 
-  if ((filename = get_hsts_store_filename())) {
+  if (filename) {
     unlink(filename);
     xfree(filename);
   }
