@@ -50,6 +50,7 @@ as that of the covered work.  */
 #include <sys/time.h>
 
 #include <sys/stat.h>
+#include <grp.h>
 
 /* For TIOCGWINSZ and friends: */
 #ifndef WINDOWS
@@ -500,6 +501,37 @@ int remove_link(const char* file) {
   return err;
 }
 
+/* Check if current process is member of given group ID */
+static bool is_group_member(gid_t gid) {
+  int ngroups = 0;
+  gid_t* groups = NULL;
+  bool result = false;
+
+  /* Get number of supplementary groups */
+  ngroups = getgroups(0, NULL);
+  if (ngroups < 0)
+    return false;
+
+  /* Allocate memory for group list */
+  groups = malloc(ngroups * sizeof(gid_t));
+  if (!groups)
+    return false;
+
+  /* Get supplementary groups */
+  if (getgroups(ngroups, groups) >= 0) {
+    int i;
+    for (i = 0; i < ngroups; i++) {
+      if (groups[i] == gid) {
+        result = true;
+        break;
+      }
+    }
+  }
+
+  free(groups);
+  return result;
+}
+
 /* Does FILENAME exist? */
 bool file_exists_p(const char* filename, file_stats_t* fstats) {
   struct stat buf;
@@ -517,7 +549,7 @@ bool file_exists_p(const char* filename, file_stats_t* fstats) {
 #else
   errno = 0;
   if (stat(filename, &buf) == 0 && S_ISREG(buf.st_mode) &&
-      (((S_IRUSR & buf.st_mode) && (getuid() == buf.st_uid)) || ((S_IRGRP & buf.st_mode) && group_member(buf.st_gid)) || (S_IROTH & buf.st_mode))) {
+      (((S_IRUSR & buf.st_mode) && (getuid() == buf.st_uid)) || ((S_IRGRP & buf.st_mode) && is_group_member(buf.st_gid)) || (S_IROTH & buf.st_mode))) {
     if (fstats != NULL) {
       fstats->access_err = 0;
       fstats->st_ino = buf.st_ino;
