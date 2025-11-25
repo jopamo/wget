@@ -13,7 +13,7 @@
 
 #include "utils.h"
 #include "url.h"
-#include "host.h" /* for is_valid_ipv6_address */
+#include "host.h"
 #include "c-strcase.h"
 #include "c-ctype.h"
 
@@ -27,24 +27,19 @@
 #endif
 
 enum {
-  scm_disabled = 1,    /* for https when OpenSSL fails to init. */
-  scm_has_params = 2,  /* whether scheme has ;params */
-  scm_has_query = 4,   /* whether scheme has ?query */
-  scm_has_fragment = 8 /* whether scheme has #fragment */
+  scm_disabled = 1,
+  scm_has_params = 2,
+  scm_has_query = 4,
+  scm_has_fragment = 8
 };
 
 struct scheme_data {
-  /* Short name of the scheme, such as "http" or "ftp". */
   const char* name;
-  /* Leading string that identifies the scheme, such as "https://". */
   const char* leading_string;
-  /* Default port of the scheme when none is specified. */
   int default_port;
-  /* Various flags. */
   int flags;
 };
 
-/* Supported schemes: */
 static struct scheme_data supported_schemes[] = {
   { "http", "http://",  DEFAULT_HTTP_PORT, scm_has_query | scm_has_fragment },
 #ifdef HAVE_SSL
@@ -52,50 +47,15 @@ static struct scheme_data supported_schemes[] = {
 #endif
   { "ftp", "ftp://", DEFAULT_FTP_PORT, scm_has_params | scm_has_fragment },
 #ifdef HAVE_SSL
-  /*
-   * Explicit FTPS uses the same port as FTP.
-   * Implicit FTPS has its own port (990), but it is disabled by default.
-   */
   { "ftps", "ftps://", DEFAULT_FTP_PORT, scm_has_params | scm_has_fragment },
 #endif
-
-  /* SCHEME_INVALID */
   { NULL, NULL, -1, 0 }
 };
 
-/* Forward declarations: */
-
 static bool path_simplify(enum url_scheme, char*);
 
-/* Support for escaping and unescaping of URL strings.  */
-
-/* Table of "reserved" and "unsafe" characters.  Those terms are
-   rfc1738-speak, as such largely obsoleted by rfc2396 and later
-   specs, but the general idea remains.
-
-   A reserved character is the one that you can't decode without
-   changing the meaning of the URL.  For example, you can't decode
-   "/foo/%2f/bar" into "/foo///bar" because the number and contents of
-   path components is different.  Non-reserved characters can be
-   changed, so "/foo/%78/bar" is safe to change to "/foo/x/bar".  The
-   unsafe characters are loosely based on rfc1738, plus "$" and ",",
-   as recommended by rfc2396, and minus "~", which is very frequently
-   used (and sometimes unrecognized as %7E by broken servers).
-
-   An unsafe character is the one that should be encoded when URLs are
-   placed in foreign environments.  E.g. space and newline are unsafe
-   in HTTP contexts because HTTP uses them as separator and line
-   terminator, so they must be encoded to %20 and %0A respectively.
-   "*" is unsafe in shell context, etc.
-
-   We determine whether a character is unsafe through static table
-   lookup.  This code assumes ASCII character set and 8-bit chars.  */
-
 enum {
-  /* rfc1738 reserved chars + "$" and ",".  */
   urlchr_reserved = 1,
-
-  /* rfc1738 unsafe chars, plus non-printables.  */
   urlchr_unsafe = 2
 };
 
@@ -103,40 +63,43 @@ enum {
 #define URL_RESERVED_CHAR(c) urlchr_test(c, urlchr_reserved)
 #define URL_UNSAFE_CHAR(c)   urlchr_test(c, urlchr_unsafe)
 
-/* Shorthands for the table: */
 #define R  urlchr_reserved
 #define U  urlchr_unsafe
 #define RU (R | U)
 
 static const unsigned char urlchr_table[256] = {
-  U,  U, U,  U,  U, U,  U, U, /* NUL SOH STX ETX  EOT ENQ ACK BEL */
-  U,  U, U,  U,  U, U,  U, U, /* BS  HT  LF  VT   FF  CR  SO  SI  */
-  U,  U, U,  U,  U, U,  U, U, /* DLE DC1 DC2 DC3  DC4 NAK SYN ETB */
-  U,  U, U,  U,  U, U,  U, U, /* CAN EM  SUB ESC  FS  GS  RS  US  */
-  U,  0, U,  RU, R, U,  R, 0, /* SP  !   "   #    $   %   &   '   */
-  0,  0, 0,  R,  R, 0,  0, R, /* (   )   *   +    ,   -   .   /   */
-  0,  0, 0,  0,  0, 0,  0, 0, /* 0   1   2   3    4   5   6   7   */
-  0,  0, RU, R,  U, R,  U, R, /* 8   9   :   ;    <   =   >   ?   */
-  RU, 0, 0,  0,  0, 0,  0, 0, /* @   A   B   C    D   E   F   G   */
-  0,  0, 0,  0,  0, 0,  0, 0, /* H   I   J   K    L   M   N   O   */
-  0,  0, 0,  0,  0, 0,  0, 0, /* P   Q   R   S    T   U   V   W   */
-  0,  0, 0,  RU, U, RU, U, 0, /* X   Y   Z   [    \   ]   ^   _   */
-  U,  0, 0,  0,  0, 0,  0, 0, /* `   a   b   c    d   e   f   g   */
-  0,  0, 0,  0,  0, 0,  0, 0, /* h   i   j   k    l   m   n   o   */
-  0,  0, 0,  0,  0, 0,  0, 0, /* p   q   r   s    t   u   v   w   */
-  0,  0, 0,  U,  U, U,  0, U, /* x   y   z   {    |   }   ~   DEL */
+  U,  U, U,  U,  U, U,  U, U,
+  U,  U, U,  U,  U, U,  U, U,
+  U,  U, U,  U,  U, U,  U, U,
+  U,  U, U,  U,  U, U,  U, U,
+  U,  0, U,  RU, R, U,  R, 0,
+  0,  0, 0,  R,  R, 0,  0, R,
+  0,  0, 0,  0,  0, 0,  0, 0,
+  0,  0, RU, R,  U, R,  U, R,
+  RU, 0, 0,  0,  0, 0,  0, 0,
+  0,  0, 0,  0,  0, 0,  0, 0,
+  0,  0, 0,  0,  0, 0,  0, 0,
+  0,  0, 0,  RU, U, RU, U, 0,
+  U,  0, 0,  0,  0, 0,  0, 0,
+  0,  0, 0,  0,  0, 0,  0, 0,
+  0,  0, 0,  0,  0, 0,  0, 0,
+  0,  0, 0,  U,  U, U,  0, U,
 
-  U,  U, U,  U,  U, U,  U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U,
+  U,  U, U,  U,  U, U,  U, U, U, U, U, U, U, U, U, U,
+  U,  U, U,  U,  U, U,  U, U, U, U, U, U, U, U, U, U,
+  U,  U, U,  U,  U, U,  U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U,
 
-  U,  U, U,  U,  U, U,  U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U,
+  U,  U, U,  U,  U, U,  U, U, U, U, U, U, U, U, U, U,
+  U,  U, U,  U,  U, U,  U, U, U, U, U, U, U, U, U, U,
+  U,  U, U,  U,  U, U,  U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U, U
 };
 #undef R
 #undef U
 #undef RU
 
 static void url_unescape_1(char* s, unsigned char mask) {
-  unsigned char* t = (unsigned char*)s; /* t - tortoise */
-  unsigned char* h = (unsigned char*)s; /* h - hare     */
+  unsigned char* t = (unsigned char*)s;
+  unsigned char* h = (unsigned char*)s;
 
   for (; *h; h++, t++) {
     if (*h != '%') {
@@ -144,14 +107,13 @@ static void url_unescape_1(char* s, unsigned char mask) {
       *t = *h;
     } else {
       unsigned char c;
-      /* Do nothing if '%' is not followed by two hex digits. */
+
       if (!h[1] || !h[2] || !(c_isxdigit(h[1]) && c_isxdigit(h[2])))
         goto copychar;
       c = X2DIGITS_TO_NUM(h[1], h[2]);
       if (urlchr_test(c, mask))
         goto copychar;
-      /* Don't unescape %00 because there is no way to insert it
-         into a C string without effectively truncating it. */
+
       if (c == '\0')
         goto copychar;
       *t = c;
@@ -161,33 +123,13 @@ static void url_unescape_1(char* s, unsigned char mask) {
   *t = '\0';
 }
 
-/* URL-unescape the string S.
-
-   This is done by transforming the sequences "%HH" to the character
-   represented by the hexadecimal digits HH.  If % is not followed by
-   two hexadecimal digits, it is inserted literally.
-
-   The transformation is done in place.  If you need the original
-   string intact, make a copy before calling this function.  */
 void url_unescape(char* s) {
   url_unescape_1(s, 0);
 }
 
-/* URL-unescape the string S.
-
-   This functions behaves identically as url_unescape(), but does not
-   convert characters from "reserved". In other words, it only converts
-   "unsafe" characters.  */
 void url_unescape_except_reserved(char* s) {
   url_unescape_1(s, urlchr_reserved);
 }
-
-/* The core of url_escape_* functions.  Escapes the characters that
-   match the provided mask in urlchr_table.
-
-   If ALLOW_PASSTHROUGH is true, a string with no unsafe chars will be
-   returned unchanged.  If ALLOW_PASSTHROUGH is false, a freshly
-   allocated string will be returned in all cases.  */
 
 static char* url_escape_1(const char* s, unsigned char mask, bool allow_passthrough) {
   const char* p1;
@@ -197,7 +139,7 @@ static char* url_escape_1(const char* s, unsigned char mask, bool allow_passthro
 
   for (p1 = s; *p1; p1++)
     if (urlchr_test(*p1, mask))
-      addition += 2; /* Two more characters (hex digits) */
+      addition += 2;
 
   if (!addition)
     return allow_passthrough ? (char*)s : xstrdup(s);
@@ -208,7 +150,6 @@ static char* url_escape_1(const char* s, unsigned char mask, bool allow_passthro
   p1 = s;
   p2 = newstr;
   while (*p1) {
-    /* Quote the characters that match the test mask. */
     if (urlchr_test(*p1, mask)) {
       unsigned char c = (unsigned char)*p1++;
       *p2++ = '%';
@@ -224,56 +165,28 @@ static char* url_escape_1(const char* s, unsigned char mask, bool allow_passthro
   return newstr;
 }
 
-/* URL-escape the unsafe characters (see urlchr_table) in a given
-   string, returning a freshly allocated string.  */
-
 char* url_escape(const char* s) {
   return url_escape_1(s, urlchr_unsafe, false);
 }
-
-/* URL-escape the unsafe and reserved characters (see urlchr_table) in
-   a given string, returning a freshly allocated string.  */
 
 char* url_escape_unsafe_and_reserved(const char* s) {
   return url_escape_1(s, urlchr_unsafe | urlchr_reserved, false);
 }
 
-/* URL-escape the unsafe characters (see urlchr_table) in a given
-   string.  If no characters are unsafe, S is returned.  */
-
 static char* url_escape_allow_passthrough(const char* s) {
   return url_escape_1(s, urlchr_unsafe, true);
 }
-
-/* Decide whether the char at position P needs to be encoded.  (It is
-   not enough to pass a single char *P because the function may need
-   to inspect the surrounding context.)
-
-   Return true if the char should be escaped as %XX, false otherwise.  */
 
 static inline bool char_needs_escaping(const char* p) {
   if (*p == '%') {
     if (c_isxdigit(*(p + 1)) && c_isxdigit(*(p + 2)))
       return false;
-    else
-      /* Garbled %.. sequence: encode `%'. */
-      return true;
+    return true;
   } else if (URL_UNSAFE_CHAR(*p) && !URL_RESERVED_CHAR(*p)) {
     return true;
   }
   return false;
 }
-
-/* Translate a %-escaped (but possibly non-conformant) input string S
-   into a %-escaped (and conformant) output string.  If no characters
-   are encoded or decoded, return the same string S; otherwise, return
-   a freshly allocated string with the new contents.
-
-   After a URL has been run through this function, the protocols that
-   use `%' as the quote character can use the resulting string as-is,
-   while those that don't can use url_unescape to get to the intended
-   data.  This function is stable: once the input is transformed,
-   further transformations of the result yield the same output.  */
 
 static char* reencode_escapes(const char* s) {
   const char* p1;
@@ -281,23 +194,18 @@ static char* reencode_escapes(const char* s) {
   int oldlen, newlen;
   int encode_count = 0;
 
-  /* First pass: inspect the string to see if there's anything to do,
-     and to calculate the new length.  */
   for (p1 = s; *p1; p1++)
     if (char_needs_escaping(p1))
       ++encode_count;
 
   if (!encode_count)
-    /* The string is good as it is. */
-    return (char*)s; /* C const model sucks. */
+    return (char*)s;
 
   oldlen = (int)(p1 - s);
-  /* Each encoding adds two characters (hex digits).  */
+
   newlen = oldlen + 2 * encode_count;
   newstr = xmalloc((size_t)newlen + 1);
 
-  /* Second pass: copy the string to the destination address, encoding
-     chars when needed.  */
   p1 = s;
   p2 = newstr;
 
@@ -317,9 +225,6 @@ static char* reencode_escapes(const char* s) {
   return newstr;
 }
 
-/* Returns the scheme type if the scheme is supported, or
-   SCHEME_INVALID if not.  */
-
 enum url_scheme url_scheme(const char* url) {
   if (!url)
     return SCHEME_INVALID;
@@ -338,10 +243,6 @@ enum url_scheme url_scheme(const char* url) {
 }
 
 #define SCHEME_CHAR(ch) (c_isalnum(ch) || (ch) == '-' || (ch) == '+')
-
-/* Return 1 if the URL begins with any "scheme", 0 otherwise.  As
-   currently implemented, it returns true if URL begins with
-   [-+a-zA-Z0-9]+: .  */
 
 bool url_has_scheme(const char* url) {
   const char* p = url;
@@ -373,12 +274,6 @@ const char* scheme_leading_string(enum url_scheme scheme) {
   return supported_schemes[scheme].leading_string;
 }
 
-/* Skip the username and password, if present in the URL.  The
-   function should *not* be called with the complete URL, but with the
-   portion after the scheme.
-
-   If no username and password are found, return URL.  */
-
 static const char* url_skip_credentials(const char* url) {
   static const char* allowed = "-_.!~*'();:&=+$,";
 
@@ -403,19 +298,16 @@ static const char* url_skip_credentials(const char* url) {
   return url;
 }
 
-/* Parse credentials contained in [BEG, END).  The region is expected
-   to have come from a URL and is unescaped.  */
-
 static bool parse_credentials(const char* beg, const char* end, char** user, char** passwd) {
   char* colon;
   const char* userend;
 
   if (beg == end)
-    return false; /* empty user name */
+    return false;
 
   colon = memchr(beg, ':', (size_t)(end - beg));
   if (colon == beg)
-    return false; /* again empty user name */
+    return false;
 
   if (colon) {
     *passwd = strdupdelim(colon + 1, end);
@@ -439,7 +331,6 @@ static bool is_valid_port(const char* p) {
   return digits && (p[digits] == '/' || p[digits] == '\0');
 }
 
-/* Prepend "http://" to url if scheme is missing, otherwise return NULL. */
 char* maybe_prepend_scheme(const char* url) {
   if (!url)
     return NULL;
@@ -451,9 +342,6 @@ char* maybe_prepend_scheme(const char* url) {
   if (p == url)
     return NULL;
 
-  /* If we're looking at "://", it means the URL uses a scheme we
-     don't support, which may include "https" when compiled without
-     SSL support.  Don't bogusly prepend "http://" to such URLs.  */
   if (p && p[0] == ':' && p[1] == '/' && p[2] == '/')
     return NULL;
 
@@ -466,19 +354,12 @@ char* maybe_prepend_scheme(const char* url) {
 
 static void split_path(const char*, char**, char**);
 
-/* Like strpbrk, with the exception that it returns the pointer to the
-   terminating zero (end-of-string aka "eos") if no matching character
-   is found.  */
-
 static inline char* strpbrk_or_eos(const char* s, const char* accept) {
   char* p = strpbrk(s, accept);
   if (!p)
     p = strchr(s, '\0');
   return p;
 }
-
-/* Turn STR into lowercase; return true if a character was actually
-   changed. */
 
 static bool lowercase_str(char* str) {
   bool changed = false;
@@ -520,24 +401,19 @@ enum {
 };
 
 static const char* parse_errors[] = {
-  [PE_NO_ERROR]                = N_("No error"),
-  [PE_UNSUPPORTED_SCHEME]      = N_("Unsupported scheme"),
-  [PE_UNSUPPORTED_SCHEME_HTTPS]= N_("HTTPS support not compiled in"),
-  [PE_UNSUPPORTED_SCHEME_FTPS] = N_("FTPS support not compiled in"),
-  [PE_MISSING_SCHEME]          = N_("Scheme missing"),
-  [PE_INVALID_HOST_NAME]       = N_("Invalid host name"),
-  [PE_BAD_PORT_NUMBER]         = N_("Bad port number"),
-  [PE_INVALID_USER_NAME]       = N_("Invalid user name"),
+  [PE_NO_ERROR]                 = N_("No error"),
+  [PE_UNSUPPORTED_SCHEME]       = N_("Unsupported scheme"),
+  [PE_UNSUPPORTED_SCHEME_HTTPS] = N_("HTTPS support not compiled in"),
+  [PE_UNSUPPORTED_SCHEME_FTPS]  = N_("FTPS support not compiled in"),
+  [PE_MISSING_SCHEME]           = N_("Scheme missing"),
+  [PE_INVALID_HOST_NAME]        = N_("Invalid host name"),
+  [PE_BAD_PORT_NUMBER]          = N_("Bad port number"),
+  [PE_INVALID_USER_NAME]        = N_("Invalid user name"),
   [PE_UNTERMINATED_IPV6_ADDRESS]= N_("Unterminated IPv6 numeric address"),
-  [PE_IPV6_NOT_SUPPORTED]      = N_("IPv6 addresses not supported"),
-  [PE_INVALID_IPV6_ADDRESS]    = N_("Invalid IPv6 numeric address")
+  [PE_IPV6_NOT_SUPPORTED]       = N_("IPv6 addresses not supported"),
+  [PE_INVALID_IPV6_ADDRESS]     = N_("Invalid IPv6 numeric address")
 };
 
-/* Parse a URL.
-
-   Return a new struct url if successful, NULL on error.  In case of
-   error, and if ERROR is not NULL, also set *ERROR to the appropriate
-   error code. */
 struct url* url_parse(const char* url, int* error, struct iri* iri, bool percent_encode) {
   struct url* u;
   const char* p;
@@ -644,7 +520,7 @@ struct url* url_parse(const char* url, int* error, struct iri* iri, bool percent
     p = strpbrk_or_eos(p, seps);
     host_e = p;
   }
-  ++seps; /* advance to '/' */
+  ++seps;
 
   if (host_b == host_e) {
     error_code = PE_INVALID_HOST_NAME;
@@ -679,7 +555,7 @@ struct url* url_parse(const char* url, int* error, struct iri* iri, bool percent
 
 #define GET_URL_PART(sepchar, var)                          \
   do {                                                      \
-    if (*p == sepchar)                                      \
+    if (*p == (sepchar))                                    \
       var##_b = ++p, var##_e = p = strpbrk_or_eos(p, seps); \
     ++seps;                                                 \
   } while (0)
@@ -767,9 +643,6 @@ error:
   return NULL;
 }
 
-/* Return the error message string from ERROR_CODE, which should have
-   been retrieved from url_parse.  The error message is translated.  */
-
 const char* url_error(int error_code) {
   assert(error_code >= 0 && error_code < (int)countof(parse_errors));
   if (error_code < 0 || error_code >= (int)countof(parse_errors))
@@ -777,9 +650,6 @@ const char* url_error(int error_code) {
 
   return _(parse_errors[error_code]);
 }
-
-/* Split PATH into DIR and FILE.  PATH comes from the URL and is
-   expected to be URL-escaped.  */
 
 static void split_path(const char* path, char** dir, char** file) {
   char* last_slash = strrchr(path, '/');
@@ -793,9 +663,6 @@ static void split_path(const char* path, char** dir, char** file) {
   url_unescape(*dir);
   url_unescape(*file);
 }
-
-/* Return the length of the full path, without the terminating
-   zero.  */
 
 static int full_path_length(const struct url* url) {
   int len = 0;
@@ -813,18 +680,16 @@ static int full_path_length(const struct url* url) {
   return len;
 }
 
-/* Write out the full path. */
-
 static void full_path_write(const struct url* url, char* where) {
-#define FROB(el, chr)         \
-  do {                        \
-    char* f_el = url->el;     \
-    if (f_el) {               \
-      int l = (int)strlen(f_el); \
-      *where++ = chr;         \
-      memcpy(where, f_el, (size_t)l); \
-      where += l;             \
-    }                         \
+#define FROB(el, chr)                \
+  do {                               \
+    char* f_el = url->el;            \
+    if (f_el) {                      \
+      int l = (int)strlen(f_el);     \
+      *where++ = (chr);              \
+      memcpy(where, f_el, (size_t)l);\
+      where += l;                    \
+    }                                \
   } while (0)
 
   FROB(path, '/');
@@ -833,10 +698,6 @@ static void full_path_write(const struct url* url, char* where) {
 
 #undef FROB
 }
-
-/* Public function for getting the "full path".  E.g. if u->path is
-   "foo/bar" and u->query is "param=value", full_path will be
-   "/foo/bar?param=value". */
 
 char* url_full_path(const struct url* url) {
   int length = full_path_length(url);
@@ -847,10 +708,6 @@ char* url_full_path(const struct url* url) {
 
   return full_path;
 }
-
-/* Unescape CHR in an otherwise escaped STR.  Used to selectively
-   escaping of certain characters, such as "/" and ":".  Returns a
-   count of unescaped chars.  */
 
 static void unescape_single_char(char* str, char chr) {
   const char c1 = XNUM_TO_DIGIT(((unsigned char)chr) >> 4);
@@ -868,9 +725,6 @@ static void unescape_single_char(char* str, char chr) {
   *t = '\0';
 }
 
-/* Escape unsafe and reserved characters, except for the slash
-   characters.  */
-
 static char* url_escape_dir(const char* dir) {
   char* newdir = url_escape_1(dir, urlchr_unsafe | urlchr_reserved, true);
   if (newdir == dir)
@@ -879,9 +733,6 @@ static char* url_escape_dir(const char* dir) {
   unescape_single_char(newdir, '/');
   return newdir;
 }
-
-/* Sync u->path and u->url with u->dir and u->file.  Called after
-   u->file or u->dir have been changed, typically by the FTP code.  */
 
 static void sync_path(struct url* u) {
   char *newpath, *efile, *edir;
@@ -917,8 +768,6 @@ static void sync_path(struct url* u) {
   u->url = url_string(u, URL_AUTH_SHOW);
 }
 
-/* Mutators.  Code in ftp.c insists on changing u->dir and u->file. */
-
 void url_set_dir(struct url* url, const char* newdir) {
   xfree(url->dir);
   url->dir = xstrdup(newdir);
@@ -951,8 +800,6 @@ void url_free(struct url* url) {
   }
 }
 
-/* Create all the necessary directories for PATH (a file).  Calls
-   make_directory internally.  */
 int mkalldirs(const char* path) {
   const char* p;
   char* t;
@@ -983,18 +830,16 @@ int mkalldirs(const char* path) {
   return res;
 }
 
-/* A growable string structure, used by url_file_name and friends. */
-
 struct growable {
   char* base;
   int size;
   int tail;
 };
 
-#define GROW(g, append_size)                                      \
-  do {                                                            \
-    struct growable* G_ = (g);                                    \
-    DO_REALLOC(G_->base, G_->size, G_->tail + (append_size), char); \
+#define GROW(g, append_size)                                         \
+  do {                                                               \
+    struct growable* G_ = (g);                                       \
+    DO_REALLOC(G_->base, G_->size, G_->tail + (append_size), char);  \
   } while (0)
 
 #define TAIL(r) ((r)->base + (r)->tail)
@@ -1027,64 +872,31 @@ static void append_string(const char* str, struct growable* dest) {
   append_null(dest);
 }
 
+/* Linux/Unix only filename character handling */
+
 enum {
-  filechr_not_unix    = 1,
-  filechr_not_vms     = 2,
-  filechr_not_windows = 4,
-  filechr_control     = 8
+  filechr_not_unix = 1,
+  filechr_control = 2
 };
 
-#define FILE_CHAR_TEST(c, mask) \
-  ((opt.restrict_files_nonascii && !c_isascii((unsigned char)(c))) || (filechr_table[(unsigned char)(c)] & (mask)))
+static bool file_char_needs_escape(unsigned char c, int mask) {
+  if (opt.restrict_files_nonascii && !c_isascii(c))
+    return true;
 
-#define U  filechr_not_unix
-#define V  filechr_not_vms
-#define W  filechr_not_windows
-#define C  filechr_control
+  if ((mask & filechr_control) && (c < 32 || c == 127))
+    return true;
 
-#define UVWC (U | V | W | C)
-#define UW   (U | W)
-#define VC   (V | C)
-#define VW   (V | W)
+  if ((mask & filechr_not_unix) && (c == '/' || c == '\0'))
+    return true;
 
-static const unsigned char filechr_table[256] = {
-  UVWC, VC,   VC,   VC,   VC, VC, VC, VC, /* NUL SOH STX ETX  EOT ENQ ACK BEL */
-  VC,   VC,   VC,   VC,   VC, VC, VC, VC, /* BS  HT  LF  VT   FF  CR  SO  SI  */
-  VC,   VC,   VC,   VC,   VC, VC, VC, VC, /* DLE DC1 DC2 DC3  DC4 NAK SYN ETB */
-  VC,   VC,   VC,   VC,   VC, VC, VC, VC, /* CAN EM  SUB ESC  FS  GS  RS  US  */
-  0,    0,    W,    0,    0,  0,  0,  0,  /* SP  !   "   #    $   %   &   '   */
-  0,    0,    VW,   0,    0,  0,  0,  UW, /* (   )   *   +    ,   -   .   /   */
-  0,    0,    0,    0,    0,  0,  0,  0,  /* 0   1   2   3    4   5   6   7   */
-  0,    0,    W,    0,    W,  0,  W,  VW, /* 8   9   :   ;    <   =   >   ?   */
-  0,    0,    0,    0,    0,  0,  0,  0,  /* @   A   B   C    D   E   F   G   */
-  0,    0,    0,    0,    0,  0,  0,  0,  /* H   I   J   K    L   M   N   O   */
-  0,    0,    0,    0,    0,  0,  0,  0,  /* P   Q   R   S    T   U   V   W   */
-  0,    0,    0,    0,    W,  0,  0,  0,  /* X   Y   Z   [    \   ]   ^   _   */
-  0,    0,    0,    0,    0,  0,  0,  0,  /* `   a   b   c    d   e   f   g   */
-  0,    0,    0,    0,    0,  0,  0,  0,  /* h   i   j   k    l   m   n   o   */
-  0,    0,    0,    0,    0,  0,  0,  0,  /* p   q   r   s    t   u   v   w   */
-  0,    0,    0,    0,    W,  0,  0,  C,  /* x   y   z   {    |   }   ~   DEL */
+  return false;
+}
 
-  0,    0,    0,    0,    0,  0,  0,  0,  0, 0, 0, 0, 0, 0, 0, 0, /* 128-143 */
-  0,    0,    0,    0,    0,  0,  0,  0,  0, 0, 0, 0, 0, 0, 0, 0, /* 144-159 */
-  0,    0,    0,    0,    0,  0,  0,  0,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+#define FILE_CHAR_TEST(c, mask) file_char_needs_escape((unsigned char)(c), (mask))
 
-  0,    0,    0,    0,    0,  0,  0,  0,  0, 0, 0, 0, 0, 0, 0, 0,
-  0,    0,    0,    0,    0,  0,  0,  0,  0, 0, 0, 0, 0, 0, 0, 0,
-  0,    0,    0,    0,    0,  0,  0,  0,  0, 0, 0, 0, 0, 0, 0, 0,
-};
-#undef U
-#undef V
-#undef W
-#undef C
-#undef UW
-#undef UVWC
-#undef VC
-#undef VW
-
-#define FN_PORT_SEP (opt.restrict_files_os != restrict_windows ? ':' : '+')
-#define FN_QUERY_SEP (((opt.restrict_files_os != restrict_vms) && (opt.restrict_files_os != restrict_windows)) ? '?' : '@')
-#define FN_QUERY_SEP_STR (((opt.restrict_files_os != restrict_vms) && (opt.restrict_files_os != restrict_windows)) ? "?" : "@")
+#define FN_PORT_SEP ':'
+#define FN_QUERY_SEP '?'
+#define FN_QUERY_SEP_STR "?"
 
 static void append_uri_pathel(const char* b, const char* e, bool escaped, struct growable* dest) {
   const char* p;
@@ -1098,13 +910,7 @@ static void append_uri_pathel(const char* b, const char* e, bool escaped, struct
   if (!dest)
     return;
 
-  if (opt.restrict_files_os == restrict_unix)
-    mask = filechr_not_unix;
-  else if (opt.restrict_files_os == restrict_vms)
-    mask = filechr_not_vms;
-  else
-    mask = filechr_not_windows;
-
+  mask = filechr_not_unix;
   if (opt.restrict_files_ctrl)
     mask |= filechr_control;
 
@@ -1134,11 +940,9 @@ static void append_uri_pathel(const char* b, const char* e, bool escaped, struct
       ++quoted;
 
   outlen = (int)(e - b) + (2 * quoted);
-#ifdef WINDOWS
-  max_length = MAX_PATH;
-#else
+
   max_length = get_max_length(dest->base, dest->tail, _PC_NAME_MAX);
-#endif
+
   max_length -= CHOMP_BUFFER;
   if (max_length > 0 && outlen > max_length) {
     logprintf(LOG_NOTQUIET, "The destination name is too long (%d), reducing to %d\n", outlen, max_length);
@@ -1161,9 +965,9 @@ static void append_uri_pathel(const char* b, const char* e, bool escaped, struct
           break;
         *q++ = *p;
         i++;
-      } else if (i + 3 > outlen)
+      } else if (i + 3 > outlen) {
         break;
-      else {
+      } else {
         unsigned char ch = (unsigned char)*p;
         *q++ = '%';
         *q++ = XNUM_TO_DIGIT(ch >> 4);
@@ -1371,9 +1175,6 @@ char* url_file_name(const struct url* u, char* replaced_filename) {
   return unique;
 }
 
-/* Resolve "." and ".." elements of PATH by destructively modifying
-   PATH and return true if PATH has been modified, false otherwise.  */
-
 static bool path_simplify(enum url_scheme scheme, char* path) {
   char* h = path;
   char* t = path;
@@ -1423,10 +1224,6 @@ static bool path_simplify(enum url_scheme scheme, char* path) {
 
   return modified;
 }
-
-/* Return the length of URL's path.  Path is considered to be
-   terminated by one or more of the ?query or ;params or #fragment,
-   depending on the scheme.  */
 
 static const char* path_end(const char* url) {
   enum url_scheme scheme = url_scheme(url);
@@ -1542,11 +1339,11 @@ again:
   return merge;
 }
 
-#define APPEND(p, s)             \
-  do {                           \
-    int len = (int)strlen(s);    \
-    memcpy((p), (s), (size_t)len); \
-    (p) += len;                  \
+#define APPEND(p, s)                    \
+  do {                                  \
+    int len = (int)strlen(s);           \
+    memcpy((p), (s), (size_t)len);      \
+    (p) += len;                         \
   } while (0)
 
 #define HIDDEN_PASSWORD "*password*"
@@ -1831,7 +1628,7 @@ const char* test_uri_merge(void) {
   return NULL;
 }
 
-#endif /* TESTING */
+#endif
 
 /*
  * vim: et ts=2 sw=2
