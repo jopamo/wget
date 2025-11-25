@@ -439,7 +439,9 @@ void hsts_store_save(hsts_store_t store, const char* filename) {
         hsts_read_database(store, fp, true);
 
       fseek(fp, 0, SEEK_SET);
-      ftruncate(fd, 0);
+      if (ftruncate(fd, 0) == -1) {
+        /* Ignore truncate errors as we're overwriting the file anyway */
+      }
 
       hsts_store_dump(store, fp);
 
