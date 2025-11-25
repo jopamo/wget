@@ -27,11 +27,6 @@
 #include <string.h>
 #include <sys/stat.h>
 
-#if defined _WIN32 && !defined __CYGWIN__
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#endif
-
 #ifndef P_tmpdir
 #ifdef _P_tmpdir
 #define P_tmpdir _P_tmpdir
@@ -44,11 +39,7 @@
 #define PATH_MAX 4096
 #endif
 
-#if defined _WIN32 && !defined __CYGWIN__
-#define IS_DIR_SEPARATOR(C) ((C) == '/' || (C) == '\\')
-#else
 #define IS_DIR_SEPARATOR(C) ((C) == '/')
-#endif
 
 static bool direxists(const char* dir) {
   struct stat st;
@@ -98,14 +89,7 @@ int path_search(char* tmpl, size_t tmpl_len, const char* dir, const char* pfx, b
   }
 
   if (chosen == NULL) {
-#if defined _WIN32 && !defined __CYGWIN__
-    char dirbuf[PATH_MAX];
-    DWORD written = GetTempPath(PATH_MAX, dirbuf);
-    if (written > 0 && written < PATH_MAX && direxists(dirbuf))
-      chosen = dirbuf;
-    else
-#endif
-        if (direxists(P_tmpdir))
+    if (direxists(P_tmpdir))
       chosen = P_tmpdir;
     else if (strcmp(P_tmpdir, "/tmp") != 0 && direxists("/tmp"))
       chosen = "/tmp";
@@ -116,11 +100,7 @@ int path_search(char* tmpl, size_t tmpl_len, const char* dir, const char* pfx, b
   }
 
   size_t dlen = strlen(chosen);
-#ifdef __VMS
-  bool add_slash = false;
-#else
   bool add_slash = dlen != 0 && !IS_DIR_SEPARATOR(chosen[dlen - 1]);
-#endif
   size_t needed = dlen + (add_slash ? 1 : 0) + plen + 6 + 1;
   if (tmpl_len < needed) {
     errno = EINVAL;
