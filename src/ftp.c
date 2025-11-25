@@ -1271,16 +1271,7 @@ Error in server response, closing control connection.\n"));
        connecting to the server.)
     */
     if (!output_stream || con->cmd & DO_LIST) {
-/* On VMS, alter the name as required. */
-#ifdef __VMS
-      char* targ;
-
-      targ = ods_conform(con->target);
-      if (targ != con->target) {
-        xfree(con->target);
-        con->target = targ;
-      }
-#endif /* def __VMS */
+      /* VMS support removed - ods_conform no longer available */
 
       mkalldirs(con->target);
       if (opt.backups)
@@ -1510,20 +1501,11 @@ Error in server response, closing control connection.\n"));
        print it out.  */
     if (con->cmd & DO_LIST) {
       if (opt.server_response) {
-/* 2005-02-25 SMS.
-   Much of this work may already have been done, but repeating it should
-   do no damage beyond wasting time.
-*/
-/* On VMS, alter the name as required. */
-#ifdef __VMS
-        char* targ;
-
-        targ = ods_conform(con->target);
-        if (targ != con->target) {
-          xfree(con->target);
-          con->target = targ;
-        }
-#endif /* def __VMS */
+        /* 2005-02-25 SMS.
+           Much of this work may already have been done, but repeating it should
+           do no damage beyond wasting time.
+        */
+        /* VMS support removed - ods_conform no longer available */
 
         mkalldirs(con->target);
         fp = fopen(con->target, "r");

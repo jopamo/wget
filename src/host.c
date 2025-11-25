@@ -9,24 +9,14 @@
 #include <string.h>
 #include <assert.h>
 
-#ifndef WINDOWS
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #ifndef __BEOS__
 #include <arpa/inet.h>
 #endif
-#ifdef __VMS
-#include "vms_ip.h"
-#else /* def __VMS */
 #include <netdb.h>
-#endif /* def __VMS [else] */
 #define SET_H_ERRNO(err) ((void)(h_errno = (err)))
-#else /* WINDOWS */
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#define SET_H_ERRNO(err) WSASetLastError(err)
-#endif /* WINDOWS */
 
 #include <errno.h>
 
@@ -41,7 +31,7 @@
 #define NO_ADDRESS NO_DATA
 #endif
 
-#if !HAVE_DECL_H_ERRNO && !defined(WINDOWS)
+#if !HAVE_DECL_H_ERRNO
 extern int h_errno;
 #endif
 
@@ -538,7 +528,7 @@ bool is_valid_ipv6_address(const char* str, const char* end) {
 
 /* Mapping between known hosts and lists of their addresses */
 static struct hash_table* host_name_addresses_map;
-static wget_mutex_t dns_cache_lock = WGET_MUTEX_INITIALIZER;
+static wget_mutex_t dns_cache_lock;
 
 /* Return the host's resolved addresses from the cache, if
    available */
@@ -549,6 +539,11 @@ static struct address_list* cache_query(const char* host) {
   if (!host)
     return NULL;
 
+  static bool dns_cache_initialized = false;
+  if (!dns_cache_initialized) {
+    wget_mutex_init(&dns_cache_lock);
+    dns_cache_initialized = true;
+  }
   wget_mutex_lock(&dns_cache_lock);
   if (host_name_addresses_map) {
     al = hash_table_get(host_name_addresses_map, host);
@@ -579,6 +574,11 @@ static void cache_store(const char* host, struct address_list* al) {
   if (!host || !al || al->count <= 0)
     return;
 
+  static bool dns_cache_initialized = false;
+  if (!dns_cache_initialized) {
+    wget_mutex_init(&dns_cache_lock);
+    dns_cache_initialized = true;
+  }
   wget_mutex_lock(&dns_cache_lock);
   if (!host_name_addresses_map)
     host_name_addresses_map = make_nocase_string_hash_table(0);
@@ -605,6 +605,11 @@ static void cache_remove(const char* host) {
   if (!host)
     return;
 
+  static bool dns_cache_initialized = false;
+  if (!dns_cache_initialized) {
+    wget_mutex_init(&dns_cache_lock);
+    dns_cache_initialized = true;
+  }
   wget_mutex_lock(&dns_cache_lock);
   if (!host_name_addresses_map) {
     wget_mutex_unlock(&dns_cache_lock);
@@ -741,13 +746,6 @@ static void wget_ares_addrinfo_callback(void* arg, int status, int timeouts WGET
 static void host_ares_socket_state_cb(void* data WGET_ATTR_UNUSED, ares_socket_t socket_fd, int readable, int writable) {
   ares_track_socket_state(socket_fd, readable, writable);
 }
-
-/* Since GnuLib's select() (i.e. rpl_select()) cannot handle socket-numbers
- * returned from C-ares, we must use the original select() from Winsock
- */
-#ifdef WINDOWS
-#undef select
-#endif
 
 static void wait_ares(ares_channel channel) {
   struct ptimer* timer = NULL;
@@ -1140,6 +1138,11 @@ bool sufmatch(const char** list, const char* what) {
 
 #if defined DEBUG_MALLOC || defined TESTING
 void host_cleanup(void) {
+  static bool dns_cache_initialized = false;
+  if (!dns_cache_initialized) {
+    wget_mutex_init(&dns_cache_lock);
+    dns_cache_initialized = true;
+  }
   wget_mutex_lock(&dns_cache_lock);
   if (host_name_addresses_map) {
     hash_table_iterator iter;

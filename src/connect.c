@@ -6,27 +6,18 @@
 
 #include "exits.h"
 #include <assert.h>
+#include <errno.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <netinet/in.h>
 #include <sys/select.h>
 #include <sys/socket.h>
-
-#ifndef WINDOWS
-#ifdef __VMS
-#include "vms_ip.h"
-#else /* def __VMS */
-#include <netdb.h>
-#endif /* def __VMS [else] */
-#include <netinet/in.h>
-#ifndef __BEOS__
-#include <arpa/inet.h>
-#endif
-#endif /* not WINDOWS */
-
-#include <errno.h>
-#include <string.h>
 #include <sys/time.h>
 
 #include "utils.h"
@@ -34,10 +25,7 @@
 #include "connect.h"
 #include "hash.h"
 
-#include <stdint.h>
-
-/* Define sockaddr_storage where unavailable (presumably on IPv4-only
-   hosts) */
+/* Define sockaddr_storage where unavailable (presumably on IPv4-only hosts) */
 
 #ifndef ENABLE_IPV6
 #ifndef HAVE_STRUCT_SOCKADDR_STORAGE
@@ -256,8 +244,8 @@ int connect_to_ip(const ip_address* ip, int port, const char* print) {
   }
 #endif
 
-  /* For very small rate limits, set the buffer size (and hence,
-     hopefully, the kernel's TCP window size) to the per-second limit
+  /* For very small rate limits, set the buffer size (and hence the
+     kernel's TCP window size) to the per-second limit
      That way we should never have to sleep for more than 1s between
      network reads */
   if (opt.limit_rate && opt.limit_rate < 8192) {
@@ -268,8 +256,7 @@ int connect_to_ip(const ip_address* ip, int port, const char* print) {
     if (setsockopt(sock, SOL_SOCKET, SO_RCVBUF, (void*)&bufsize, (socklen_t)sizeof(bufsize)))
       logprintf(LOG_NOTQUIET, _("setsockopt SO_RCVBUF failed: %s\n"), strerror(errno));
 #endif
-    /* When we add limit_rate support for writing, which is useful
-       for POST, we should also set SO_SNDBUF here */
+    /* When limit_rate support for writing is added, SO_SNDBUF should also be set */
   }
 
   if (opt.bind_address) {
@@ -297,14 +284,8 @@ err: {
   /* Protect errno from possible modifications by close and logging */
   int save_errno = errno;
 
-  if (sock >= 0) {
-#ifdef WIN32
-    /* If the connection timed out, fd_close will hang in Gnulib's
-       close_fd_maybe_socket, inside the call to WSAEnumNetworkEvents */
-    if (save_errno != ETIMEDOUT)
-#endif
-      fd_close(sock);
-  }
+  if (sock >= 0)
+    fd_close(sock);
 
   if (print)
     logprintf(LOG_NOTQUIET, _("failed: %s.\n"), strerror(save_errno));
@@ -406,9 +387,7 @@ int bind_local(const ip_address* bind_address, int* port) {
     socklen_t addrlen = sockaddr_size(sa);
 
     if (getsockname(sock, sa, &addrlen) < 0) {
-      /* If we can't find out the socket's local address ("name"),
-         something is seriously wrong with the socket, and it's
-         unusable for us anyway because we must know the chosen port */
+      /* If we can't find out the socket's local address, the socket is unusable */
       fd_close(sock);
       return -1;
     }
@@ -434,8 +413,6 @@ int bind_local(const ip_address* bind_address, int* port) {
 int accept_connection(int local_sock) {
   int sock;
 
-  /* We don't need the values provided by accept, but accept
-     apparently requires them to be present */
   struct sockaddr_storage ss;
   struct sockaddr* sa = (struct sockaddr*)&ss;
   socklen_t addrlen = (socklen_t)sizeof(ss);
@@ -505,11 +482,7 @@ bool socket_ip_address(int sock, ip_address* ip, int endpoint) {
 }
 
 /* Get the socket family of connection on FD and store
-   Return family type on success, -1 otherwise
-   If ENDPOINT is ENDPOINT_LOCAL, it returns the sock family of the
-   local (client) side of the socket
-   Else if ENDPOINT is ENDPOINT_PEER, it returns the sock family of
-   the remote (peer's) side of the socket */
+   Return family type on success, -1 otherwise */
 
 int socket_family(int sock, int endpoint) {
   struct sockaddr_storage storage;
@@ -535,8 +508,7 @@ int socket_family(int sock, int endpoint) {
 /* Return true if the error from the connect code can be considered
    retryable
    Wget normally retries after errors, but the exceptions are the
-   "unsupported protocol" type errors (possible on IPv4/IPv6 dual
-   family systems) and "connection refused" */
+   unsupported protocol type errors and connection refused */
 
 bool retryable_socket_connect_error(int err) {
   /* Have to guard against some of these values not being defined
@@ -549,7 +521,7 @@ bool retryable_socket_connect_error(int err) {
 #ifdef EPFNOSUPPORT
       || err == EPFNOSUPPORT
 #endif
-#ifdef ESOCKTNOSUPPORT /* no, "sockt" is not a typo! */
+#ifdef ESOCKTNOSUPPORT /* no, sockt is not a typo */
       || err == ESOCKTNOSUPPORT
 #endif
 #ifdef EPROTONOSUPPORT
@@ -558,18 +530,17 @@ bool retryable_socket_connect_error(int err) {
 #ifdef ENOPROTOOPT
       || err == ENOPROTOOPT
 #endif
-      /* Apparently, older versions of Linux and BSD used EINVAL
-         instead of EAFNOSUPPORT and such */
+      /* Older systems may use EINVAL instead of EAFNOSUPPORT and such */
       || err == EINVAL)
     return false;
 
   if (!opt.retry_connrefused)
     if (err == ECONNREFUSED
 #ifdef ENETUNREACH
-        || err == ENETUNREACH /* network is unreachable */
+        || err == ENETUNREACH
 #endif
 #ifdef EHOSTUNREACH
-        || err == EHOSTUNREACH /* host is unreachable */
+        || err == EHOSTUNREACH
 #endif
     )
       return false;
@@ -591,11 +562,9 @@ static void ensure_fd_in_select_range(int fd) {
    Returns 1 if FD is available, 0 for timeout and -1 for error
    The argument WAIT_FOR can be a combination of WAIT_FOR_READ and
    WAIT_FOR_WRITE
-   This is a mere convenience wrapper around the select call, and
-   should be taken as such (for example, it doesn't implement Wget's
-   0-timeout-means-no-timeout semantics) */
+   This is a convenience wrapper around select */
 
-static int select_fd_internal(int fd, double maxtime, int wait_for, bool convert_back WGET_ATTR_UNUSED) {
+static int select_fd_internal(int fd, double maxtime, int wait_for) {
   fd_set fdset;
   fd_set* rd = NULL;
   fd_set* wr = NULL;
@@ -622,39 +591,30 @@ static int select_fd_internal(int fd, double maxtime, int wait_for, bool convert
 
   do {
     result = select(fd + 1, rd, wr, NULL, &tmout);
-#ifdef WINDOWS
-    /* gnulib select() converts blocking sockets to nonblocking on
-       Windows
-       wget uses blocking sockets so we must convert them back */
-    if (convert_back)
-      set_windows_fd_as_blocking_socket(fd);
-#endif
   } while (result < 0 && errno == EINTR);
 
   return result;
 }
 
 int select_fd(int fd, double maxtime, int wait_for) {
-  return select_fd_internal(fd, maxtime, wait_for, true);
+  return select_fd_internal(fd, maxtime, wait_for);
 }
 
-#ifdef WINDOWS
+/* Nonblocking variant used by code that manages O_NONBLOCK explicitly
+ * Semantics match select_fd, but may avoid resetting socket flags
+ */
 int select_fd_nb(int fd, double maxtime, int wait_for) {
-  return select_fd_internal(fd, maxtime, wait_for, false);
+  return select_fd_internal(fd, maxtime, wait_for);
 }
-#endif
 
 /* Return true if the connection to the remote site established through
    SOCK is still open
    Specifically, this function returns true if SOCK is not ready for
    reading
-   This is because, when the connection closes, the socket is ready for
-   reading because EOF is about to be delivered
-   A side effect of this method is that sockets that have pending data
-   are considered non-open
-   This is actually a good thing for callers of this function, where
-   such pending data can only be unwanted leftover from a previous
-   request */
+   When the connection closes, the socket is ready for reading because
+   EOF is about to be delivered
+   A side effect is that sockets that have pending data are considered
+   non-open, which is desirable for callers that expect no leftover data */
 
 bool test_socket_open(int sock) {
   fd_set check_set;
@@ -662,9 +622,6 @@ bool test_socket_open(int sock) {
   int ret;
 
   ensure_fd_in_select_range(sock);
-
-  /* Check if we still have a valid (non-EOF) connection
-   * From Andrew Maholski's code in the Unix Socket FAQ */
 
   FD_ZERO(&check_set);
   FD_SET(sock, &check_set);
@@ -674,11 +631,6 @@ bool test_socket_open(int sock) {
   to.tv_usec = 1;
 
   ret = select(sock + 1, &check_set, NULL, NULL, &to);
-#ifdef WINDOWS
-  /* gnulib select() converts blocking sockets to nonblocking in windows
-     wget uses blocking sockets so we must convert them back to blocking */
-  set_windows_fd_as_blocking_socket(sock);
-#endif
 
   if (!ret)
     /* We got a timeout, it means we're still connected */
@@ -729,10 +681,10 @@ static void sock_close(int fd) {
 
 /* Reading and writing from the network
    We build around the socket (file descriptor) API, but support
-   "extended" operations for things that are not mere file descriptors
-   under the hood, such as SSL sockets
-   That way the user code can call fd_read(fd, ...) and we'll run read
-   or SSL_read or whatever is necessary */
+   extended operations for transports that are not plain file descriptors,
+   such as SSL sockets
+   User code can call fd_read(fd, ...) and the correct transport backend
+   (plain read, SSL_read, etc) will be used */
 
 static struct hash_table* transport_map;
 static unsigned int transport_map_modified_tick;
@@ -746,8 +698,7 @@ struct transport_info {
    reading, writing, and polling FD
    This should be used for transport layers like SSL that piggyback on
    sockets
-   FD should otherwise be a real socket, on which you can call
-   getpeername, etc */
+   FD should otherwise be a real socket suitable for getpeername, etc */
 
 void fd_register_transport(int fd, struct transport_implementation* imp, void* ctx) {
   struct transport_info* info;
@@ -779,9 +730,7 @@ void* fd_transport_context(int fd) {
    It is not enough to compare FD to LAST_FD because FD might have been
    closed and reopened
    modified_tick ensures that changes to transport_map will not be
-   unnoticed
-   This is a macro because we want the static storage variables to be
-   per-function */
+   unnoticed */
 
 #define LAZY_RETRIEVE_INFO(info)                                        \
   do {                                                                  \
@@ -820,14 +769,13 @@ static bool poll_internal(int fd, struct transport_info* info, int wf, double ti
 /* Read no more than BUFSIZE bytes of data from FD, storing them to BUF
    If TIMEOUT is non-zero, the operation aborts if no data is received
    after that many seconds
-   If TIMEOUT is -1, the value of opt.read_timeout is used for TIMEOUT */
+   If TIMEOUT is -1, opt.read_timeout is used */
 
 int fd_read(int fd, char* buf, int bufsize, double timeout) {
   struct transport_info* info;
   LAZY_RETRIEVE_INFO(info);
 
-  /* let imp->reader take care about timeout
-     (or in worst case timeout can be 2*timeout) */
+  /* Let imp->reader handle timeout if present */
   if (info && info->imp->reader)
     return info->imp->reader(fd, buf, bufsize, info->ctx, timeout);
 
@@ -836,17 +784,9 @@ int fd_read(int fd, char* buf, int bufsize, double timeout) {
   return sock_read(fd, buf, bufsize);
 }
 
-/* Like fd_read, except it provides a "preview" of the data that will
+/* Like fd_read, except it provides a preview of the data that will
    be read by subsequent calls to fd_read
-   Specifically, it copies no more than BUFSIZE bytes of the currently
-   available data to BUF and returns the number of bytes copied
-   Return values and timeout semantics are the same as those of fd_read
-   CAVEAT: Do not assume that the first subsequent call to fd_read will
-   retrieve the same amount of data
-   Reading can return more or less data, depending on the TCP
-   implementation and other circumstances
-   However, barring an error, it can be expected that all the peeked
-   data will eventually be read by fd_read */
+   Return values and timeout semantics are the same as those of fd_read */
 
 int fd_peek(int fd, char* buf, int bufsize, double timeout) {
   struct transport_info* info;
@@ -861,17 +801,17 @@ int fd_peek(int fd, char* buf, int bufsize, double timeout) {
 }
 
 /* Write the entire contents of BUF to FD
-   If TIMEOUT is non-zero, the operation aborts if no data is received
+   If TIMEOUT is non-zero, the operation aborts if no progress is made
    after that many seconds
-   If TIMEOUT is -1, the value of opt.timeout is used for TIMEOUT */
+   If TIMEOUT is -1, opt.timeout is used */
 
 int fd_write(int fd, char* buf, int bufsize, double timeout) {
   int res;
   struct transport_info* info;
   LAZY_RETRIEVE_INFO(info);
 
-  /* `write' may write less than LEN bytes, thus the loop keeps trying
-     it until all was written, or an error occurred */
+  /* write may write less than LEN bytes, so loop until all is written
+     or an error occurs */
   res = 0;
   while (bufsize > 0) {
     if (!poll_internal(fd, info, WAIT_FOR_WRITE, timeout))
@@ -889,18 +829,13 @@ int fd_write(int fd, char* buf, int bufsize, double timeout) {
 }
 
 /* Report the most recent error(s) on FD
-   This should only be called after fd_* functions, such as fd_read and
+   This should only be called after fd_* functions such as fd_read and
    fd_write, and only if they return a negative result
-   For errors coming from other calls such as setsockopt or fopen,
-   strerror should continue to be used
-   If the transport doesn't support error messages or doesn't supply
-   one, strerror(errno) is returned
-   The returned error message should not be used after fd_close has
-   been called */
+   If the transport doesn't supply an error message, strerror(errno)
+   is returned
+   The returned error message should not be used after fd_close */
 
 const char* fd_errstr(int fd) {
-  /* Don't bother with LAZY_RETRIEVE_INFO, as this will only be called
-     in case of error, never in a tight loop */
   struct transport_info* info = NULL;
 
   if (transport_map)
@@ -910,7 +845,6 @@ const char* fd_errstr(int fd) {
     const char* err = info->imp->errstr(fd, info->ctx);
     if (err)
       return err;
-    /* else, fall through and print the system error */
   }
   return strerror(errno);
 }
@@ -923,8 +857,6 @@ void fd_close(int fd) {
   if (fd < 0)
     return;
 
-  /* Don't use LAZY_RETRIEVE_INFO because fd_close() is only called once
-     per socket, so that particular optimization wouldn't work */
   info = NULL;
   if (transport_map)
     info = hash_table_get(transport_map, (void*)(intptr_t)fd);
@@ -945,9 +877,8 @@ void fd_close(int fd) {
 void connect_cleanup(void) {
   if (transport_map) {
     hash_table_iterator iter;
-    for (hash_table_iterate(transport_map, &iter); hash_table_iter_next(&iter);) {
+    for (hash_table_iterate(transport_map, &iter); hash_table_iter_next(&iter);)
       xfree(iter.value);
-    }
     hash_table_destroy(transport_map);
     transport_map = NULL;
   }

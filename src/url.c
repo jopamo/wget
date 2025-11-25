@@ -48,10 +48,6 @@ as that of the covered work.  */
 #endif
 #include <langinfo.h>
 
-#ifdef __VMS
-#include "vms.h"
-#endif /* def __VMS */
-
 #ifdef TESTING
 #include "../tests/unit-tests.h"
 #endif
@@ -1679,18 +1675,7 @@ char* url_file_name(const struct url* u, char* replaced_filename) {
       xfree(fname);
   }
 
-/* On VMS, alter the name as required. */
-#ifdef __VMS
-  {
-    char* unique2;
-
-    unique2 = ods_conform(unique);
-    if (unique2 != unique) {
-      xfree(unique);
-      unique = unique2;
-    }
-  }
-#endif /* def __VMS */
+  /* VMS support removed - ods_conform no longer available */
 
   return unique;
 }
