@@ -1,27 +1,71 @@
-# Repository Guidelines
+# Agent Guide: Event-Driven Web Downloader Implementation
 
-## Project Structure & Module Organization
-This tree is the trimmed downloader core. All implementation and headers live under `src/`, grouped roughly by protocol (`http.c`, `ftp.c`, `warc.c`), storage helpers (`cookies.c`, `hsts.c`, `xattr.c`), and utility layers (`utils.c`, `xalloc.c`, `progress.c`). Top-level `meson.build` and `meson_options.txt` describe the build graph and feature toggles, while `src/meson.build` lists concrete sources. Policy docs are at the root (`SECURITY.md`, `checklist.md`, `COPYING`, and this file). There are no `lib/`, `gnulib`, or autotools artifacts in this snapshot—keep it that way and avoid committing Meson build directories.
+**This is a comprehensive guide for agents working on the asynchronous web downloader project.** The implementation is designed from the ground up around non-blocking I/O and event callbacks using libev and c-ares.
 
-## Architecture & Event Loop Requirements
-`checklist.md` is the authoritative contract: libev and c-ares are mandatory, sockets/DNS/timers must be nonblocking, and the architecture must scale to thousands of concurrent transfers with minimal CPU. Every new subsystem (HTTP client, recursion, metalink, cookie persistence, redirect logic) needs to expose libev watchers plus async-safe callbacks, and blocking helpers like `sleep`, synchronous DNS, or buffered stdio calls belong only on worker threads. When in doubt, re-read the “Performance / Parallelism”, “Modern HTTP/TLS”, and “Transition / Cleanup” sections of the checklist and document which boxes your change advances.
+## Quick Start for Agents
 
-## Build, Test, and Development Commands
-Meson is the only supported build system here. Create a build dir with `meson setup build -Denable_debug_logging=true -Denable_xattr=true` (adjust options from `meson_options.txt` as needed), rebuild via `meson compile -C build`, and install or run with `meson install -C build` or `./build/wget --version`. `meson test -C build` currently has no suites wired up, so lean on targeted manual runs (`./build/wget https://example.org`) before proposing patches. When you add options, wire them through Meson rather than reintroducing configure scripts. Remember that checklist hard requirements (c-ares, libev, optional TLS backends, worker pools) must be detectable/configurable from Meson, so extend `meson_options.txt` and `config.h` when new capabilities require toggles.
+### 🎯 **First Steps**
+1. **Check current status**: Read [TODO.md](TODO.md) for implementation progress and next tasks
+2. **Understand architecture**: Review the [Overview](docs/overview.md) for system design
 
-## Coding Style & Naming Conventions
-Follow the existing GNU-style conventions in `src/`: two-space indentation, K&R braces, lowercase_with_underscores for identifiers, and `_()` wrapping for translatable strings. Keep functionality in cohesive modules (e.g., new protocol helpers belong next to their peers) and update the appropriate header so symbols remain visible. New configuration defines must be plumbed through `meson.build` and `config.h` via `configuration_data()`.
+## Table of Contents
 
-## Testing Guidelines
-The legacy Perl/Python harnesses are absent here, so craft smaller focused checks: run the binary against local HTTPS endpoints, exercise FTP/HTTP retry paths, and verify cookie/HSTS persistence. Use `ASAN_OPTIONS=... meson compile -C build` or wrap executions in `valgrind ./build/wget …` when touching network-facing code. Capture the exact CLI you used and note whether optional features (OPIE, xattrs, debug logging) were enabled so reviewers can repeat the scenario. Tests should also demonstrate libev/c-ares integration: highlight how you validated event-loop driven DNS, timer-based retries, per-host concurrency caps, and other “Performance / Parallelism” boxes from the checklist. Keep `checklist.md` updated whenever you land new async behaviors or retire legacy blocking code.
+### Core Documentation
+- [Overview](docs/overview.md) - System architecture and component roles
+- [Design Principles](docs/design-principles.md) - Implementation guidelines and best practices
 
-## Commit & Pull Request Guidelines
-Commits keep the short, component-tagged form (`src/url.c: tighten verbose logging`) and should explain both the bug/need and the fix. Reference issues with `Fixes: #NNN` when relevant, list any Meson options or pkg-config hints required to reproduce the build, and provide the commands/logs that demonstrate the failure and the fix. Prefer textual logs over screenshots so they are searchable.
+### Component Documentation
+- [Event Loop Abstraction](docs/event-loop.md) - Core event loop design
+- [DNS Resolver](docs/dns-resolver.md) - Asynchronous DNS resolution
+- [Connection Management](docs/connection-management.md) - Network connection handling
+- [HTTP Transaction](docs/http-transaction.md) - HTTP request/response state machine
+- [Download Scheduler](docs/scheduler.md) - Job scheduling and concurrency control
+- [Connection Pool](docs/connection-pool.md) - Persistent connection reuse
+- [CLI Integration](docs/cli-integration.md) - Top-level workflow and CLI
 
-## Security & Configuration Tips
-OpenSSL and zlib are mandatory dependencies; optional ones (`libpsl`, `libproxy`, `libcares`, `libidn2`, etc.) are auto-detected by Meson. Document any environment adjustments such as ``PKG_CONFIG_PATH=/opt/openssl/lib/pkgconfig`` in your change description, and call out when you disable features (e.g., `-Denable_xattr=false`). c-ares and libev are non-negotiable—do not add synchronous fallbacks. When touching TLS, DNS, cookies, or file persistence, run checks under Valgrind/ASan and mention the results to keep the focus on logic rather than memory hygiene, and spell out any additional hardening that advances the “Modern HTTP/TLS” or “Robustness / Safety” checklist sections.
+### Tools & Status
+- [ripgrep Guide](docs/ripgrep.md) - Search tool usage for agents
+- [Project Status](TODO.md) - Running record of implementation progress
 
-## Concurrency & Shared State
-The downloader still relies on shared process-wide state (cookies, HSTS, DNS caches, OCSP metadata, progress meters). Ensure new code respects existing locking in `threading.c`, keep logging thread-safe, and document any additional state you introduce so reviewers can reason about concurrent runs. When possible, avoid locks entirely on the hot path by leaning on libev primitives (`ev_async`, timers, connection state watchers) as mandated in the checklist.
+## Hard Requirements
 
-See `checklist.md` for the full requirements checklist that a modern wget must satisfy.
+⚠️ **Non-negotiable constraints**:
+- **c-ares is mandatory** - All DNS must be asynchronous
+- **libev is mandatory** - Event loop management
+- **No blocking paths anywhere** - DNS, sockets, timers, redirects
+- **Support thousands of concurrent connections** - Scalability is key
+
+## Implementation Strategy
+
+### 🏗️ **Architecture Pattern**
+- **State machines** drive all network operations
+- **Callbacks** handle completion/progress
+- **Event loop** orchestrates all I/O
+- **No blocking calls** - use timers and async patterns
+
+### 🔄 **Development Workflow**
+1. **Check TODO.md** for current priorities
+2. **Review component docs** for design patterns
+3. **Use ripgrep** to understand existing code
+4. **Follow design principles** for consistency
+5. **Test non-blocking behavior** - no blocking paths!
+
+## Key Design Principles
+
+- **No blocking calls** - Use c-ares for DNS, libev for I/O
+- **Callbacks + immediate returns** - Never wait for completion
+- **Timer-based timeouts** - No sleep() calls
+- **Incremental parsing** - Handle data as it arrives
+- **Bounded work per event** - Prevent starvation
+- **Single-threaded core** - Use ev_async for cross-thread
+
+## Getting Help
+
+- **Architecture questions**: Review component documentation
+- **Implementation details**: Use ripgrep to find existing patterns
+- **Status updates**: Check TODO.md for current progress
+- **Code patterns**: Follow design principles for consistency
+
+---
+
+**Remember**: This is an event-driven system. If you find blocking code, you've found a bug!

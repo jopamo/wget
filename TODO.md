@@ -1,0 +1,435 @@
+## Phase 0 — Prep & Audit (what to rip out / keep)
+
+* [ ] Identify **all blocking DNS** usage
+
+  * [ ] `grep -R "getaddrinfo" "gethostbyname" "gethostbyaddr" src/`
+  * [ ] Mark all call sites that must be rerouted through `dns_cares`
+
+* [ ] Identify **all blocking connect() and I/O** paths
+
+  * [ ] `grep -R "connect(" "select(" "poll(" "fd_read_body" "recv(" "send(" src/`
+  * [ ] List all sites that assume synchronous “do everything then return” (esp. in `connect.c`, `retr.c`, `http.c`)
+
+* [ ] Identify **progress / timeout logic** that uses sleeps or blocking waits
+
+  * [ ] `grep -R "sleep(" "usleep(" "nanosleep(" "alarm(" src/`
+  * [ ] Mark things that should turn into libev timers
+
+* [ ] Decide which **public API surface** to preserve
+
+  * [ ] Do you keep `retrieve_url()` as a “blocking façade” over the async core?
+  * [ ] Decide where new async APIs will live (e.g. `src/evloop.c`, `src/dns_cares.c`, `src/net_conn.c`, `src/http_transaction.c`, `src/scheduler.c`, `src/pconn.c`)
+
+---
+
+## Phase 1 — Core Event Loop Abstraction (`evloop`)
+
+* [ ] Add `src/evloop.c` + `src/evloop.h` and wire into build
+
+* [ ] Define opaque wrapper types
+
+  * [ ] `struct evloop_io` wrapping `ev_io`
+  * [ ] `struct evloop_timer` wrapping `ev_timer`
+  * [ ] Optional: wrapper for `ev_async` and `ev_signal`
+
+* [ ] Define callback types in `evloop.h`
+
+  * [ ] `typedef void (*ev_io_cb_t)(int fd, int revents, void *arg);`
+  * [ ] `typedef void (*ev_timer_cb_t)(void *arg);`
+
+* [ ] Implement event loop API
+
+  * [ ] `struct ev_loop *evloop_get_default(void);`
+  * [ ] `struct evloop_io *evloop_io_start(struct ev_loop *loop, int fd, int events, ev_io_cb_t cb, void *arg);`
+  * [ ] `void evloop_io_update(struct evloop_io *io, int events);`
+  * [ ] `void evloop_io_stop(struct evloop_io *io);`
+  * [ ] `struct evloop_timer *evloop_timer_start(struct ev_loop *loop, double after, double repeat, ev_timer_cb_t cb, void *arg);`
+  * [ ] `void evloop_timer_reschedule(struct evloop_timer *t, double after, double repeat);`
+  * [ ] `void evloop_timer_stop(struct evloop_timer *t);`
+  * [ ] `void evloop_run(struct ev_loop *loop);`
+  * [ ] `void evloop_break(struct ev_loop *loop);`
+
+* [ ] Hide all raw libev symbols from the rest of the tree
+
+  * [ ] No direct `ev_io_*`, `ev_timer_*`, `ev_run` calls outside `evloop.c`
+  * [ ] Internal static trampolines translate libev callbacks into `ev_io_cb_t` / `ev_timer_cb_t`
+
+* [ ] Add optional `ev_async` support
+
+  * [ ] One `ev_async` inside `evloop.c` to support future cross-thread wakeups
+  * [ ] `evloop_wakeup()` API that can be safely called from other threads/signals if you ever need it
+
+---
+
+## Phase 2 — Asynchronous DNS (`dns_cares`)
+
+* [ ] Add `src/dns_cares.c` + `src/dns_cares.h` and wire into build; link with c-ares
+
+* [ ] Define DNS context
+
+  * [ ] `struct dns_ev_ctx { struct ev_loop *loop; ares_channel channel; /* sockfd -> evloop_io map */ struct evloop_timer *timeout; };`
+
+* [ ] Implement DNS initialization
+
+  * [ ] `int dns_init(struct ev_loop *loop);` to create `ares_channel` with `ares_init_options`
+  * [ ] Store `dns_ev_ctx` singleton for the process
+
+* [ ] Implement socket watching glue
+
+  * [ ] Implement helper to call `ares_getsock()` and:
+
+    * [ ] Start or update `evloop_io` watchers for each active c-ares socket
+    * [ ] Stop watchers for sockets that disappeared
+  * [ ] Implement `dns_sock_cb(int fd, int revents, void *arg)`
+
+    * [ ] Call `ares_process_fd(channel, rd_fd, wr_fd)`
+    * [ ] Recompute watched sockets afterwards
+
+* [ ] Implement DNS timeout management
+
+  * [ ] Use `ares_timeout(channel, NULL, NULL)` to get next timeout
+  * [ ] Schedule `evloop_timer` accordingly
+  * [ ] Timer callback calls `ares_process_fd(channel, ARES_SOCKET_BAD, ARES_SOCKET_BAD)` and reschedules next timeout
+
+* [ ] Implement public async resolve API
+
+  * [ ] `typedef void (*dns_result_cb)(int status, const struct addrinfo *ai, void *arg);`
+  * [ ] `void dns_resolve_async(struct ev_loop *loop, const char *hostname, const char *service, int family, int socktype, int protocol, dns_result_cb cb, void *arg);`
+  * [ ] Implement glue to use `ares_getaddrinfo` or `ares_query` and translate results into `struct addrinfo`-like data
+  * [ ] Allocate a per-query context holding `cb`, `arg`, hostname, etc.
+  * [ ] In the c-ares completion callback, call user `dns_result_cb` and free c-ares result + context
+
+* [ ] Add teardown
+
+  * [ ] `void dns_shutdown(void);` calling `ares_destroy(channel)` and stopping DNS timers and watchers
+
+* [ ] Replace synchronous DNS in Wget
+
+  * [ ] Replace all `getaddrinfo` / host lookup paths with `dns_resolve_async` and corresponding callbacks in the new connection logic
+  * [ ] Ensure no DNS calls block anywhere
+
+---
+
+## Phase 3 — Non-blocking Connection Object (`net_conn`)
+
+* [ ] Add `src/net_conn.c` + `src/net_conn.h`
+
+* [ ] Define connection state enum and struct
+
+  * [ ] `enum conn_state { CONN_INIT, CONN_RESOLVING, CONN_CONNECTING, CONN_TLS_HANDSHAKE, CONN_READY, CONN_CLOSED, CONN_ERROR };`
+  * [ ] `struct net_conn { enum conn_state state; char *host; char *port; bool use_tls; int fd; SSL *ssl; struct evloop_io *io_watcher; struct evloop_timer *timeout_timer; /* callbacks */ void (*on_ready)(struct net_conn *, void *); void (*on_error)(struct net_conn *, void *); void (*on_readable)(struct net_conn *, void *); void (*on_writable)(struct net_conn *, void *); void *cb_arg; };`
+
+* [ ] Implement constructor and lifecycle
+
+  * [ ] `struct net_conn *conn_new(struct ev_loop *loop, const char *host, const char *port, bool use_tls, void (*on_ready)(struct net_conn *, void *), void (*on_error)(struct net_conn *, void *), void *arg);`
+  * [ ] Allocate struct, copy host/port, store callbacks, set state `CONN_INIT`
+
+* [ ] Implement state machine transitions
+
+  * [ ] `CONN_INIT → CONN_RESOLVING`
+
+    * [ ] If hostname literal: skip to connect step
+    * [ ] Else call `dns_resolve_async` with callback bound to this `net_conn`
+  * [ ] DNS callback:
+
+    * [ ] On success, pick first `addrinfo` and call non-blocking `connect()`
+    * [ ] Set state `CONN_CONNECTING`
+    * [ ] Create non-blocking socket (`SOCK_STREAM | SOCK_NONBLOCK`)
+    * [ ] Register `evloop_io` watcher for `EV_READ|EV_WRITE` using `conn_io_cb`
+    * [ ] Start connect timeout `evloop_timer`
+  * [ ] `conn_io_cb`:
+
+    * [ ] If state == `CONN_CONNECTING`: check `SO_ERROR` to detect completion or failure
+
+      * [ ] On success: if `use_tls`, go to `CONN_TLS_HANDSHAKE`, else `CONN_READY`
+      * [ ] On failure: `CONN_ERROR` and call `on_error`
+    * [ ] If state == `CONN_TLS_HANDSHAKE`: drive `SSL_do_handshake` non-blocking, handle `WANT_READ/WRITE`, error, success → `CONN_READY`
+    * [ ] If state == `CONN_READY`: dispatch to `on_readable` / `on_writable` if set
+
+* [ ] Implement non-blocking read/write helpers
+
+  * [ ] `ssize_t conn_try_read(struct net_conn *c, void *buf, size_t len);`
+  * [ ] `ssize_t conn_try_write(struct net_conn *c, const void *buf, size_t len);`
+  * [ ] Use `SSL_read` / `SSL_write` if TLS, otherwise `read` / `write`
+  * [ ] Normalize EAGAIN/WANT_READ/WANT_WRITE to `-1` with errno/EAGAIN semantics
+
+* [ ] Implement event subscription from higher layers
+
+  * [ ] `void conn_set_readable_callback(struct net_conn *c, void (*cb)(struct net_conn *, void *), void *arg);`
+  * [ ] `void conn_set_writable_callback(struct net_conn *c, void (*cb)(struct net_conn *, void *), void *arg);`
+  * [ ] Update `evloop_io` events via `evloop_io_update` when callbacks change
+
+* [ ] Implement connection timeout handling
+
+  * [ ] Start timeout timer at connect start / TLS start
+  * [ ] Timer callback closes fd, sets state `CONN_ERROR` and calls `on_error`
+
+* [ ] Implement close and teardown
+
+  * [ ] `void conn_close(struct net_conn *c);`
+
+    * [ ] Stop I/O and timer watchers
+    * [ ] Shut down TLS if present (optional `SSL_shutdown`)
+    * [ ] Close fd
+    * [ ] Free strings, SSL, struct
+
+* [ ] Replace existing Wget connect logic
+
+  * [ ] Swap synchronous `connect.c` logic with `net_conn` usage from HTTP layer and/or scheduler
+  * [ ] Ensure no remaining direct `connect()`+blocking loops in `http.c` / `retr.c`
+
+---
+
+## Phase 4 — HTTP Transaction State Machine (`http_transaction`)
+
+* [ ] Add `src/http_transaction.c` + `src/http_transaction.h`
+
+* [ ] Define transaction state & struct
+
+  * [ ] `enum http_state { H_INIT, H_RESOLVE_OR_REUSE, H_CONNECTING, H_SEND_REQUEST, H_READ_STATUS_LINE, H_READ_HEADERS, H_READ_BODY, H_COMPLETED, H_FAILED };`
+  * [ ] `struct http_transaction { enum http_state state; struct http_request *req; struct http_response *resp; struct net_conn *conn; struct evloop_timer *timeout_timer; char *recv_buffer; size_t recv_used; size_t content_length; bool chunked; bool gzip; void *output_sink; /* plus parsing state for chunks, etc. */ };`
+
+* [ ] Wire to connection and pool
+
+  * [ ] On start, go to `H_RESOLVE_OR_REUSE`:
+
+    * [ ] Call `pconn_acquire(...)` to obtain `net_conn` (idle or new)
+    * [ ] If idle: set `conn`, move to `H_SEND_REQUEST`
+    * [ ] If new: register as `on_ready`/`on_error` callbacks for that `net_conn` and set `H_CONNECTING`
+
+* [ ] Implement connection callbacks
+
+  * [ ] `http_transaction_conn_ready(struct net_conn *c, void *arg);`
+
+    * [ ] Attach `conn` to transaction
+    * [ ] Register `on_readable`/`on_writable` callbacks (`http_transaction_can_read/write`)
+    * [ ] Cancel connection timeout
+    * [ ] Move to `H_SEND_REQUEST` and start write path
+  * [ ] `http_transaction_conn_error(struct net_conn *c, void *arg);`
+
+    * [ ] Set `H_FAILED`, notify scheduler, cleanup
+
+* [ ] Implement request sending (`H_SEND_REQUEST`)
+
+  * [ ] Serialize `http_request` into buffer (request line + headers + CRLFCRLF + optional body)
+  * [ ] Maintain offset of bytes already written
+  * [ ] `http_transaction_can_write` uses `conn_try_write` to advance offset
+  * [ ] If not fully written: keep writable callback active
+  * [ ] When fully sent: disable writable events, enable readable, move to `H_READ_STATUS_LINE`
+
+* [ ] Implement incremental status line parsing (`H_READ_STATUS_LINE`)
+
+  * [ ] Accumulate into buffer until first `\r\n`
+  * [ ] Parse HTTP version and status code into `http_response`
+  * [ ] Remove consumed bytes from buffer, move to `H_READ_HEADERS`
+  * [ ] If incomplete: stay in same state and wait for more
+
+* [ ] Implement header parsing (`H_READ_HEADERS`)
+
+  * [ ] Accumulate until `\r\n\r\n`
+  * [ ] Parse header lines into header list
+  * [ ] Determine:
+
+    * [ ] `Content-Length` vs `Transfer-Encoding: chunked` vs “until close”
+    * [ ] `Connection: close` vs keep-alive
+    * [ ] Content coding (`gzip`) flags
+  * [ ] Initialize body decoding state and move to `H_READ_BODY`
+  * [ ] Preserve any already-read body bytes following the header terminator
+
+* [ ] Implement body streaming (`H_READ_BODY`)
+
+  * [ ] For each readable event:
+
+    * [ ] `conn_try_read` into a local buffer
+    * [ ] Handle:
+
+      * [ ] Fixed `Content-Length` countdown
+      * [ ] Chunked decoder (chunk size line → payload → CRLF → 0-chunk → trailer headers)
+      * [ ] EOF-terminated body (until read returns 0 or error)
+    * [ ] Stream decoded bytes directly to `output_sink` (file/pipe/WARC writer)
+  * [ ] On completion condition:
+
+    * [ ] Close/flush sink
+    * [ ] Move to `H_COMPLETED`
+
+* [ ] Handle completion and failure
+
+  * [ ] `H_COMPLETED`:
+
+    * [ ] Decide keep-alive eligibility (no `Connection: close`, no protocol errors)
+    * [ ] Call `pconn_release(conn, keep_alive_ok)`
+    * [ ] Notify scheduler of success (URL, bytes, timing)
+    * [ ] Free transaction
+  * [ ] `H_FAILED`:
+
+    * [ ] Close or non-reuse the `net_conn`
+    * [ ] Notify scheduler of failure
+    * [ ] Free transaction
+
+* [ ] Replace blocking response handling in Wget
+
+  * [ ] Replace `fd_read_body` and similar “read entire response in one blocking call” with `http_transaction` usage
+  * [ ] Make old `retrieve_url()` (if kept) into a small wrapper that:
+
+    * [ ] Creates a single job with this transaction
+    * [ ] Runs `evloop_run` until scheduler says done
+    * [ ] Returns final status
+
+---
+
+## Phase 5 — Download Scheduler (`scheduler`)
+
+* [ ] Add `src/scheduler.c` + `src/scheduler.h`
+
+* [ ] Define job and scheduler types
+
+  * [ ] `struct download_job { char *url; char *output_path; int retries_remaining; /* flags/options */ };`
+  * [ ] `struct scheduler { struct ev_loop *loop; /* pending queue */ /* active transactions */ /* per-host counts */ int max_global; int max_per_host; };`
+
+* [ ] Implement basic operations
+
+  * [ ] `struct scheduler *scheduler_new(struct ev_loop *loop, int max_global, int max_per_host);`
+  * [ ] `void scheduler_add_job(struct scheduler *s, struct download_job *job);`
+  * [ ] `void scheduler_notify_done(struct scheduler *s, struct http_transaction *txn, bool success);`
+
+* [ ] Implement core scheduling logic
+
+  * [ ] When a job is added or a txn finishes, try to start new jobs:
+
+    * [ ] If `active_count < max_global` and `per_host_count(host) < max_per_host`, pop job for that host
+    * [ ] Build `http_request` and `http_transaction` for job
+    * [ ] Ask pool for connection via `pconn_acquire`
+    * [ ] Hook scheduler as callback recipient for txn completion
+
+* [ ] Implement retry handling
+
+  * [ ] On failure:
+
+    * [ ] If `retries_remaining > 0`, schedule a retry with optional backoff via an `evloop_timer`
+    * [ ] Else, record permanent failure
+
+* [ ] Implement “all done” detection
+
+  * [ ] Track `pending_jobs` + `active_transactions`
+  * [ ] When both reach zero, call `evloop_break(loop)` to exit main loop
+
+---
+
+## Phase 6 — Persistent Connection Pool (`pconn`)
+
+* [ ] Add `src/pconn.c` + `src/pconn.h`
+
+* [ ] Design pool key and structures
+
+  * [ ] Key = scheme + host + port tuple (`char *key = "https://example.com:443";`)
+  * [ ] Value = list of idle `net_conn *` for that key
+  * [ ] Track idle count per key and maybe last-used timestamps
+
+* [ ] Implement acquire/release
+
+  * [ ] `struct net_conn *pconn_acquire(struct ev_loop *loop, const char *scheme, const char *host, const char *port, bool use_tls, void (*on_ready)(struct net_conn *, void *), void (*on_error)(struct net_conn *, void *), void *arg);`
+
+    * [ ] If idle available: pop, attach callbacks, return
+    * [ ] Else: create new `net_conn` and start connect
+  * [ ] `void pconn_release(struct net_conn *c, bool keep_alive_ok);`
+
+    * [ ] If `keep_alive_ok` and under idle limit: push to idle list
+    * [ ] Else: `conn_close(c)`
+
+* [ ] Implement cleanup helpers
+
+  * [ ] `void pconn_flush_for_host(const char *host);`
+  * [ ] `void pconn_shutdown_all(void);`
+
+* [ ] Integrate with scheduler and http_transaction
+
+  * [ ] Scheduler uses `pconn_acquire` when starting a transaction
+  * [ ] Transaction uses `pconn_release` when done
+
+---
+
+## Phase 7 — Top-Level Workflow / CLI (`retr` / `main`)
+
+* [ ] Initialize everything in program start
+
+  * [ ] Parse CLI options (URLs, output, concurrency, timeouts, warc, etc.)
+  * [ ] Call `evloop_get_default()`
+  * [ ] `dns_init(loop)`
+  * [ ] Initialize OpenSSL context (if TLS enabled)
+  * [ ] Initialize connection pool and scheduler
+
+* [ ] Create jobs from CLI URLs
+
+  * [ ] For each URL: build `download_job` (URL + output path + retry policy)
+  * [ ] `scheduler_add_job(sched, job)`
+
+* [ ] Run the loop
+
+  * [ ] Call `evloop_run(loop)`
+  * [ ] Event loop exits when scheduler calls `evloop_break` after all jobs done or on interrupt
+
+* [ ] Cleanup after loop returns
+
+  * [ ] `pconn_shutdown_all()`
+  * [ ] `dns_shutdown()`
+  * [ ] Free scheduler, jobs, configuration, SSL context, etc.
+  * [ ] Print final summary; map overall success/fail to exit code
+
+* [ ] (Optional) Re-export a compatibility API
+
+  * [ ] Implement a `retrieve_url(const char *url, const char *output)` wrapper that builds a scheduler with one job, runs the loop, then tears everything down
+
+---
+
+## Phase 8 — Purge Legacy Blocking Paths
+
+* [ ] Remove or noop all **blocking I/O helpers**
+
+  * [ ] Delete or stub `fd_read_body()` and any “read the whole thing” functions, replacing call sites with `http_transaction` logic
+  * [ ] Remove any remaining direct `select`/`poll` usage
+
+* [ ] Remove all direct `getaddrinfo`/`gethostbyname` usage
+
+  * [ ] Ensure DNS only goes through `dns_cares`
+
+* [ ] Remove any residual sleeps, busy loops, or `alarm()`-based timeouts in network code
+
+  * [ ] Replace with proper `evloop_timer`-based timeout handling
+
+* [ ] Make sure no module touches libev directly
+
+  * [ ] Everything except `evloop.c` uses only `evloop_*` wrappers
+
+---
+
+## Phase 9 — Testing, Performance, and Hardening
+
+* [ ] Unit-test small pieces
+
+  * [ ] DNS: single resolver test using `dns_resolve_async`
+  * [ ] net_conn: connect to localhost HTTP server, verify state transitions
+  * [ ] HTTP transaction: feed fake responses chunk-by-chunk to parser routines
+
+* [ ] Integration tests for concurrency
+
+  * [ ] Start a local HTTP server and fire many parallel downloads
+  * [ ] Verify per-host and global limits are respected
+  * [ ] Verify keep-alive reuse by logging when connections are created vs reused
+
+* [ ] Stress test large downloads
+
+  * [ ] Ensure memory usage stays bounded (no full-response buffering)
+  * [ ] Verify output is streamed to disk correctly
+
+* [ ] Error-path tests
+
+  * [ ] DNS failures, connection refusals, TLS handshake failures
+  * [ ] Timeouts in connect/header/body
+  * [ ] Broken chunked encoding, gzip errors
+
+* [ ] Review design principles against implementation
+
+  * [ ] No blocking calls anywhere in network/DNS path
+  * [ ] Every watcher’s lifetime is tied to a live object
+  * [ ] Single event loop thread, no accidental cross-thread libev calls
+  * [ ] Clear teardown paths (no leaks, no double free)
