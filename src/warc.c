@@ -153,20 +153,20 @@ static bool warc_write_start_record(void) {
     /* Reserve space for the extra gzip header field
        warc_write_end_record will fill this with size metadata */
     if (fseeko(warc_current_file, EXTRA_GZIP_HEADER_SIZE, SEEK_CUR) < 0) {
-      logprintf(LOG_NOTQUIET, _("Error setting WARC file position.\n"));
+      logprintf(LOG_NOTQUIET, "%s", _("Error setting WARC file position.\n"));
       warc_write_ok = false;
       return false;
     }
 
     if (fflush(warc_current_file) != 0) {
-      logprintf(LOG_NOTQUIET, _("Error flushing WARC file to disk.\n"));
+      logprintf(LOG_NOTQUIET, "%s", _("Error flushing WARC file to disk.\n"));
       warc_write_ok = false;
       return false;
     }
 
     dup_fd = dup(fileno(warc_current_file));
     if (dup_fd < 0) {
-      logprintf(LOG_NOTQUIET, _("Error duplicating WARC file file descriptor.\n"));
+      logprintf(LOG_NOTQUIET, "%s", _("Error duplicating WARC file file descriptor.\n"));
       warc_write_ok = false;
       return false;
     }
@@ -175,7 +175,7 @@ static bool warc_write_start_record(void) {
     warc_current_gzfile_uncompressed_size = 0;
 
     if (warc_current_gzfile == NULL) {
-      logprintf(LOG_NOTQUIET, _("Error opening GZIP stream to WARC file.\n"));
+      logprintf(LOG_NOTQUIET, "%s", _("Error opening GZIP stream to WARC file.\n"));
       close(dup_fd);
       warc_write_ok = false;
       return false;
@@ -573,7 +573,7 @@ static bool warc_write_warcinfo_record(const char* filename) {
   warc_write_end_record();
 
   if (!warc_write_ok)
-    logprintf(LOG_NOTQUIET, _("Error writing warcinfo record to WARC file.\n"));
+    logprintf(LOG_NOTQUIET, "%s", _("Error writing warcinfo record to WARC file.\n"));
 
   fclose(warc_tmp);
   return warc_write_ok;
@@ -778,11 +778,11 @@ static bool warc_load_cdx_dedup_file(void) {
 
   if (field_num_original_url == -1 || field_num_checksum == -1 || field_num_record_id == -1) {
     if (field_num_original_url == -1)
-      logprintf(LOG_NOTQUIET, _("CDX file does not list original urls. (Missing column 'a'.)\n"));
+      logprintf(LOG_NOTQUIET, "%s", _("CDX file does not list original urls. (Missing column 'a'.)\n"));
     if (field_num_checksum == -1)
-      logprintf(LOG_NOTQUIET, _("CDX file does not list checksums. (Missing column 'k'.)\n"));
+      logprintf(LOG_NOTQUIET, "%s", _("CDX file does not list checksums. (Missing column 'k'.)\n"));
     if (field_num_record_id == -1)
-      logprintf(LOG_NOTQUIET, _("CDX file does not list record ids. (Missing column 'u'.)\n"));
+      logprintf(LOG_NOTQUIET, "%s", _("CDX file does not list record ids. (Missing column 'u'.)\n"));
   }
   else {
     int nrecords;
@@ -836,14 +836,14 @@ void warc_init(void) {
 
     warc_manifest_fp = warc_tempfile();
     if (warc_manifest_fp == NULL) {
-      logprintf(LOG_NOTQUIET, _("Could not open temporary WARC manifest file.\n"));
+      logprintf(LOG_NOTQUIET, "%s", _("Could not open temporary WARC manifest file.\n"));
       exit(WGET_EXIT_GENERIC_ERROR);
     }
 
     if (opt.warc_keep_log) {
       warc_log_fp = warc_tempfile();
       if (warc_log_fp == NULL) {
-        logprintf(LOG_NOTQUIET, _("Could not open temporary WARC log file.\n"));
+        logprintf(LOG_NOTQUIET, "%s", _("Could not open temporary WARC log file.\n"));
         exit(WGET_EXIT_GENERIC_ERROR);
       }
       log_set_warc_log_fp(warc_log_fp);
@@ -851,13 +851,13 @@ void warc_init(void) {
 
     warc_current_file_number = -1;
     if (!warc_start_new_file(false)) {
-      logprintf(LOG_NOTQUIET, _("Could not open WARC file.\n"));
+      logprintf(LOG_NOTQUIET, "%s", _("Could not open WARC file.\n"));
       exit(WGET_EXIT_GENERIC_ERROR);
     }
 
     if (opt.warc_cdx_enabled) {
       if (!warc_start_cdx_file()) {
-        logprintf(LOG_NOTQUIET, _("Could not open CDX file for output.\n"));
+        logprintf(LOG_NOTQUIET, "%s", _("Could not open CDX file for output.\n"));
         exit(WGET_EXIT_GENERIC_ERROR);
       }
     }
@@ -879,7 +879,7 @@ static void warc_write_metadata(void) {
 
   warc_tmp_fp = warc_tempfile();
   if (warc_tmp_fp == NULL) {
-    logprintf(LOG_NOTQUIET, _("Could not open temporary WARC file.\n"));
+    logprintf(LOG_NOTQUIET, "%s", _("Could not open temporary WARC file.\n"));
     exit(WGET_EXIT_GENERIC_ERROR);
   }
   fflush(warc_tmp_fp);
