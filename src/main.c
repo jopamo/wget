@@ -945,7 +945,7 @@ static char* prompt_for_password(void) {
   if (opt.user)
     fprintf(stderr, _("Password for user %s: "), quote(opt.user));
   else
-    fprintf(stderr, _("Password: "));
+    fprintf(stderr, "%s", _("Password: "));
 #ifndef TESTING
   /* getpass() uses static variables internally, bad for fuzing */
   return getpass("");
@@ -965,7 +965,7 @@ static void run_use_askpass(char* question, char** answer) {
   posix_spawn_file_actions_t fa;
 
   if (pipe(com) == -1) {
-    fprintf(stderr, _("Cannot create pipe\n"));
+    fprintf(stderr, "%s", _("Cannot create pipe\n"));
     exit(WGET_EXIT_GENERIC_ERROR);
   }
 
@@ -1201,7 +1201,7 @@ int main(int argc, char** argv) {
     argstring_length += strlen(argv[i]) + 3 + 1;
   program_argstring = p = malloc(argstring_length);
   if (p == NULL) {
-    fprintf(stderr, _("Memory allocation problem\n"));
+    fprintf(stderr, "%s", _("Memory allocation problem\n"));
     exit(WGET_EXIT_PARSE_ERROR);
   }
   for (i = 1; i < argc; i++) {
@@ -1370,8 +1370,9 @@ int main(int argc, char** argv) {
    */
 #ifndef ENABLE_DEBUG
   if (opt.debug) {
-    fprintf(stderr, _("Debugging support not compiled in. "
-                      "Ignoring --debug flag.\n"));
+    fprintf(stderr, "%s",
+            _("Debugging support not compiled in. "
+              "Ignoring --debug flag.\n"));
     opt.debug = false;
   }
 #endif
@@ -1413,19 +1414,19 @@ int main(int argc, char** argv) {
 
   /* Sanity checks.  */
   if (opt.verbose && opt.quiet) {
-    fprintf(stderr, _("Can't be verbose and quiet at the same time.\n"));
+    fprintf(stderr, "%s", _("Can't be verbose and quiet at the same time.\n"));
     print_usage(1);
     exit(WGET_EXIT_GENERIC_ERROR);
   }
   if (opt.timestamping && opt.noclobber) {
-    fprintf(stderr, _("\
+    fprintf(stderr, "%s", _("\
 Can't timestamp and not clobber old files at the same time.\n"));
     print_usage(1);
     exit(WGET_EXIT_GENERIC_ERROR);
   }
 #ifdef ENABLE_IPV6
   if (opt.ipv4_only && opt.ipv6_only) {
-    fprintf(stderr, _("Cannot specify both --inet4-only and --inet6-only.\n"));
+    fprintf(stderr, "%s", _("Cannot specify both --inet4-only and --inet6-only.\n"));
     print_usage(1);
     exit(WGET_EXIT_GENERIC_ERROR);
   }
@@ -1469,18 +1470,20 @@ for details.\n\n"));
       opt.timestamping = false;
     }
     if (opt.spider) {
-      fprintf(stderr, _("WARC output does not work with --spider.\n"));
+      fprintf(stderr, "%s", _("WARC output does not work with --spider.\n"));
       exit(WGET_EXIT_GENERIC_ERROR);
     }
     if (opt.always_rest || opt.start_pos >= 0) {
-      fprintf(stderr, _("WARC output does not work with --continue or"
-                        " --start-pos, they will be disabled.\n"));
+      fprintf(stderr, "%s",
+              _("WARC output does not work with --continue or"
+                " --start-pos, they will be disabled.\n"));
       opt.always_rest = false;
       opt.start_pos = -1;
     }
     if (opt.warc_cdx_dedup_filename != 0 && !opt.warc_digests_enabled) {
-      fprintf(stderr, _("Digests are disabled; WARC deduplication will "
-                        "not find duplicate records.\n"));
+      fprintf(stderr, "%s",
+              _("Digests are disabled; WARC deduplication will "
+                "not find duplicate records.\n"));
     }
     if (opt.warc_keep_log) {
       opt.progress_type = xstrdup("dot");
@@ -1504,18 +1507,19 @@ for details.\n\n"));
 #endif
 
   if (opt.ask_passwd && opt.passwd) {
-    fprintf(stderr, _("Cannot specify both --ask-password and --password.\n"));
+    fprintf(stderr, "%s", _("Cannot specify both --ask-password and --password.\n"));
     print_usage(1);
     exit(WGET_EXIT_GENERIC_ERROR);
   }
 
   if (opt.ask_passwd && !(opt.user || opt.http_user || opt.ftp_user)) {
-    fprintf(stderr, _("WARNING: No username set with --ask-password. This is usually not what you want.\n"));
+    fprintf(stderr, "%s", _("WARNING: No username set with --ask-password. This is usually not what you want.\n"));
   }
 
   if (opt.start_pos >= 0 && opt.always_rest) {
-    fprintf(stderr, _("Specifying both --start-pos and --continue is not "
-                      "recommended; --continue will be disabled.\n"));
+    fprintf(stderr, "%s",
+            _("Specifying both --start-pos and --continue is not "
+              "recommended; --continue will be disabled.\n"));
     opt.always_rest = false;
   }
 
@@ -1569,23 +1573,25 @@ for details.\n\n"));
   }
   if (opt.post_data || opt.post_file_name) {
     if (opt.post_data && opt.post_file_name) {
-      fprintf(stderr, _("You cannot specify both --post-data and --post-file.\n"));
+      fprintf(stderr, "%s", _("You cannot specify both --post-data and --post-file.\n"));
       exit(WGET_EXIT_GENERIC_ERROR);
     }
     else if (opt.method) {
-      fprintf(stderr, _("You cannot use --post-data or --post-file along with --method. "
-                        "--method expects data through --body-data and --body-file options\n"));
+      fprintf(stderr, "%s",
+              _("You cannot use --post-data or --post-file along with --method. "
+                "--method expects data through --body-data and --body-file options\n"));
       exit(WGET_EXIT_GENERIC_ERROR);
     }
   }
   if (opt.body_data || opt.body_file) {
     if (!opt.method) {
-      fprintf(stderr, _("You must specify a method through --method=HTTPMethod "
-                        "to use with --body-data or --body-file.\n"));
+      fprintf(stderr, "%s",
+              _("You must specify a method through --method=HTTPMethod "
+                "to use with --body-data or --body-file.\n"));
       exit(WGET_EXIT_GENERIC_ERROR);
     }
     else if (opt.body_data && opt.body_file) {
-      fprintf(stderr, _("You cannot specify both --body-data and --body-file.\n"));
+      fprintf(stderr, "%s", _("You cannot specify both --body-data and --body-file.\n"));
       exit(WGET_EXIT_GENERIC_ERROR);
     }
   }
@@ -1632,7 +1638,7 @@ for details.\n\n"));
   memset(&dummy_iri, 0, sizeof(dummy_iri));
   if (opt.enable_iri || opt.locale || opt.encoding_remote) {
     /* sXXXav : be more specific... */
-    fprintf(stderr, _("This version does not have support for IRIs\n"));
+    fprintf(stderr, "%s", _("This version does not have support for IRIs\n"));
     exit(WGET_EXIT_GENERIC_ERROR);
   }
 #endif
@@ -1716,7 +1722,7 @@ only if outputting to a regular file.\n"));
     int optmask = 0;
 
     if (ares_library_init(ARES_LIB_INIT_ALL)) {
-      fprintf(stderr, _("Failed to init libcares\n"));
+      fprintf(stderr, "%s", _("Failed to init libcares\n"));
       exit(WGET_EXIT_GENERIC_ERROR);
     }
 
@@ -1724,7 +1730,7 @@ only if outputting to a regular file.\n"));
     host_prepare_ares_options(&options, &optmask);
 
     if (ares_init_options(&ares, &options, optmask) != ARES_SUCCESS) {
-      fprintf(stderr, _("Failed to init c-ares channel\n"));
+      fprintf(stderr, "%s", _("Failed to init c-ares channel\n"));
       exit(WGET_EXIT_GENERIC_ERROR);
     }
 
