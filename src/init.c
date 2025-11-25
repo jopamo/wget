@@ -1,32 +1,6 @@
-/* Reading/parsing the initialization file.
-   Copyright (C) 1996-2012, 2014-2015, 2018-2024 Free Software
-   Foundation, Inc.
-
-This file is part of GNU Wget.
-
-GNU Wget is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 3 of the License, or
-(at your option) any later version.
-
-GNU Wget is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Wget.  If not, see <http://www.gnu.org/licenses/>.
-
-Additional permission under GNU GPL version 3 section 7
-
-If you modify this program, or any covered work, by linking or
-combining it with the OpenSSL project's OpenSSL library (or a
-modified version of that library), containing parts covered by the
-terms of the OpenSSL or SSLeay licenses, the Free Software Foundation
-grants you additional permission to convey the resulting work.
-Corresponding Source for a non-source form of such a combination
-shall include the source code for the parts of OpenSSL used as well
-as that of the covered work.  */
+/* Reading/parsing the initialization file
+ * src/init.c
+ */
 
 #include "wget.h"
 #include "exits.h"
@@ -364,7 +338,8 @@ static const struct {
 static int command_by_name(const char* cmdname) {
   /* Use binary search for speed.  Wget has ~100 commands, which
      guarantees a worst case performance of 7 string comparisons.  */
-  int lo = 0, hi = countof(commands) - 1;
+  int lo = 0;
+  int hi = (int)countof(commands) - 1;
 
   while (lo <= hi) {
     int mid = (lo + hi) >> 1;
@@ -509,50 +484,54 @@ void defaults(void) {
 /* Return the user's home directory (strdup-ed), or NULL if none is
    found.  */
 char* home_dir(void) {
-  static char* buf = NULL;
-  static char *home, *ret;
+  static char* cached_home = NULL;
 
-  if (!home) {
-    home = getenv("HOME");
-    if (!home) {
+  if (!cached_home) {
+    const char* home_env = getenv("HOME");
+    const char* chosen = home_env;
+
 #if defined(MSDOS)
-      int len;
-
+    if (!chosen) {
       /* Under MSDOS, if $HOME isn't defined, use the directory where
          `wget.exe' resides.  */
-      const char* _w32_get_argv0(void); /* in libwatt.a/pcconfig.c */
-      char* p;
+      const char* argv0 = _w32_get_argv0(); /* in libwatt.a/pcconfig.c */
+      char* tmp;
 
-      buff = _w32_get_argv0();
-
-      p = strrchr(buf, '/'); /* djgpp */
-      if (!p)
-        p = strrchr(buf, '\\'); /* others */
-      assert(p);
-
-      len = p - buff + 1;
-      buff = strdup(_w32_get_argv0());
-
-      home = buf;
-#elif !defined(WINDOWS)
-      /* If HOME is not defined, try getting it from the password
-         file.  */
-      struct passwd* pwd = getpwuid(getuid());
-      if (!pwd || !pwd->pw_dir)
+      if (!argv0)
         return NULL;
-      home = pwd->pw_dir;
-#else  /* !WINDOWS */
-      /* Under Windows, if $HOME isn't defined, use the directory where
-         `wget.exe' resides.  */
-      home = ws_mypath();
-#endif /* WINDOWS */
+
+      tmp = xstrdup(argv0);
+
+      char* p = strrchr(tmp, '/'); /* djgpp */
+      if (!p)
+        p = strrchr(tmp, '\\'); /* others */
+
+      if (!p) {
+        xfree(tmp);
+        return NULL;
+      }
+
+      p[1] = '\0';
+      cached_home = tmp;
+      chosen = cached_home;
     }
+#elif !defined(WINDOWS)
+    if (!chosen) {
+      /* If HOME is not defined, try getting it from the password file. */
+      struct passwd* pwd = getpwuid(getuid());
+      if (pwd && pwd->pw_dir && *pwd->pw_dir)
+        chosen = pwd->pw_dir;
+    }
+#else  /* WINDOWS */
+    if (!chosen)
+      chosen = ws_mypath();
+#endif /* WINDOWS */
+
+    if (chosen && !cached_home)
+      cached_home = xstrdup(chosen);
   }
 
-  ret = home ? xstrdup(home) : NULL;
-  xfree(buf);
-
-  return ret;
+  return cached_home ? xstrdup(cached_home) : NULL;
 }
 
 /* Check the 'WGETRC' environment variable and return the file name
@@ -836,7 +815,7 @@ static enum parse_line parse_line(const char* line, char** com, char** val, int*
 
   /* The line now known to be syntactically correct.  Check whether
      the command is valid.  */
-  len = cmdend - cmdstart;
+  len = (size_t)(cmdend - cmdstart);
   if (len < sizeof(buf))
     cmdcopy = buf;
   else
@@ -870,7 +849,7 @@ static bool setval_internal(int comind, const char* com, const char* val) {
   assert(0 <= comind && ((size_t)comind) < countof(commands));
 
   if ((unsigned)comind >= countof(commands))
-    return NULL;
+    return false;
 
   DEBUGP(("Setting %s (%s) to %s\n", com, commands[comind].name, val));
   return commands[comind].action(com, val, commands[comind].place);
@@ -880,6 +859,7 @@ static bool setval_internal_tilde(int comind, const char* com, const char* val) 
   bool ret;
   int homelen;
   char** pstring;
+
   ret = setval_internal(comind, com, val);
 
   /* We make tilde expansion for cmd_file and cmd_directory */
@@ -887,7 +867,7 @@ static bool setval_internal_tilde(int comind, const char* com, const char* val) 
     pstring = commands[comind].place;
     if (opt.homedir) {
       char* home = xstrdup(opt.homedir);
-      homelen = strlen(home);
+      homelen = (int)strlen(home);
       while (homelen && ISSEP(home[homelen - 1]))
         home[--homelen] = '\0';
 
@@ -915,8 +895,10 @@ static bool setval_internal_tilde(int comind, const char* com, const char* val) 
 void setoptval(const char* com, const char* val, const char* optname) {
   /* Prepend "--" to OPTNAME. */
   char dd_optname[2 + MAX_LONGOPTION + 1];
+  int written;
 
-  if ((unsigned)snprintf(dd_optname, sizeof(dd_optname), "--%s", optname) > sizeof(dd_optname))
+  written = snprintf(dd_optname, sizeof(dd_optname), "--%s", optname);
+  if (written < 0 || (size_t)written >= sizeof(dd_optname))
     exit(WGET_EXIT_PARSE_ERROR);
 
   assert(val != NULL);
@@ -961,7 +943,7 @@ static bool simple_atof(const char*, const char*, double*);
 
 #define CMP3(p, c0, c1, c2) (c_tolower((p)[0]) == (c0) && c_tolower((p)[1]) == (c1) && c_tolower((p)[2]) == (c2) && (p)[3] == '\0')
 
-static int cmd_boolean_internal(const char* com _GL_UNUSED, const char* val, void* place _GL_UNUSED) {
+static int cmd_boolean_internal(const char* com WGET_ATTR_UNUSED, const char* val, void* place WGET_ATTR_UNUSED) {
   if (CMP2(val, 'o', 'n') || CMP3(val, 'y', 'e', 's') || CMP1(val, '1'))
     /* "on", "yes" and "1" mean true. */
     return 1;
@@ -1024,9 +1006,13 @@ static bool cmd_check_cert(const char* com, const char* val, void* place) {
 /* Set the non-negative integer value from VAL to PLACE.  With
    incorrect specification, the number remains unchanged.  */
 static bool cmd_number(const char* com, const char* val, void* place) {
-  long l = strtol(val, NULL, 10);
+  long l;
+  char* endptr = NULL;
 
-  if (((l == LONG_MIN || l == LONG_MAX) && errno == ERANGE) || l < 0 || l > INT_MAX) {
+  errno = 0;
+  l = strtol(val, &endptr, 10);
+
+  if (errno == ERANGE || endptr == val || (endptr && *endptr != '\0') || l < 0 || l > INT_MAX) {
     fprintf(stderr, _("%s: %s: Invalid number %s.\n"), exec_name, com, quote(val));
     return false;
   }
@@ -1045,7 +1031,7 @@ static bool cmd_number_inf(const char* com, const char* val, void* place) {
 
 /* Copy (strdup) the string at COM to a new location and place a
    pointer to *PLACE.  */
-static bool cmd_string(const char* com _GL_UNUSED, const char* val, void* place) {
+static bool cmd_string(const char* com WGET_ATTR_UNUSED, const char* val, void* place) {
   char** pstring = (char**)place;
 
   xfree(*pstring);
@@ -1054,7 +1040,7 @@ static bool cmd_string(const char* com _GL_UNUSED, const char* val, void* place)
 }
 
 /* Like cmd_string but ensure the string is upper case.  */
-static bool cmd_string_uppercase(const char* com _GL_UNUSED, const char* val, void* place) {
+static bool cmd_string_uppercase(const char* com WGET_ATTR_UNUSED, const char* val, void* place) {
   char *q, **pstring;
   pstring = (char**)place;
   xfree(*pstring);
@@ -1071,7 +1057,7 @@ static bool cmd_string_uppercase(const char* com _GL_UNUSED, const char* val, vo
 /* Like cmd_string, but handles tilde-expansion when reading a user's
    `.wgetrc'.  In that case, and if VAL begins with `~', the tilde
    gets expanded to the user's home directory.  */
-static bool cmd_file(const char* com _GL_UNUSED, const char* val, void* place) {
+static bool cmd_file(const char* com WGET_ATTR_UNUSED, const char* val, void* place) {
   char** pstring = (char**)place;
 
   xfree(*pstring);
@@ -1093,7 +1079,7 @@ static bool cmd_file(const char* com _GL_UNUSED, const char* val, void* place) {
 }
 
 /* like cmd_file, but insist on just a single option usage */
-static bool cmd_file_once(const char* com _GL_UNUSED, const char* val, void* place) {
+static bool cmd_file_once(const char* com WGET_ATTR_UNUSED, const char* val, void* place) {
   if (*(char**)place) {
     fprintf(stderr, _("%s: %s must only be used once\n"), exec_name, com);
     return false;
@@ -1124,7 +1110,7 @@ static bool cmd_directory(const char* com, const char* val, void* place) {
    to vector pointed to by the PLACE argument.  If VAL is empty, the
    PLACE vector is cleared instead.  */
 
-static bool cmd_vector(const char* com _GL_UNUSED, const char* val, void* place) {
+static bool cmd_vector(const char* com WGET_ATTR_UNUSED, const char* val, void* place) {
   char*** pvec = (char***)place;
 
   if (*val)
@@ -1136,7 +1122,7 @@ static bool cmd_vector(const char* com _GL_UNUSED, const char* val, void* place)
   return true;
 }
 
-static bool cmd_directory_vector(const char* com _GL_UNUSED, const char* val, void* place) {
+static bool cmd_directory_vector(const char* com WGET_ATTR_UNUSED, const char* val, void* place) {
   char*** pvec = (char***)place;
 
   if (*val) {
@@ -1145,7 +1131,7 @@ static bool cmd_directory_vector(const char* com _GL_UNUSED, const char* val, vo
 
     seps = sepstring(val);
     for (t = seps; t && *t; t++) {
-      int len = strlen(*t);
+      int len = (int)strlen(*t);
       /* Skip degenerate case of root directory.  */
       if (len > 1) {
         if ((*t)[len - 1] == '/')
@@ -1230,7 +1216,8 @@ static bool parse_bytes_helper(const char* val, double* result) {
 
 static bool cmd_bytes(const char* com, const char* val, void* place) {
   double byte_value;
-  if (!parse_bytes_helper(val, &byte_value)) {
+
+  if (!parse_bytes_helper(val, &byte_value) || byte_value < WGINT_MIN || byte_value > WGINT_MAX) {
     fprintf(stderr, _("%s: %s: Invalid byte value %s\n"), exec_name, com, quote(val));
     return false;
   }
@@ -1314,7 +1301,7 @@ static bool cmd_time(const char* com, const char* val, void* place) {
   return true;
 }
 
-static bool cmd_use_askpass(const char* com _GL_UNUSED, const char* val, void* place) {
+static bool cmd_use_askpass(const char* com WGET_ATTR_UNUSED, const char* val, void* place) {
   const char* env_name = "WGET_ASKPASS";
   const char* env;
 
@@ -1369,7 +1356,7 @@ static bool cmd_spec_compression(const char* com, const char* val, void* place) 
 }
 #endif
 
-static bool cmd_spec_dirstruct(const char* com, const char* val, void* place_ignored _GL_UNUSED) {
+static bool cmd_spec_dirstruct(const char* com, const char* val, void* place_ignored WGET_ATTR_UNUSED) {
   if (!cmd_boolean(com, val, &opt.dirstruct))
     return false;
   /* Since dirstruct behaviour is explicitly changed, no_dirstruct
@@ -1381,7 +1368,7 @@ static bool cmd_spec_dirstruct(const char* com, const char* val, void* place_ign
   return true;
 }
 
-static bool cmd_spec_header(const char* com, const char* val, void* place_ignored _GL_UNUSED) {
+static bool cmd_spec_header(const char* com, const char* val, void* place_ignored WGET_ATTR_UNUSED) {
   /* Empty value means reset the list of headers. */
   if (*val == '\0') {
     free_vec(opt.user_headers);
@@ -1397,7 +1384,7 @@ static bool cmd_spec_header(const char* com, const char* val, void* place_ignore
   return true;
 }
 
-static bool cmd_spec_warc_header(const char* com, const char* val, void* place_ignored _GL_UNUSED) {
+static bool cmd_spec_warc_header(const char* com, const char* val, void* place_ignored WGET_ATTR_UNUSED) {
   /* Empty value means reset the list of headers. */
   if (*val == '\0') {
     free_vec(opt.warc_user_headers);
@@ -1413,7 +1400,7 @@ static bool cmd_spec_warc_header(const char* com, const char* val, void* place_i
   return true;
 }
 
-static bool cmd_spec_htmlify(const char* com, const char* val, void* place_ignored _GL_UNUSED) {
+static bool cmd_spec_htmlify(const char* com, const char* val, void* place_ignored WGET_ATTR_UNUSED) {
   int flag = cmd_boolean(com, val, &opt.htmlify);
   if (flag && !opt.htmlify)
     opt.remove_listing = false;
@@ -1423,7 +1410,7 @@ static bool cmd_spec_htmlify(const char* com, const char* val, void* place_ignor
 /* Set the "mirror" mode.  It means: recursive download, timestamping,
    no limit on max. recursion depth, and don't remove listings.  */
 
-static bool cmd_spec_mirror(const char* com, const char* val, void* place_ignored _GL_UNUSED) {
+static bool cmd_spec_mirror(const char* com, const char* val, void* place_ignored WGET_ATTR_UNUSED) {
   bool mirror;
 
   if (!cmd_boolean(com, val, &mirror))
@@ -1442,7 +1429,7 @@ static bool cmd_spec_mirror(const char* com, const char* val, void* place_ignore
 /* Validate --prefer-family and set the choice.  Allowed values are
    "IPv4", "IPv6", and "none".  */
 
-static bool cmd_spec_prefer_family(const char* com, const char* val, void* place_ignored _GL_UNUSED) {
+static bool cmd_spec_prefer_family(const char* com, const char* val, void* place_ignored WGET_ATTR_UNUSED) {
   static const struct decode_item choices[] = {
       {"IPv4", prefer_ipv4},
       {"IPv6", prefer_ipv6},
@@ -1459,7 +1446,7 @@ static bool cmd_spec_prefer_family(const char* com, const char* val, void* place
 /* Set progress.type to VAL, but verify that it's a valid progress
    implementation before that.  */
 
-static bool cmd_spec_progress(const char* com, const char* val, void* place_ignored _GL_UNUSED) {
+static bool cmd_spec_progress(const char* com, const char* val, void* place_ignored WGET_ATTR_UNUSED) {
   if (!valid_progress_implementation_p(val)) {
     fprintf(stderr, _("%s: %s: Invalid progress type %s.\n"), exec_name, com, quote(val));
     return false;
@@ -1476,7 +1463,7 @@ static bool cmd_spec_progress(const char* com, const char* val, void* place_igno
    set to true, also set opt.dirstruct to true, unless opt.no_dirstruct
    is specified.  */
 
-static bool cmd_spec_recursive(const char* com, const char* val, void* place_ignored _GL_UNUSED) {
+static bool cmd_spec_recursive(const char* com, const char* val, void* place_ignored WGET_ATTR_UNUSED) {
   if (!cmd_boolean(com, val, &opt.recursive))
     return false;
   else {
@@ -1488,7 +1475,7 @@ static bool cmd_spec_recursive(const char* com, const char* val, void* place_ign
 
 /* Validate --regex-type and set the choice.  */
 
-static bool cmd_spec_regex_type(const char* com, const char* val, void* place_ignored _GL_UNUSED) {
+static bool cmd_spec_regex_type(const char* com, const char* val, void* place_ignored WGET_ATTR_UNUSED) {
   static const struct decode_item choices[] = {
       {"posix", regex_type_posix},
 #if defined HAVE_LIBPCRE || defined HAVE_LIBPCRE2
@@ -1503,7 +1490,7 @@ static bool cmd_spec_regex_type(const char* com, const char* val, void* place_ig
   return ok;
 }
 
-static bool cmd_spec_restrict_file_names(const char* com, const char* val, void* place_ignored _GL_UNUSED) {
+static bool cmd_spec_restrict_file_names(const char* com, const char* val, void* place_ignored WGET_ATTR_UNUSED) {
   int restrict_os = opt.restrict_files_os;
   int restrict_ctrl = opt.restrict_files_ctrl;
   int restrict_case = opt.restrict_files_case;
@@ -1554,30 +1541,39 @@ static bool cmd_spec_restrict_file_names(const char* com, const char* val, void*
   return true;
 }
 
-static bool cmd_spec_report_speed(const char* com, const char* val, void* place_ignored _GL_UNUSED) {
-  opt.report_bps = c_strcasecmp(val, "bits") == 0;
-  if (!opt.report_bps)
-    fprintf(stderr, _("%s: %s: Invalid value %s.\n"), exec_name, com, quote(val));
-  return opt.report_bps;
+static bool cmd_spec_report_speed(const char* com, const char* val, void* place_ignored WGET_ATTR_UNUSED) {
+  if (c_strcasecmp(val, "bits") == 0) {
+    opt.report_bps = true;
+    return true;
+  }
+  if (c_strcasecmp(val, "bytes") == 0) {
+    opt.report_bps = false;
+    return true;
+  }
+
+  fprintf(stderr, _("%s: %s: Invalid value %s.\n"), exec_name, com, quote(val));
+  return false;
 }
 
 #ifdef HAVE_SSL
-static bool cmd_spec_secure_protocol(const char* com, const char* val, void* place) {
+static bool cmd_spec_secure_protocol(const char* com, const char* val, void* place WGET_ATTR_UNUSED) {
   static const struct decode_item choices[] = {
       {"auto", secure_protocol_auto},       {"sslv2", secure_protocol_sslv2},     {"sslv3", secure_protocol_sslv3},     {"tlsv1", secure_protocol_tlsv1},
       {"tlsv1_1", secure_protocol_tlsv1_1}, {"tlsv1_2", secure_protocol_tlsv1_2}, {"tlsv1_3", secure_protocol_tlsv1_3}, {"pfs", secure_protocol_pfs},
   };
   snprintf(opt.secure_protocol_name, sizeof(opt.secure_protocol_name), "%s", val);
-  int ok = decode_string(val, choices, countof(choices), place);
-  if (!ok)
-    fprintf(stderr, _("%s: %s: Invalid value %s.\n"), exec_name, com, quote(val));
-  return ok;
+  {
+    int ok = decode_string(val, choices, countof(choices), place);
+    if (!ok)
+      fprintf(stderr, _("%s: %s: Invalid value %s.\n"), exec_name, com, quote(val));
+    return ok;
+  }
 }
 #endif
 
 /* Set all three timeout values. */
 
-static bool cmd_spec_timeout(const char* com, const char* val, void* place_ignored _GL_UNUSED) {
+static bool cmd_spec_timeout(const char* com, const char* val, void* place_ignored WGET_ATTR_UNUSED) {
   double value;
   if (!cmd_time(com, val, &value))
     return false;
@@ -1587,7 +1583,7 @@ static bool cmd_spec_timeout(const char* com, const char* val, void* place_ignor
   return true;
 }
 
-static bool cmd_spec_useragent(const char* com, const char* val, void* place_ignored _GL_UNUSED) {
+static bool cmd_spec_useragent(const char* com, const char* val, void* place_ignored WGET_ATTR_UNUSED) {
   /* Disallow embedded newlines.  */
   if (strchr(val, '\n')) {
     fprintf(stderr, _("%s: %s: Invalid value %s.\n"), exec_name, com, quote(val));
@@ -1601,7 +1597,7 @@ static bool cmd_spec_useragent(const char* com, const char* val, void* place_ign
 /* The --show-progress option is not a cmd_boolean since we need to keep track
  * of whether the user explicitly requested the option or not. -1 means
  * uninitialized. */
-static bool cmd_spec_progressdisp(const char* com, const char* val, void* place _GL_UNUSED) {
+static bool cmd_spec_progressdisp(const char* com, const char* val, void* place WGET_ATTR_UNUSED) {
   bool flag;
   if (cmd_boolean(com, val, &flag)) {
     opt.show_progress = flag;
@@ -1614,7 +1610,7 @@ static bool cmd_spec_progressdisp(const char* com, const char* val, void* place 
    not bool -- it's of type int (-1 means uninitialized because of
    some random hackery for disallowing -q -v).  */
 
-static bool cmd_spec_verbose(const char* com, const char* val, void* place_ignored _GL_UNUSED) {
+static bool cmd_spec_verbose(const char* com, const char* val, void* place_ignored WGET_ATTR_UNUSED) {
   bool flag;
   if (cmd_boolean(com, val, &flag)) {
     opt.verbose = flag;
@@ -1640,6 +1636,9 @@ static bool simple_atof(const char* beg, const char* end, double* dest) {
   double divider = 1;
 
   const char* p = beg;
+
+  if (!dest || !beg || !end || beg > end)
+    return false;
 
   while (p < end && c_isspace(*p))
     ++p;
