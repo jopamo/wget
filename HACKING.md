@@ -98,9 +98,7 @@ You will see at least the following structure (paths relative to repo root):
   * `docs/scheduler.md` – download scheduler and concurrency rules
   * `docs/connection-pool.md` – persistent connection pooling
   * `docs/cli-integration.md` – CLI and top-level workflow
-  * `docs/ripgrep.md` – search patterns and commands for agents
-  * `docs/reusability_tests.md` – test patterns and reusable fixtures
-
+  
   Agents may:
 
   * Update docs to reflect behavior changes
@@ -149,9 +147,6 @@ Use these documents as your primary references:
   * [`docs/cli-integration.md`](docs/cli-integration.md) – top-level CLI and program flow
 
 * **Tools and tests**
-
-  * [`docs/ripgrep.md`](docs/ripgrep.md) – how to search safely for patterns (blocking calls, APIs, etc)
-  * [`docs/reusability_tests.md`](docs/reusability_tests.md) – how to design tests so they are easy to reuse and extend
   * [`TODO.md`](TODO.md) – current status, unfinished phases, and priorities
 
 ---
@@ -210,22 +205,6 @@ If you introduce blocking behavior or violate these constraints, you must revert
    * For DNS changes: `docs/dns-resolver.md`
    * For HTTP logic: `docs/http-transaction.md`
    * For concurrency or job management: `docs/scheduler.md`
-
-3. **Locate relevant code with ripgrep**
-
-   * Use `docs/ripgrep.md` as a command library
-   * Examples:
-
-     ```bash
-     # find blocking DNS
-     rg "getaddrinfo|gethostbyname|gethostbyaddr" src
-
-     # find blocking I/O or legacy helpers
-     rg "select\(|poll\(|fd_read_body|recv\(|send\(" src
-
-     # find sleeps/timeouts
-     rg "sleep\(|usleep\(|nanosleep\(|alarm\(" src
-     ```
 
 4. **Plan the change**
 
