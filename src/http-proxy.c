@@ -102,7 +102,7 @@ uerr_t establish_proxy_tunnel(const struct url* u, int sock, char** proxyauth) {
     char* tms = datetime_str(time(NULL));
     logprintf(LOG_VERBOSE, "%d\n", statcode);
     logprintf(LOG_NOTQUIET, _("%s ERROR %d: %s.\n"), tms, statcode, quotearg_style(escape_quoting_style, _("Malformed status line")));
-    xfree(tms);
+    /* tms points to static buffer from datetime_str, do not free */
     xfree(head);
     resp_free(&resp);
     xfree(message);
