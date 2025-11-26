@@ -48,12 +48,6 @@ const char* compiled_features[] = {
     "-large-file",
 #endif
 
-#if defined HAVE_METALINK
-    "+metalink",
-#else
-    "-metalink",
-#endif
-
 #if defined ENABLE_NLS
     "+nls",
 #else

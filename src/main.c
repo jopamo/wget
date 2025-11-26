@@ -261,9 +261,6 @@ static struct cmdline_option option_data[] = {
     {"inet6-only", '6', OPT_BOOLEAN, "inet6only", -1},
 #endif
     {"input-file", 'i', OPT_VALUE, "input", -1},
-#ifdef HAVE_METALINK
-    {"input-metalink", 0, OPT_VALUE, "inputmetalink", -1},
-#endif
     {"iri", 0, OPT_BOOLEAN, "iri", -1},
     {"keep-badhash", 0, OPT_BOOLEAN, "keepbadhash", -1},
     {"keep-session-cookies", 0, OPT_BOOLEAN, "keepsessioncookies", -1},
@@ -273,10 +270,6 @@ static struct cmdline_option option_data[] = {
     {"local-encoding", 0, OPT_VALUE, "localencoding", -1},
     {"rejected-log", 0, OPT_VALUE, "rejectedlog", -1},
     {"max-redirect", 0, OPT_VALUE, "maxredirect", -1},
-#ifdef HAVE_METALINK
-    {"metalink-index", 0, OPT_VALUE, "metalinkindex", -1},
-    {"metalink-over-http", 0, OPT_BOOLEAN, "metalinkoverhttp", -1},
-#endif
     {"method", 0, OPT_VALUE, "method", -1},
     {"mirror", 'm', OPT_BOOLEAN, "mirror", -1},
     {"netrc", 0, OPT_BOOLEAN, "netrc", -1},
@@ -293,9 +286,6 @@ static struct cmdline_option option_data[] = {
     IF_SSL("pinnedpubkey", 0, OPT_VALUE, "pinnedpubkey", -1){"post-data", 0, OPT_VALUE, "postdata", -1},
     {"post-file", 0, OPT_VALUE, "postfile", -1},
     {"prefer-family", 0, OPT_VALUE, "preferfamily", -1},
-#ifdef HAVE_METALINK
-    {"preferred-location", 0, OPT_VALUE, "preferredlocation", -1},
-#endif
     {"preserve-permissions", 0, OPT_BOOLEAN, "preservepermissions", -1},
     IF_SSL("ciphers", 0, OPT_VALUE, "ciphers", -1) IF_SSL("private-key", 0, OPT_VALUE, "privatekey", -1)
         IF_SSL("private-key-type", 0, OPT_VALUE, "privatekeytype", -1){"progress", 0, OPT_VALUE, "progress", -1},
@@ -356,9 +346,6 @@ static struct cmdline_option option_data[] = {
     {"warc-keep-log", 0, OPT_BOOLEAN, "warckeeplog", -1},
     {"warc-max-size", 0, OPT_VALUE, "warcmaxsize", -1},
     {"warc-tempdir", 0, OPT_VALUE, "warctempdir", -1},
-#ifdef USE_WATT32
-    {"wdebug", 0, OPT_BOOLEAN, "wdebug", -1},
-#endif
 #ifdef ENABLE_XATTR
     {"xattr", 0, OPT_BOOLEAN, "xattr", -1},
 #endif
@@ -497,10 +484,6 @@ Logging and input file:\n"),
                                N_("\
   -d,  --debug                     print lots of debugging information\n"),
 #endif
-#ifdef USE_WATT32
-                               N_("\
-       --wdebug                    print Watt-32 debug output\n"),
-#endif
                                N_("\
   -q,  --quiet                     quiet (no output)\n"),
                                N_("\
@@ -511,10 +494,6 @@ Logging and input file:\n"),
        --report-speed=TYPE         output bandwidth as TYPE.  TYPE can be bits\n"),
                                N_("\
   -i,  --input-file=FILE           download URLs found in local or external FILE\n"),
-#ifdef HAVE_METALINK
-                               N_("\
-       --input-metalink=FILE       download files covered in local Metalink FILE\n"),
-#endif
                                N_("\
   -F,  --force-html                treat input file as HTML\n"),
                                N_("\
@@ -626,16 +605,6 @@ Download:\n"),
        --remote-encoding=ENC       use ENC as the default remote encoding\n"),
                                N_("\
        --unlink                    remove file before clobber\n"),
-#ifdef HAVE_METALINK
-                               N_("\
-       --keep-badhash              keep files with checksum mismatch (append .badhash)\n"),
-                               N_("\
-       --metalink-index=NUMBER     Metalink application/metalink4+xml metaurl ordinal NUMBER\n"),
-                               N_("\
-       --metalink-over-http        use Metalink metadata from HTTP response headers\n"),
-                               N_("\
-       --preferred-location        preferred location for Metalink resources\n"),
-#endif
 #ifdef ENABLE_XATTR
                                N_("\
        --xattr                     turn on storage of metadata in extended file attributes\n"),
@@ -867,8 +836,6 @@ Recursive accept/reject:\n"),
   -R,  --reject=LIST               comma-separated list of rejected extensions\n"),
                                N_("\
        --accept-regex=REGEX        regex matching accepted URLs\n"),
-                               N_("\
-       --reject-regex=REGEX        regex matching rejected URLs\n"),
 #if defined HAVE_LIBPCRE || defined HAVE_LIBPCRE2
                                N_("\
        --regex-type=TYPE           regex type (posix|pcre)\n"),
@@ -1523,11 +1490,7 @@ for details.\n\n"));
     opt.always_rest = false;
   }
 
-  if (!nurls && !opt.input_filename
-#ifdef HAVE_METALINK
-      && !opt.input_metalink
-#endif
-  ) {
+  if (!nurls && !opt.input_filename) {
     /* No URL specified.  */
 #ifndef TESTING
     fprintf(stderr, _("%s: missing URL\n"), exec_name);
@@ -1657,11 +1620,7 @@ for details.\n\n"));
     }
   }
 
-#ifdef USE_WATT32
-  if (opt.wdebug)
-    dbug_init();
-  sock_init();
-#elif !defined TESTING
+#ifndef TESTING
   if (opt.background) {
     bool logfile_changed = fork_to_background();
 
@@ -1875,45 +1834,6 @@ only if outputting to a regular file.\n"));
     if (!count)
       logprintf(LOG_NOTQUIET, _("No URLs found in %s.\n"), opt.input_filename);
   }
-
-#ifdef HAVE_METALINK
-  /* Finally, from metlink file, if any.  */
-  if (opt.input_metalink) {
-    metalink_error_t meta_err;
-    uerr_t retr_err;
-    metalink_t* metalink;
-
-    meta_err = metalink_parse_file(opt.input_metalink, &metalink);
-
-    if (meta_err) {
-      logprintf(LOG_NOTQUIET, _("Unable to parse metalink file %s.\n"), opt.input_metalink);
-      retr_err = METALINK_PARSE_ERROR;
-    }
-    else {
-      /* We need to sort the resources if preferred location
-         was specified by the user.  */
-      if (opt.preferred_location && opt.preferred_location[0]) {
-        metalink_file_t** mfile_ptr;
-        for (mfile_ptr = metalink->files; *mfile_ptr; mfile_ptr++) {
-          metalink_resource_t** mres_ptr;
-          metalink_file_t* mfile = *mfile_ptr;
-          size_t mres_count = 0;
-
-          for (mres_ptr = mfile->resources; *mres_ptr; mres_ptr++)
-            mres_count++;
-
-          stable_sort(mfile->resources, mres_count, sizeof(metalink_resource_t*), metalink_res_cmp);
-        }
-      }
-      retr_err = retrieve_from_metalink(metalink);
-      if (retr_err != RETROK) {
-        logprintf(LOG_NOTQUIET, _("Could not download all resources from %s.\n"), quote(opt.input_metalink));
-      }
-      metalink_delete(metalink);
-    }
-    inform_exit_status(retr_err);
-  }
-#endif /* HAVE_METALINK */
 
   /* Print broken links. */
   if (opt.recursive && opt.spider)

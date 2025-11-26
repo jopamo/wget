@@ -241,10 +241,6 @@ version_src = configure_file(
   output: 'version.c',
   configuration: version_conf)
 
-if get_option('enable_metalink')
-  error('Metalink support is not available in this trimmed build.')
-endif
-
 configure_file(
   output: 'config.h',
   configuration: conf)

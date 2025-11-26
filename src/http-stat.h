@@ -4,10 +4,6 @@
 #include "wget.h"
 #include "time.h"
 
-#ifdef HAVE_METALINK
-#include "metalink.h"
-#endif
-
 typedef enum {
   ENC_INVALID = -1, /* invalid encoding */
   ENC_NONE = 0,     /* no encoding */
@@ -43,9 +39,6 @@ struct http_stat {
   wgint orig_file_size;    /* size of file to compare for time-stamping */
   time_t orig_file_tstamp; /* time-stamp of file to compare for
                             * time-stamping */
-#ifdef HAVE_METALINK
-  metalink_t* metalink;
-#endif
 
   encoding_t local_encoding;  /* the encoding of the local file */
   encoding_t remote_encoding; /* the encoding of the remote file */

@@ -14,7 +14,4 @@ void free_hstat(struct http_stat* hs) {
   xfree(hs->local_file);
   xfree(hs->orig_file_name);
   xfree(hs->message);
-#ifdef HAVE_METALINK
-  metalink_delete(hs->metalink);
-#endif
 }
