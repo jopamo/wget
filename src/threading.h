@@ -1,4 +1,4 @@
-/* Simple threading primitives for POSIX platforms
+/* Threading primitive declarations for GNU Wget
  * src/threading.h
  */
 
@@ -8,13 +8,14 @@
 #include "wget.h"
 
 #include <pthread.h>
+#include <stdbool.h>
 
 typedef struct wget_mutex {
   pthread_mutex_t mutex;
   bool initialized;
 } wget_mutex_t;
 
-/* Note: Use wget_mutex_init() for initialization instead of static initialization */
+#define WGET_MUTEX_INITIALIZER {PTHREAD_MUTEX_INITIALIZER, false}
 
 void wget_mutex_init(wget_mutex_t* mutex);
 void wget_mutex_lock(wget_mutex_t* mutex);

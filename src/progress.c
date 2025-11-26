@@ -124,6 +124,7 @@ void set_progress_implementation(const char* name) {
       return;
     }
   }
+
   progress_unlock();
   abort();
 }
@@ -834,9 +835,7 @@ static void create_image(struct bar_progress* bp, double dl_total_time, bool don
 
   if (progress_size && bp->total_length > 0) {
     int insz = (int)((double)bp->initial_length / bp->total_length * progress_size);
-
     int dlsz = (int)((double)size / bp->total_length * progress_size);
-
     char* begin;
 
     assert(dlsz <= progress_size);
@@ -980,6 +979,7 @@ static void bar_set_params(const char* params) {
 #else
   current_impl->interactive = true;
 #endif
+
   if (params) {
     for (const char* param = params; *param;) {
       if (!strncmp(param, "force", 5))
@@ -993,7 +993,22 @@ static void bar_set_params(const char* params) {
   }
 
   if (((opt.lfilename && opt.show_progress != 1) || !isatty(fileno(stderr))) && !current_impl_locked) {
-    set_progress_implementation(FALLBACK_PROGRESS_IMPLEMENTATION);
+    struct progress_implementation* fallback = NULL;
+
+    for (size_t i = 0; i < countof(implementations); i++) {
+      if (!strcmp(implementations[i].name, FALLBACK_PROGRESS_IMPLEMENTATION)) {
+        fallback = &implementations[i];
+        break;
+      }
+    }
+
+    if (fallback) {
+      current_impl = fallback;
+      current_impl_locked = 0;
+      if (current_impl->set_params)
+        current_impl->set_params(NULL);
+    }
+
     return;
   }
 }
