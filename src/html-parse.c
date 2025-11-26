@@ -1,34 +1,7 @@
-/* HTML parser for Wget.
-   Copyright (C) 1998-2011, 2015, 2018-2024 Free Software Foundation,
-   Inc.
+/* HTML parser for Wget
+ */
 
-This file is part of GNU Wget.
-
-GNU Wget is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 3 of the License, or (at
-your option) any later version.
-
-GNU Wget is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Wget.  If not, see <http://www.gnu.org/licenses/>.
-
-Additional permission under GNU GPL version 3 section 7
-
-If you modify this program, or any covered work, by linking or
-combining it with the OpenSSL project's OpenSSL library (or a
-modified version of that library), containing parts covered by the
-terms of the OpenSSL or SSLeay licenses, the Free Software Foundation
-grants you additional permission to convey the resulting work.
-Corresponding Source for a non-source form of such a combination
-shall include the source code for the parts of OpenSSL used as well
-as that of the covered work.  */
-
-/* The only entry point to this module is map_html_tags(), which see.  */
+/* The only entry point to this module is map_html_tags(), which see */
 
 /* TODO:
 
@@ -91,10 +64,6 @@ as that of the covered work.  */
 
 #include "wget.h"
 
-#ifdef STANDALONE
-#define I_REALLY_WANT_CTYPE_MACROS
-#endif
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -102,40 +71,7 @@ as that of the covered work.  */
 
 #include "utils.h"
 #include "html-parse.h"
-
-#ifdef STANDALONE
-#undef xmalloc
-#undef xrealloc
-#undef xfree
-#define xmalloc malloc
-#define xrealloc realloc
-#define xfree free
-
-#undef c_isspace
-#undef c_isdigit
-#undef c_isxdigit
-#undef c_isalpha
-#undef c_isalnum
-#undef c_tolower
-#undef c_toupper
-
-#define c_isspace(x) isspace(x)
-#define c_isdigit(x) isdigit(x)
-#define c_isxdigit(x) isxdigit(x)
-#define c_isalpha(x) isalpha(x)
-#define c_isalnum(x) isalnum(x)
-#define c_tolower(x) tolower(x)
-#define c_toupper(x) toupper(x)
-
-struct hash_table {
-  int dummy;
-};
-static void* hash_table_get(const struct hash_table* ht, void* ptr) {
-  return ptr;
-}
-#else /* not STANDALONE */
 #include "hash.h"
-#endif
 
 /* Pool support.  A pool is a resizable chunk of memory.  It is first
    allocated on the stack, and moved to the heap if it needs to be
@@ -149,20 +85,16 @@ static void* hash_table_get(const struct hash_table* ht, void* ptr) {
    allocation because the entire pool is kept on the stack.  */
 
 struct pool {
-  char* contents; /* pointer to the contents. */
-  int size;       /* size of the pool. */
-  int tail;       /* next available position index. */
-  bool resized;   /* whether the pool has been resized
-                     using malloc. */
+  char* contents; /* pointer to the contents */
+  int size;       /* size of the pool */
+  int tail;       /* next available position index */
+  bool resized;   /* whether the pool has been resized using malloc */
 
-  char* orig_contents; /* original pool contents, usually
-                          stack-allocated.  used by POOL_FREE
-                          to restore the pool to the initial
-                          state. */
+  char* orig_contents; /* original pool contents, usually stack-allocated */
   int orig_size;
 };
 
-/* Initialize the pool to hold INITIAL_SIZE bytes of storage. */
+/* Initialize the pool to hold INITIAL_SIZE bytes of storage */
 
 #define POOL_INIT(p, initial_storage, initial_size) \
   do {                                              \
@@ -176,12 +108,12 @@ struct pool {
   } while (0)
 
 /* Grow the pool to accommodate at least SIZE new bytes.  If the pool
-   already has room to accommodate SIZE bytes of data, this is a no-op.  */
+   already has room to accommodate SIZE bytes of data, this is a no-op */
 
 #define POOL_GROW(p, increase) GROW_ARRAY((p)->contents, (p)->size, (p)->tail + (increase), (p)->resized, char)
 
 /* Append text in the range [beg, end) to POOL.  No zero-termination
-   is done.  */
+   is done */
 
 #define POOL_APPEND(p, beg, end)                        \
   do {                                                  \
@@ -193,7 +125,7 @@ struct pool {
   } while (0)
 
 /* Append one character to the pool.  Can be used to zero-terminate
-   pool strings.  */
+   pool strings */
 
 #define POOL_APPEND_CHR(p, ch)             \
   do {                                     \
@@ -202,14 +134,14 @@ struct pool {
     (p)->contents[(p)->tail++] = PAC_char; \
   } while (0)
 
-/* Forget old pool contents.  The allocated memory is not freed. */
+/* Forget old pool contents.  The allocated memory is not freed */
 #define POOL_REWIND(p) (p)->tail = 0
 
 /* Free heap-allocated memory for contents of POOL.  This calls
    xfree() if the memory was allocated through malloc.  It also
    restores `contents' and `size' to their original, pre-malloc
    values.  That way after POOL_FREE, the pool is fully usable, just
-   as if it were freshly initialized with POOL_INIT.  */
+   as if it were freshly initialized with POOL_INIT */
 
 #define POOL_FREE(p)                \
   do {                              \
@@ -232,7 +164,7 @@ struct pool {
    stumble upon large data.
 
    After the first resize, subsequent ones are performed with realloc,
-   just like DO_REALLOC.  */
+   just like DO_REALLOC */
 
 #define GROW_ARRAY(basevar, sizevar, needed_size, resized, type) \
   do {                                                           \
@@ -257,19 +189,22 @@ struct pool {
    IE-style non-terminated entities, e.g. "&ltfoo" -> "<foo".
    However, "&lt;foo" will work, as will "&lt!foo", "&lt", etc.  In
    other words an entity needs to be terminated by either a
-   non-alphanumeric or the end of string.  */
+   non-alphanumeric or the end of string */
+
 #define FITS(p, n) (p + n == end || (p + n < end && !c_isalnum(p[n])))
 
 /* Macros that test entity names by returning true if P is followed by
-   the specified characters.  */
-#define ENT1(p, c0) (FITS(p, 1) && p[0] == c0)
-#define ENT2(p, c0, c1) (FITS(p, 2) && p[0] == c0 && p[1] == c1)
-#define ENT3(p, c0, c1, c2) (FITS(p, 3) && p[0] == c0 && p[1] == c1 && p[2] == c2)
+   the specified characters */
+
+#define ENT1(p, c0) (FITS(p, 1) && p[0] == (c0))
+#define ENT2(p, c0, c1) (FITS(p, 2) && p[0] == (c0) && p[1] == (c1))
+#define ENT3(p, c0, c1, c2) (FITS(p, 3) && p[0] == (c0) && p[1] == (c1) && p[2] == (c2))
 
 /* Increment P by INC chars.  If P lands at a semicolon, increment it
    past the semicolon.  This ensures that e.g. "&lt;foo" is converted
-   to "<foo", but "&lt,foo" to "<,foo".  */
-#define SKIP_SEMI(p, inc) (p += inc, p < end && *p == ';' ? ++p : p)
+   to "<foo", but "&lt,foo" to "<,foo" */
+
+#define SKIP_SEMI(p, inc) (p += (inc), p < end && *p == ';' ? ++p : p)
 
 struct tagstack_item {
   const char* tagname_begin;
@@ -346,7 +281,7 @@ static struct tagstack_item* tagstack_find(struct tagstack_item* tail, const cha
    ASCII entity is seen, it is returned, and *PTR is moved to the end
    of the entity.  Otherwise, -1 is returned and *PTR left unmodified.
 
-   The recognized entities are: &lt, &gt, &amp, &apos, and &quot.  */
+   The recognized entities are: &lt, &gt, &amp, &apos, and &quot */
 
 static int decode_entity(const char** ptr, const char* end) {
   const char* p = *ptr;
@@ -357,7 +292,7 @@ static int decode_entity(const char** ptr, const char* end) {
 
   switch (*p++) {
     case '#':
-      /* Process numeric entities "&#DDD;" and "&#xHH;".  */
+      /* Process numeric entities "&#DDD;" and "&#xHH;" */
       {
         int digits = 0;
         value = 0;
@@ -370,13 +305,13 @@ static int decode_entity(const char** ptr, const char* end) {
         if (!digits)
           return -1;
         /* Don't interpret 128+ codes and NUL because we cannot
-           portably reinserted them into HTML.  */
+           portably reinserted them into HTML */
         if (!value || (value & ~0x7f))
           return -1;
         *ptr = SKIP_SEMI(p, 0);
         return value;
       }
-    /* Process named ASCII entities.  */
+    /* Process named ASCII entities */
     case 'g':
       if (ENT1(p, 't'))
         value = '>', *ptr = SKIP_SEMI(p, 1);
@@ -389,7 +324,7 @@ static int decode_entity(const char** ptr, const char* end) {
       if (ENT2(p, 'm', 'p'))
         value = '&', *ptr = SKIP_SEMI(p, 2);
       else if (ENT3(p, 'p', 'o', 's'))
-        /* handle &apos for the sake of the XML/XHTML crowd. */
+        /* handle &apos for the sake of the XML/XHTML crowd */
         value = '\'', *ptr = SKIP_SEMI(p, 3);
       break;
     case 'q':
@@ -412,20 +347,20 @@ enum { AP_DOWNCASE = 1, AP_DECODE_ENTITIES = 2, AP_TRIM_BLANKS = 4 };
    combination of AP_DOWNCASE, AP_DECODE_ENTITIES and AP_TRIM_BLANKS
    with the following meaning:
 
-   * AP_DOWNCASE -- downcase all the letters;
+   * AP_DOWNCASE -- downcase all the letters
 
    * AP_DECODE_ENTITIES -- decode the named and numeric entities in
-     the ASCII range when copying the string.
+     the ASCII range when copying the string
 
    * AP_TRIM_BLANKS -- ignore blanks at the beginning and at the end
-     of text, as well as embedded newlines.  */
+     of text, as well as embedded newlines */
 
 static void convert_and_copy(struct pool* pool, const char* beg, const char* end, int flags) {
   int old_tail = pool->tail;
 
   /* Skip blanks if required.  We must do this before entities are
      processed, so that blanks can still be inserted as, for instance,
-     `&#32;'.  */
+     `&#32;' */
   if (flags & AP_TRIM_BLANKS) {
     while (beg < end && c_isspace(*beg))
       ++beg;
@@ -435,12 +370,11 @@ static void convert_and_copy(struct pool* pool, const char* beg, const char* end
 
   if (flags & AP_DECODE_ENTITIES) {
     /* Grow the pool, then copy the text to the pool character by
-       character, processing the encountered entities as we go
-       along.
+       character, processing the encountered entities as we go along.
 
        It's safe (and necessary) to grow the pool in advance because
        processing the entities can only *shorten* the string, it can
-       never lengthen it.  */
+       never lengthen it */
     const char* from = beg;
     char* to;
     bool squash_newlines = !!(flags & AP_TRIM_BLANKS);
@@ -462,16 +396,16 @@ static void convert_and_copy(struct pool* pool, const char* beg, const char* end
         *to++ = *from++;
     }
     /* Verify that we haven't exceeded the original size.  (It
-       shouldn't happen, hence the assert.)  */
+       shouldn't happen, hence the assert) */
     assert(to - (pool->contents + pool->tail) <= end - beg);
 
     /* Make POOL's tail point to the position following the string
-       we've written.  */
+       we've written */
     pool->tail = to - pool->contents;
     POOL_APPEND_CHR(pool, '\0');
   }
   else {
-    /* Just copy the text to the pool.  */
+    /* Just copy the text to the pool */
     POOL_APPEND(pool, beg, end);
     POOL_APPEND_CHR(pool, '\0');
   }
@@ -487,22 +421,18 @@ static void convert_and_copy(struct pool* pool, const char* beg, const char* end
    letters, digits, periods, and hyphens as names (of tags or
    attributes).  However, this broke too many pages which used
    proprietary or strange attributes, e.g. <img src="a.gif"
-   v:shapes="whatever">.
+   v:shapes="whatever">
 
    So now we allow any character except:
      * whitespace
      * 8-bit and control chars
      * characters that clearly cannot be part of name:
-       '=', '<', '>', '/'.
+       '=', '<', '>', '/'
 
    This only affects attribute and tag names; attribute values allow
-   an even greater variety of characters.  */
+   an even greater variety of characters */
 
 #define NAME_CHAR_P(x) ((x) > 32 && (x) < 127 && (x) != '=' && (x) != '<' && (x) != '>' && (x) != '/')
-
-#ifdef STANDALONE
-static int comment_backout_count;
-#endif
 
 /* Advance over an SGML declaration, such as <!DOCTYPE ...>.  In
    strict comments mode, this is used for skipping over comments as
@@ -521,11 +451,11 @@ static int comment_backout_count;
 
    Whitespace is allowed between and after the comments, but not
    before the first comment.  Additionally, this function attempts to
-   handle double quotes in SGML declarations correctly.  */
+   handle double quotes in SGML declarations correctly */
 
 static const char* advance_declaration(const char* beg, const char* end) {
   const char* p = beg;
-  char quote_char = '\0'; /* shut up, gcc! */
+  char quote_char = '\0'; /* shut up, gcc */
   char ch;
 
   enum { AC_S_DONE, AC_S_BACKOUT, AC_S_BANG, AC_S_DEFAULT, AC_S_DCLNAME, AC_S_DASH1, AC_S_DASH2, AC_S_COMMENT, AC_S_DASH3, AC_S_DASH4, AC_S_QUOTE1, AC_S_IN_QUOTE, AC_S_QUOTE2 } state = AC_S_BANG;
@@ -535,7 +465,7 @@ static const char* advance_declaration(const char* beg, const char* end) {
   ch = *p++;
 
   /* It looked like a good idea to write this as a state machine, but
-     now I wonder...  */
+     now I wonder... */
 
   while (state != AC_S_DONE && state != AC_S_BACKOUT) {
     if (p == end)
@@ -589,11 +519,11 @@ static const char* advance_declaration(const char* beg, const char* end) {
         break;
       case AC_S_QUOTE1:
         /* We must use 0x22 because broken assert macros choke on
-           '"' and '\"'.  */
+           '"' and '\"' */
         assert(ch == '\'' || ch == 0x22);
         quote_char = ch; /* cheating -- I really don't feel like
                             introducing more different states for
-                            different quote characters. */
+                            different quote characters */
         ch = *p++;
         state = AC_S_IN_QUOTE;
         break;
@@ -652,23 +582,19 @@ static const char* advance_declaration(const char* beg, const char* end) {
     }
   }
 
-  if (state == AC_S_BACKOUT) {
-#ifdef STANDALONE
-    ++comment_backout_count;
-#endif
+  if (state == AC_S_BACKOUT)
     return beg + 1;
-  }
   return p;
 }
 
 /* Find the first occurrence of the substring "-->" in [BEG, END) and
    return the pointer to the character after the substring.  If the
-   substring is not found, return NULL.  */
+   substring is not found, return NULL */
 
 static const char* find_comment_end(const char* beg, const char* end) {
   /* Open-coded Boyer-Moore search for "-->".  Examine the third char;
      if it's not '>' or '-', advance by three characters.  Otherwise,
-     look at the preceding characters and try to find a match.  */
+     look at the preceding characters and try to find a match */
 
   const char* p = beg - 1;
 
@@ -708,7 +634,7 @@ static const char* find_comment_end(const char* beg, const char* end) {
 }
 
 /* Return true if the string containing of characters inside [b, e) is
-   present in hash table HT.  */
+   present in hash table HT */
 
 static bool name_allowed(const struct hash_table* ht, const char* b, const char* e) {
   char buf[256], *copy;
@@ -735,27 +661,23 @@ static bool name_allowed(const struct hash_table* ht, const char* b, const char*
 }
 
 /* Advance P (a char pointer), with the explicit intent of being able
-   to read the next character.  If this is not possible, go to finish.  */
+   to read the next character.  If this is not possible, go to finish */
 
-#define ADVANCE(p) \
-  do {             \
-    ++p;           \
-    if (p >= end)  \
-      goto finish; \
+#define ADVANCE(p)  \
+  do {              \
+    ++(p);          \
+    if ((p) >= end) \
+      goto finish;  \
   } while (0)
 
-/* Skip whitespace, if any. */
+/* Skip whitespace, if any */
 
-#define SKIP_WS(p)          \
-  do {                      \
-    while (c_isspace(*p)) { \
-      ADVANCE(p);           \
-    }                       \
+#define SKIP_WS(p)            \
+  do {                        \
+    while (c_isspace(*(p))) { \
+      ADVANCE(p);             \
+    }                         \
   } while (0)
-
-#ifdef STANDALONE
-static int tag_backout_count;
-#endif
 
 /* Map MAPFUN over HTML tags in TEXT, which is SIZE characters long.
    MAPFUN will be called with two arguments: pointer to an initialized
@@ -769,11 +691,11 @@ static int tag_backout_count;
    (Obviously, the caller can filter out unwanted tags and attributes
    just as well, but this is just an optimization designed to avoid
    unnecessary copying of tags/attributes which the caller doesn't
-   care about.)  */
+   care about) */
 
 void map_html_tags(const char* text, int size, void (*mapfun)(struct taginfo*, void*), void* maparg, int flags, const struct hash_table* allowed_tags, const struct hash_table* allowed_attributes) {
   /* storage for strings passed to MAPFUN callback; if 256 bytes is
-     too little, POOL_APPEND allocates more with malloc. */
+     too little, POOL_APPEND allocates more with malloc */
   char pool_initial_storage[256];
   struct pool pool;
 
@@ -806,7 +728,7 @@ void map_html_tags(const char* text, int size, void (*mapfun)(struct taginfo*, v
     end_tag = 0;
 
     /* Find beginning of tag.  We use memchr() instead of the usual
-       looping with ADVANCE() for speed. */
+       looping with ADVANCE() for speed */
     p = memchr(p, '<', end - p);
     if (!p)
       goto finish;
@@ -815,14 +737,14 @@ void map_html_tags(const char* text, int size, void (*mapfun)(struct taginfo*, v
     ADVANCE(p);
 
     /* Establish the type of the tag (start-tag, end-tag or
-       declaration).  */
+       declaration) */
     if (*p == '!') {
       if (!(flags & MHT_STRICT_COMMENTS) && p + 3 < end && p[1] == '-' && p[2] == '-') {
         /* If strict comments are not enforced and if we know
            we're looking at a comment, simply look for the
            terminating "-->".  Non-strict is the default because
            it works in other browsers and most HTML writers can't
-           be bothered with getting the comments right.  */
+           be bothered with getting the comments right */
         const char* comment_end = find_comment_end(p + 3, end);
         if (comment_end)
           p = comment_end;
@@ -831,7 +753,7 @@ void map_html_tags(const char* text, int size, void (*mapfun)(struct taginfo*, v
         /* Either in strict comment mode or looking at a non-empty
            declaration.  Real declarations are much less likely to
            be misused the way comments are, so advance over them
-           properly regardless of strictness.  */
+           properly regardless of strictness */
         p = advance_declaration(p, end);
       }
       if (p == end)
@@ -864,26 +786,26 @@ void map_html_tags(const char* text, int size, void (*mapfun)(struct taginfo*, v
 
     if (!name_allowed(allowed_tags, tag_name_begin, tag_name_end))
       /* We can't just say "goto look_for_tag" here because we need
-         the loop below to properly advance over the tag's attributes.  */
+         the loop below to properly advance over the tag's attributes */
       uninteresting_tag = true;
     else {
       uninteresting_tag = false;
       convert_and_copy(&pool, tag_name_begin, tag_name_end, AP_DOWNCASE);
     }
 
-    /* Find the attributes. */
+    /* Find the attributes */
     while (1) {
       const char *attr_name_begin, *attr_name_end;
       const char *attr_value_begin, *attr_value_end;
       const char *attr_raw_value_begin, *attr_raw_value_end;
-      int operation = AP_DOWNCASE; /* stupid compiler. */
+      int operation = AP_DOWNCASE; /* stupid compiler */
 
       SKIP_WS(p);
 
       if (*p == '/') {
         /* A slash at this point means the tag is about to be
            closed.  This is legal in XML and has been popularized
-           in HTML via XHTML.  */
+           in HTML via XHTML */
         /* <foo a=b c=d /> */
         /*              ^  */
         ADVANCE(p);
@@ -892,11 +814,11 @@ void map_html_tags(const char* text, int size, void (*mapfun)(struct taginfo*, v
           goto backout_tag;
       }
 
-      /* Check for end of tag definition. */
+      /* Check for end of tag definition */
       if (*p == '<' || *p == '>')
         break;
 
-      /* Establish bounds of attribute name. */
+      /* Establish bounds of attribute name */
       attr_name_begin = p; /* <foo bar ...> */
                            /*      ^        */
       while (NAME_CHAR_P(*p))
@@ -906,7 +828,7 @@ void map_html_tags(const char* text, int size, void (*mapfun)(struct taginfo*, v
       if (attr_name_begin == attr_name_end)
         goto backout_tag;
 
-      /* Establish bounds of attribute value. */
+      /* Establish bounds of attribute value */
       SKIP_WS(p);
 
       if (NAME_CHAR_P(*p) || *p == '/' || *p == '<' || *p == '>') {
@@ -914,7 +836,7 @@ void map_html_tags(const char* text, int size, void (*mapfun)(struct taginfo*, v
            For example, <UL COMPACT> is a valid shorthand for <UL
            COMPACT="compact">.  Even if such attributes are not
            useful to Wget, we need to support them, so that the
-           tags containing them can be parsed correctly. */
+           tags containing them can be parsed correctly */
         attr_raw_value_begin = attr_value_begin = attr_name_begin;
         attr_raw_value_end = attr_value_end = attr_name_end;
       }
@@ -936,7 +858,7 @@ void map_html_tags(const char* text, int size, void (*mapfun)(struct taginfo*, v
                  the value beginning, and terminate the tag
                  at either `>' or the delimiter, whichever
                  comes first.  Such a tag terminated at `>'
-                 is discarded.  */
+                 is discarded */
               p = attr_value_begin;
               newline_seen = true;
               continue;
@@ -964,7 +886,7 @@ void map_html_tags(const char* text, int size, void (*mapfun)(struct taginfo*, v
              of alphanumerics, . and -.  However, this is often
              violated by, for instance, `%' in `width=75%'.
              We'll be liberal and allow just about anything as
-             an attribute value.  */
+             an attribute value */
           while (!c_isspace(*p) && *p != '<' && *p != '>')
             ADVANCE(p);
           attr_value_end = p; /* <foo bar=baz qux=quix> */
@@ -981,19 +903,19 @@ void map_html_tags(const char* text, int size, void (*mapfun)(struct taginfo*, v
       else {
         /* We skipped the whitespace and found something that is
            neither `=' nor the beginning of the next attribute's
-           name.  Back out.  */
+           name.  Back out */
         goto backout_tag; /* <foo bar [... */
                           /*          ^    */
       }
 
       /* If we're not interested in the tag, don't bother with any
-         of the attributes.  */
+         of the attributes */
       if (uninteresting_tag)
         continue;
 
       /* If we aren't interested in the attribute, skip it.  We
          cannot do this test any sooner, because our text pointer
-         needs to correctly advance over the attribute.  */
+         needs to correctly advance over the attribute */
       if (!name_allowed(allowed_attributes, attr_name_begin, attr_name_end))
         continue;
 
@@ -1019,7 +941,7 @@ void map_html_tags(const char* text, int size, void (*mapfun)(struct taginfo*, v
     }
 
     /* By now, we have a valid tag with a name and zero or more
-       attributes.  Fill in the data and call the mapper function.  */
+       attributes.  Fill in the data and call the mapper function */
     {
       int i;
       struct taginfo taginfo;
@@ -1031,7 +953,7 @@ void map_html_tags(const char* text, int size, void (*mapfun)(struct taginfo*, v
       /* We fill in the char pointers only now, when pool can no
          longer get realloc'ed.  If we did that above, we could get
          hosed by reallocation.  Obviously, after this point, the pool
-         may no longer be grown.  */
+         may no longer be grown */
       for (i = 0; i < nattrs; i++) {
         pairs[i].name = pool.contents + pairs[i].name_pool_index;
         pairs[i].value = pool.contents + pairs[i].value_pool_index;
@@ -1060,11 +982,8 @@ void map_html_tags(const char* text, int size, void (*mapfun)(struct taginfo*, v
     goto look_for_tag;
 
   backout_tag:
-#ifdef STANDALONE
-    ++tag_backout_count;
-#endif
     /* The tag wasn't really a tag.  Treat its contents as ordinary
-       data characters. */
+       data characters */
     p = tag_start_position + 1;
     goto look_for_tag;
   }
@@ -1079,44 +998,4 @@ finish:
 
 #undef ADVANCE
 #undef SKIP_WS
-#undef SKIP_NON_WS
-
-#ifdef STANDALONE
-static void test_mapper(struct taginfo* taginfo, void* arg) {
-  int i;
-
-  printf("%s%s", taginfo->end_tag_p ? "/" : "", taginfo->name);
-  for (i = 0; i < taginfo->nattrs; i++)
-    printf(" %s=%s", taginfo->attrs[i].name, taginfo->attrs[i].value);
-  putchar('\n');
-  ++*(int*)arg;
-}
-
-int main() {
-  int size = 256;
-  char* x = xmalloc(size);
-  int length = 0;
-  int read_count;
-  int tag_counter = 0;
-
-#ifdef ENABLE_NLS
-  /* Set the current locale.  */
-  setlocale(LC_ALL, "");
-  /* Set the text message domain.  */
-  bindtextdomain("wget", LOCALEDIR);
-  textdomain("wget");
-#endif /* ENABLE_NLS */
-
-  while ((read_count = fread(x + length, 1, size - length, stdin))) {
-    length += read_count;
-    size <<= 1;
-    x = xrealloc(x, size);
-  }
-
-  map_html_tags(x, length, test_mapper, &tag_counter, 0, NULL, NULL);
-  printf("TAGS: %d\n", tag_counter);
-  printf("Tag backouts:     %d\n", tag_backout_count);
-  printf("Comment backouts: %d\n", comment_backout_count);
-  return 0;
-}
-#endif /* STANDALONE */
+#undef NAME_CHAR_P
