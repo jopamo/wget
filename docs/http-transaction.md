@@ -1,5 +1,7 @@
 # HTTP Transaction State Machine (`http_transaction`)
 
+**Status Note**: This component is **partially implemented** but still uses synchronous I/O. The current `http-transaction.c` exists but follows traditional blocking patterns.
+
 **Goal:** Manage the lifecycle of a single HTTP request and response, fully asynchronously. Each transaction handles one HTTP exchange: send request, read status, headers, body, and either succeed or fail.
 
 ## Transaction States

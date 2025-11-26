@@ -1,5 +1,7 @@
 # Connection/Session Management (`net_conn`)
 
+**Status Note**: This component is **planned but not yet implemented**. The current codebase uses synchronous connection logic in `connect.c`.
+
 **Goal:** Encapsulate a single network connection (TCP socket, optionally with TLS) in a non-blocking, event-driven object. This module handles hostname resolution, non-blocking connect, TLS handshake, and provides simple read/write methods. It exposes a callback when the connection is ready or if an error occurs, and allows registering for read/write notifications once connected.
 
 ## Connection States

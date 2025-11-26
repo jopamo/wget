@@ -1,5 +1,7 @@
 # Asynchronous DNS Resolution (`dns_cares`)
 
+**Status Note**: This component is **planned but not yet implemented**. The current codebase uses synchronous `getaddrinfo()`.
+
 **Goal:** Perform all hostname resolutions asynchronously using c-ares, integrated with our libev event loop. The rest of the program will call a simple function to resolve hostnames, and this DNS module will invoke a callback with the results once the DNS query completes (or fails), without blocking the main thread.
 
 ## Design and Steps

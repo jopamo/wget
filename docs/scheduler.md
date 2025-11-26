@@ -1,5 +1,7 @@
 # Download Scheduler (`scheduler`)
 
+**Status Note**: This component is **planned but not yet implemented**. The current codebase uses simpler synchronous download coordination.
+
 **Goal:** Coordinate multiple `http_transaction` tasks, enforce global and per-host concurrency limits, handle retries, and decide which URL to fetch next. The scheduler is the high-level controller for downloads.
 
 ## Core Responsibilities

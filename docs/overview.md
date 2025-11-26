@@ -1,5 +1,7 @@
 # Overview
 
+**Status Note**: This document describes the **planned architecture** for a fully asynchronous web downloader. The current implementation is still largely synchronous/blocking. Refer to TODO.md for implementation status.
+
 This plan outlines a fully asynchronous web downloader (akin to Wget) built around an event-driven core and explicit state machines. Unlike a traditional Wget design (which might simply add an event library to a mostly blocking codebase), this approach designs the system from the ground up around non-blocking I/O and event callbacks.
 
 The goal is to maximize concurrency (many simultaneous connections and DNS queries) without any blocking calls, using libraries like **libev** (for event loop) and **c-ares** (for async DNS). All major components – event loop, DNS resolver, network connections, HTTP transactions, scheduler, and connection pooling – are designed as independent, state-driven modules that interact through well-defined callback interfaces.

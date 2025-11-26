@@ -1,5 +1,7 @@
 # Persistent Connection Pool (`pconn`)
 
+**Status Note**: This component is **partially implemented** as `http-pconn.c` but uses synchronous patterns. The planned async version would integrate with the new architecture.
+
 **Goal:** Improve efficiency by reusing TCP connections for multiple HTTP requests to the same server (persistent/keep-alive connections).
 
 ## Pool Key and Structures

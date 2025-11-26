@@ -1,5 +1,7 @@
 # Core Event Loop Abstraction (`evloop`)
 
+**Status Note**: This component is **planned but not yet implemented**. The current codebase uses synchronous I/O.
+
 **Goal:** Provide a unified interface to the event loop so that the rest of the code remains largely agnostic of the underlying event library (libev). All modules will use this interface to register for I/O events, timers, and cross-thread wake-ups. By centralizing event management, we ensure consistent behavior and easier maintenance.
 
 ## Responsibilities and Implementation Steps

@@ -10,6 +10,12 @@ TEST_MODE="${WGET_TEST_MODE:-help}"
 
 PORT="${WGET_TEST_PORT:-18080}"
 
+# Check if openssl is available for HTTPS tests
+HAS_OPENSSL=0
+if command -v openssl >/dev/null 2>&1; then
+  HAS_OPENSSL=1
+fi
+
 tmpdir="$(mktemp -d)"
 
 cleanup() {
@@ -416,6 +422,220 @@ EOF
         fi
 
         echo "✓ Pipeline test passed"
+        ;;
+
+    https_basic)
+        echo "Running HTTPS basic test..."
+
+        if [ "${HAS_OPENSSL}" -ne 1 ]; then
+            echo "openssl not available, skipping HTTPS tests"
+            exit 77
+        fi
+
+        PORT_HTTPS="${WGET_TEST_PORT_HTTPS:-18443}"
+
+        # generate throwaway self-signed cert and key in the tmpdir
+        openssl req \
+            -x509 \
+            -newkey rsa:2048 \
+            -nodes \
+            -subj "/CN=localhost" \
+            -keyout https_test.key \
+            -out https_test.crt \
+            -days 1 \
+            >/dev/null 2>&1
+
+        # start a minimal HTTPS server that replies with some HTTP text
+        openssl s_server \
+            -quiet \
+            -accept "${PORT_HTTPS}" \
+            -cert https_test.crt \
+            -key https_test.key \
+            -WWW \
+            > https_server.log 2>&1 &
+        HTTPS_PID=$!
+        sleep 0.3
+
+        set +e
+        "${WGET_BIN}" \
+            --no-config \
+            --no-check-certificate \
+            --output-document=https_basic.txt \
+            "https://127.0.0.1:${PORT_HTTPS}/" \
+            > https_basic_stdout.log 2> https_basic_stderr.log
+        status=$?
+        set -e
+
+        kill "${HTTPS_PID}" 2>/dev/null || true
+        wait "${HTTPS_PID}" 2>/dev/null || true
+
+        if [ "${status}" -ne 0 ]; then
+            echo "error: HTTPS basic download failed with status ${status}" >&2
+            exit 1
+        fi
+
+        if ! [ -s https_basic.txt ]; then
+            echo "error: https_basic.txt is missing or empty" >&2
+            exit 1
+        fi
+
+        echo "✓ HTTPS basic test passed"
+        ;;
+
+    https_cert_verify)
+        echo "Running HTTPS certificate verification test..."
+
+        if [ "${HAS_OPENSSL}" -ne 1 ]; then
+            echo "openssl not available, skipping HTTPS tests"
+            exit 77
+        fi
+
+        PORT_HTTPS="${WGET_TEST_PORT_HTTPS:-18444}"
+
+        openssl req \
+            -x509 \
+            -newkey rsa:2048 \
+            -nodes \
+            -subj "/CN=localhost" \
+            -keyout https_verify.key \
+            -out https_verify.crt \
+            -days 1 \
+            >/dev/null 2>&1
+
+        openssl s_server \
+            -quiet \
+            -accept "${PORT_HTTPS}" \
+            -cert https_verify.crt \
+            -key https_verify.key \
+            -WWW \
+            > https_verify_server.log 2>&1 &
+        HTTPSV_PID=$!
+        sleep 0.3
+
+        # first call: without --no-check-certificate, should fail
+        set +e
+        "${WGET_BIN}" \
+            --no-config \
+            --output-document=https_verify_fail.txt \
+            "https://127.0.0.1:${PORT_HTTPS}/" \
+            > https_verify_fail_stdout.log 2> https_verify_fail_stderr.log
+        status_fail=$?
+
+        # second call: with --no-check-certificate, should succeed
+        "${WGET_BIN}" \
+            --no-config \
+            --no-check-certificate \
+            --output-document=https_verify_ok.txt \
+            "https://127.0.0.1:${PORT_HTTPS}/" \
+            > https_verify_ok_stdout.log 2> https_verify_ok_stderr.log
+        status_ok=$?
+        set -e
+
+        kill "${HTTPSV_PID}" 2>/dev/null || true
+        wait "${HTTPSV_PID}" 2>/dev/null || true
+
+        if [ "${status_fail}" -eq 0 ]; then
+            echo "error: HTTPS with self-signed cert should fail without --no-check-certificate" >&2
+            exit 1
+        fi
+
+        if [ "${status_ok}" -ne 0 ]; then
+            echo "error: HTTPS with --no-check-certificate should succeed, got status ${status_ok}" >&2
+            exit 1
+        fi
+
+        if ! [ -s https_verify_ok.txt ]; then
+            echo "error: https_verify_ok.txt is missing or empty" >&2
+            exit 1
+        fi
+
+        echo "✓ HTTPS certificate verification test passed"
+        ;;
+
+    warc_basic)
+        echo "Running WARC basic test..."
+
+        "${WGET_BIN}" \
+            --no-config \
+            --warc-file=warc_basic \
+            --output-document=warc_basic.txt \
+            "http://127.0.0.1:${PORT}/hello.txt" \
+            > warc_basic_stdout.log 2> warc_basic_stderr.log
+
+        # support either plain or gzipped WARC depending on how you configured it
+        WARC_FILE=""
+        if [ -f warc_basic.warc ]; then
+            WARC_FILE="warc_basic.warc"
+        elif [ -f warc_basic.warc.gz ]; then
+            WARC_FILE="warc_basic.warc.gz"
+        else
+            echo "error: WARC file warc_basic.warc[.gz] was not created" >&2
+            exit 1
+        fi
+
+        if ! [ -s "${WARC_FILE}" ]; then
+            echo "error: WARC file ${WARC_FILE} is empty" >&2
+            exit 1
+        fi
+
+        # crude sanity: WARC header and the requested URL should appear somewhere
+        if ! ( zcat "${WARC_FILE}" 2>/dev/null || cat "${WARC_FILE}" ) | grep -q "WARC-Type:"; then
+            echo "error: WARC file does not contain WARC-Type header" >&2
+            exit 1
+        fi
+
+        if ! ( zcat "${WARC_FILE}" 2>/dev/null || cat "${WARC_FILE}" ) | grep -q "hello.txt"; then
+            echo "error: WARC file does not mention hello.txt" >&2
+            exit 1
+        fi
+
+        echo "✓ WARC basic test passed"
+        ;;
+
+    warc_multi)
+        echo "Running WARC multi-URL test..."
+
+        # assume docroot has hello.txt and maybe another file, but we can just request hello.txt twice with different query
+        "${WGET_BIN}" \
+            --no-config \
+            --warc-file=warc_multi \
+            --recursive \
+            --level=1 \
+            --page-requisites \
+            --output-document=warc_multi.txt \
+            "http://127.0.0.1:${PORT}/hello.txt?first" \
+            "http://127.0.0.1:${PORT}/hello.txt?second" \
+            > warc_multi_stdout.log 2> warc_multi_stderr.log
+
+        WARC_FILE=""
+        if [ -f warc_multi.warc ]; then
+            WARC_FILE="warc_multi.warc"
+        elif [ -f warc_multi.warc.gz ]; then
+            WARC_FILE="warc_multi.warc.gz"
+        else
+            echo "error: WARC file warc_multi.warc[.gz] was not created" >&2
+            exit 1
+        fi
+
+        if ! [ -s "${WARC_FILE}" ]; then
+            echo "error: WARC file ${WARC_FILE} is empty" >&2
+            exit 1
+        fi
+
+        # we expect at least two response records for hello.txt (different query strings)
+        count=$( ( zcat "${WARC_FILE}" 2>/dev/null || cat "${WARC_FILE}" ) | grep -c "hello.txt?first" || true )
+        if [ "${count}" -lt 1 ]; then
+            echo "error: WARC file missing entry for hello.txt?first" >&2
+            exit 1
+        fi
+
+        count2=$( ( zcat "${WARC_FILE}" 2>/dev/null || cat "${WARC_FILE}" ) | grep -c "hello.txt?second" || true )
+        if [ "${count2}" -lt 1 ]; then
+            echo "error: WARC file missing entry for hello.txt?second" >&2
+            exit 1
+        fi
+
+        echo "✓ WARC multi-URL test passed"
         ;;
 
     *)

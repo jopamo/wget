@@ -350,4 +350,58 @@ else
     is_parallel: false,
     timeout: 30,
   )
+
+  # HTTPS tests
+  test('cli/https_basic',
+    cli_wrapper,
+    env: {
+      'HTTPD': busybox.full_path(),
+      'WGET': meson.project_build_root() / 'src' / 'wget',
+      'WGET_TEST_DOCROOT': meson.current_source_dir() / 'httpd-root',
+      'WGET_TEST_MODE': 'https_basic',
+    },
+    suite: 'cli',
+    is_parallel: false,
+    timeout: 30,
+  )
+
+  test('cli/https_cert_verify',
+    cli_wrapper,
+    env: {
+      'HTTPD': busybox.full_path(),
+      'WGET': meson.project_build_root() / 'src' / 'wget',
+      'WGET_TEST_DOCROOT': meson.current_source_dir() / 'httpd-root',
+      'WGET_TEST_MODE': 'https_cert_verify',
+    },
+    suite: 'cli',
+    is_parallel: false,
+    timeout: 30,
+  )
+
+  # WARC tests
+  test('cli/warc_basic',
+    cli_wrapper,
+    env: {
+      'HTTPD': busybox.full_path(),
+      'WGET': meson.project_build_root() / 'src' / 'wget',
+      'WGET_TEST_DOCROOT': meson.current_source_dir() / 'httpd-root',
+      'WGET_TEST_MODE': 'warc_basic',
+    },
+    suite: 'cli',
+    is_parallel: false,
+    timeout: 30,
+  )
+
+  test('cli/warc_multi',
+    cli_wrapper,
+    env: {
+      'HTTPD': busybox.full_path(),
+      'WGET': meson.project_build_root() / 'src' / 'wget',
+      'WGET_TEST_DOCROOT': meson.current_source_dir() / 'httpd-root',
+      'WGET_TEST_MODE': 'warc_multi',
+    },
+    suite: 'cli',
+    is_parallel: false,
+    timeout: 30,
+  )
 endif
