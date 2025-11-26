@@ -1,4 +1,6 @@
-/* Minimal basename/dirname helpers.  */
+/* Minimal basename/dirname helpers
+ * src/path.c
+ */
 
 #include "wget.h"
 #include "dirname.h"
@@ -7,17 +9,15 @@
 #include <string.h>
 
 char* last_component(char* path) {
-  if (!path)
-    return NULL;
+  if (!path || !*path)
+    return path;
 
   char* p = path;
-  size_t prefix = FILE_SYSTEM_PREFIX_LEN(path);
-  p += prefix;
+  char* last = path;
 
-  char* last = p;
   while (*p) {
-    if (ISSLASH(*p)) {
-      while (ISSLASH(*p))
+    if (*p == '/') {
+      while (*p == '/')
         ++p;
       if (*p)
         last = p;
@@ -29,7 +29,7 @@ char* last_component(char* path) {
 }
 
 static void strip_trailing_slashes(const char* start, const char** end) {
-  while (*end > start && ISSLASH((*end)[-1]))
+  while (*end > start && (*end)[-1] == '/')
     --(*end);
 }
 
@@ -37,19 +37,18 @@ char* base_name(const char* path) {
   if (!path || !*path)
     return xstrdup(".");
 
-  const char* start = path + FILE_SYSTEM_PREFIX_LEN(path);
+  const char* start = path;
   const char* end = path + strlen(path);
+
   strip_trailing_slashes(start, &end);
 
-  const char* last = end;
-  while (last > start && !ISSLASH(last[-1]))
-    --last;
-
-  if (last == start && FILE_SYSTEM_PREFIX_LEN(path) && !*last)
-    return xstrdup(path);
-
-  if (last == end && ISSLASH(*last))
+  /* path was all slashes */
+  if (end == start)
     return xstrdup("/");
+
+  const char* last = end;
+  while (last > start && last[-1] != '/')
+    --last;
 
   return xstrndup(last, (size_t)(end - last));
 }
@@ -58,17 +57,25 @@ char* dir_name(const char* path) {
   if (!path || !*path)
     return xstrdup(".");
 
-  const char* start = path + FILE_SYSTEM_PREFIX_LEN(path);
+  const char* start = path;
   const char* end = path + strlen(path);
+
   strip_trailing_slashes(start, &end);
 
-  while (end > start && !ISSLASH(end[-1]))
-    --end;
-  strip_trailing_slashes(start, &end);
-
-  if (end == path)
+  /* path was all slashes */
+  if (end == start)
     return xstrdup("/");
+
+  /* strip final component */
+  while (end > start && end[-1] != '/')
+    --end;
+
+  /* drop any extra slashes from the directory portion */
+  strip_trailing_slashes(start, &end);
+
+  /* no directory component, just a name */
   if (end == start)
     return xstrdup(".");
+
   return xstrndup(path, (size_t)(end - path));
 }
