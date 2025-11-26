@@ -1,3 +1,6 @@
+/* HTTP statistics and state tracking
+ * src/http-stat.h
+ */
 #ifndef HTTP_STAT_H
 #define HTTP_STAT_H
 

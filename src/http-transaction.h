@@ -1,3 +1,6 @@
+/* HTTP transaction state machine and execution
+ * src/http-transaction.h
+ */
 #ifndef HTTP_TRANSACTION_H
 #define HTTP_TRANSACTION_H
 
