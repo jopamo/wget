@@ -221,6 +221,11 @@ static bool warc_write_block_from_file(FILE* data_in) {
   char buffer[BUFSIZ];
   size_t s;
 
+  if (data_in == NULL) {
+    warc_write_ok = false;
+    return false;
+  }
+
   if (fseeko(data_in, 0L, SEEK_END) != 0) {
     warc_write_ok = false;
     return false;
@@ -380,6 +385,10 @@ static int warc_sha1_stream_with_payload(FILE* stream, void* res_block, void* re
   off_t pos = 0;
   off_t sum = 0;
 
+  if (stream == NULL) {
+    return 1;
+  }
+
   char* buffer = xmalloc(BLOCKSIZE + 72);
 
   sha1_init_ctx(&ctx_block);
@@ -460,7 +469,7 @@ static char* warc_base32_sha1_digest(const char* sha1_digest, char* sha1_base32,
 /* Set block and payload digest headers for the record
    payload_offset < 0 disables payload digest */
 static void warc_write_digest_headers(FILE* file, long payload_offset) {
-  if (opt.warc_digests_enabled) {
+  if (opt.warc_digests_enabled && file != NULL) {
     char sha1_res_block[SHA1_DIGEST_SIZE];
     char sha1_res_payload[SHA1_DIGEST_SIZE];
 
@@ -943,6 +952,11 @@ FILE* warc_tempfile(void) {
 /* Write a WARC request record
    body is closed by this function */
 bool warc_write_request_record(const char* url, const char* timestamp_str, const char* record_uuid, const ip_address* ip, FILE* body, off_t payload_offset) {
+  if (body == NULL) {
+    warc_write_ok = false;
+    return false;
+  }
+
   warc_write_start_record();
   warc_write_header("WARC-Type", "request");
   warc_write_header_uri("WARC-Target-URI", url);
@@ -1014,6 +1028,11 @@ static bool warc_write_revisit_record(const char* url, const char* timestamp_str
   char block_digest[BASE32_LENGTH(SHA1_DIGEST_SIZE) + 6];
   char sha1_res_block[SHA1_DIGEST_SIZE];
 
+  if (body == NULL) {
+    warc_write_ok = false;
+    return false;
+  }
+
   warc_uuid_str(revisit_uuid, sizeof(revisit_uuid));
 
   sha1_stream(body, sha1_res_block);
@@ -1058,6 +1077,11 @@ bool warc_write_response_record(const char* url,
   char sha1_res_payload[SHA1_DIGEST_SIZE];
   char response_uuid[48];
   off_t offset = 0;
+
+  if (body == NULL) {
+    warc_write_ok = false;
+    return false;
+  }
 
   if (opt.warc_digests_enabled) {
     struct warc_cdx_record* rec_existing;
@@ -1127,6 +1151,11 @@ static bool warc_write_record(const char* record_type,
                               FILE* body,
                               off_t payload_offset) {
   char uuid_buf[48];
+
+  if (body == NULL) {
+    warc_write_ok = false;
+    return false;
+  }
 
   if (resource_uuid == NULL) {
     warc_uuid_str(uuid_buf, sizeof(uuid_buf));

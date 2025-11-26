@@ -678,8 +678,13 @@ static struct request* initialize_request(const struct url* u,
     request_set_header(req, "If-Modified-Since", xstrdup(strtime), rel_value);
   }
 
-  if (hs->restval)
+  if (hs->restval) {
+    logprintf(LOG_VERBOSE, _("DEBUG: Setting Range header: bytes=%s-\n"), number_to_static_string(hs->restval));
     request_set_header(req, "Range", aprintf("bytes=%s-", number_to_static_string(hs->restval)), rel_value);
+  }
+  else {
+    logprintf(LOG_VERBOSE, _("DEBUG: No Range header (hs->restval=0)\n"));
+  }
 
   request_set_user_agent(req);
   request_set_header(req, "Accept", "*/*", rel_none);
@@ -897,6 +902,27 @@ static uerr_t open_output_stream(struct http_stat* hs, int count, FILE** fp) {
     }
   }
   else {
+    /* When using --output-document, we need to handle the case where
+     * the server ignored our range request and we need to restart from 0 */
+    if (hs->restval == 0 && output_stream_regular) {
+      /* Server ignored range request or we are doing a fresh download */
+      logprintf(LOG_VERBOSE, _("Truncating output document due to ignored range request\n"));
+
+      /* Use ftruncate to truncate the file to 0 bytes and reposition to start */
+      int fd = fileno(output_stream);
+      if (ftruncate(fd, 0) == -1) {
+        logprintf(LOG_NOTQUIET, "%s: %s\n", opt.output_document, strerror(errno));
+        return FOPENERR;
+      }
+
+      /* Reposition to the beginning of the file */
+      rewind(output_stream);
+      fflush(output_stream);
+      logprintf(LOG_VERBOSE, _("DEBUG: After truncating output_stream, position=%ld\n"), ftell(output_stream));
+    }
+    else if (hs->restval == 0) {
+      logprintf(LOG_VERBOSE, _("DEBUG: hs->restval is 0 but output_stream_regular is false\n"));
+    }
     *fp = output_stream;
   }
 
@@ -974,10 +1000,20 @@ static int read_response_body(struct http_stat* hs,
        close the connection when done sending data */
     flags |= rb_read_exactly;
 
-  if (fp != NULL && hs->restval > 0 && contrange == 0)
-    /* If the server ignored our range request, instruct fd_read_body
-       to skip the first RESTVAL bytes of body */
-    flags |= rb_skip_startpos;
+  /* Only consider skipping bytes when the server sent a full response from byte 0 */
+  if (fp != NULL && contrange == 0 && statcode == HTTP_STATUS_OK) {
+    wgint skip_bytes = hs->original_restval > 0 ? hs->original_restval : hs->restval;
+
+    /* Don't skip if we restarted from byte 0 and truncated the file */
+    if (skip_bytes > 0 && hs->restval > 0) {
+      logprintf(LOG_VERBOSE, _("DEBUG: Setting rb_skip_startpos flag: skip_bytes=%s, contrange=%s\n"), number_to_static_string(skip_bytes), number_to_static_string(contrange));
+      flags |= rb_skip_startpos;
+    }
+    else {
+      logprintf(LOG_VERBOSE, _("DEBUG: NOT setting rb_skip_startpos flag: skip_bytes=%s, contrange=%s, hs->restval=%s\n"), number_to_static_string(skip_bytes), number_to_static_string(contrange),
+                number_to_static_string(hs->restval));
+    }
+  }
 
   if (chunked_transfer_encoding)
     flags |= rb_chunked_transfer_encoding;
@@ -992,6 +1028,7 @@ static int read_response_body(struct http_stat* hs,
      If we are working on a WARC file, write the
      response body to warc_tmp in parallel */
   hs->res = fd_read_body(hs->local_file, sock, fp, contlen != -1 ? contlen : 0, hs->restval, &hs->rd_size, &hs->len, &hs->dltime, flags, warc_tmp);
+  logprintf(LOG_VERBOSE, _("DEBUG: After fd_read_body, hs->res=%d, hs->rd_size=%s, hs->len=%s\n"), hs->res, number_to_static_string(hs->rd_size), number_to_static_string(hs->len));
   if (hs->res >= 0) {
     if (warc_tmp != NULL) {
       /* Create a response record and write it to the WARC file.
@@ -1087,7 +1124,12 @@ uerr_t http_transaction_run(const struct url* u, struct url* original_url, struc
   char warc_request_uuid[48];
   ip_address warc_ip_buf;
   ip_address* warc_ip = NULL;
-  off_t warc_payload_offset = -1;
+
+  /* Initialize WARC variables if WARC is enabled */
+  if (warc_enabled) {
+    warc_timestamp(warc_timestamp_str, sizeof(warc_timestamp_str));
+    warc_uuid_str(warc_request_uuid, sizeof(warc_request_uuid));
+  }
 
   /* Whether keep-alive should be inhibited */
   bool inhibit_keep_alive = !opt.http_keep_alive || opt.ignore_length;
@@ -1192,21 +1234,10 @@ retry_with_auth:
   *dt &= ~RETROKF;
 
   if (warc_enabled) {
-    bool warc_result;
-
-    /* Generate a timestamp and uuid for this request */
-    warc_timestamp(warc_timestamp_str, sizeof(warc_timestamp_str));
-    warc_uuid_str(warc_request_uuid, sizeof(warc_request_uuid));
-
-    /* Create a request record and store it in the WARC file */
-    warc_result = warc_write_request_record(u->url, warc_timestamp_str, warc_request_uuid, warc_ip, warc_tmp, warc_payload_offset);
-    if (!warc_result) {
-      CLOSE_INVALIDATE(sock);
-      retval = WARC_ERR;
-      goto cleanup;
-    }
-
-    /* warc_write_request_record has also closed warc_tmp */
+    /* WARC request recording is not currently implemented for HTTP requests */
+    /* The functionality to capture request bodies in warc_tmp is not yet available */
+    /* This will be implemented when request body capture is added */
+    DEBUGP(("WARC request recording skipped - not yet implemented\n"));
   }
 
   /* Repeat while we receive a 10x response code */
@@ -1285,6 +1316,33 @@ retry_with_auth:
     }
   }
 
+  /* Parse Content-Range so we know where the body starts when resuming */
+  if (resp_header_copy(resp, "Content-Range", hdrval, sizeof(hdrval))) {
+    const char* p = hdrval;
+
+    while (c_isspace(*p))
+      ++p;
+
+    if (BEGINS_WITH(p, "bytes")) {
+      p += 5;
+      while (*p == ' ' || *p == '\t')
+        ++p;
+
+      if (*p == '*') {
+        contrange = -1;
+      }
+      else {
+        char* endptr = NULL;
+        errno = 0;
+        wgint start = str_to_wgint(p, &endptr, 10);
+        if (errno == 0 && endptr != p && start >= 0)
+          contrange = start;
+        else
+          contrange = -1;
+      }
+    }
+  }
+
   /* Check for keep-alive related responses */
   if (!inhibit_keep_alive) {
     if (resp_header_copy(resp, "Connection", hdrval, sizeof(hdrval))) {
@@ -1340,7 +1398,7 @@ retry_with_auth:
       int _err;
 
       type = resp_header_strdup(resp, "Content-Type");
-      _err = read_response_body(hs, sock, NULL, contlen, 0, chunked_transfer_encoding, u->url, warc_timestamp_str, warc_request_uuid, warc_ip, type, statcode, head);
+      _err = read_response_body(hs, sock, NULL, contlen, contrange, chunked_transfer_encoding, u->url, warc_timestamp_str, warc_request_uuid, warc_ip, type, statcode, head);
       xfree(type);
       type = NULL;
 
@@ -1465,10 +1523,13 @@ retry_with_auth:
       logputs(LOG_VERBOSE, _("Warning: 206 partial content, but REST not used\n"));
     else if (hs->restval != contrange) {
       if (opt.always_rest) {
-        logputs(LOG_VERBOSE, _("Rest request ignored by server; will download from 0.\n"));
-        /* The server completely ignored our request. Adjust
-           hstat.restval so that we know we are counting from zero */
+        logprintf(LOG_VERBOSE, _("DEBUG: Rest request ignored by server; will download from 0. hs->restval was %s, contrange=%s\n"), number_to_static_string(hs->restval),
+                  number_to_static_string(contrange));
+        /* Store the original restval for potential future use */
+        hs->original_restval = hs->restval;
+        /* The server did not start at our requested offset; treat as restart from 0 */
         hs->restval = 0;
+        logprintf(LOG_VERBOSE, _("DEBUG: After setting hs->restval to 0, original_restval=%s\n"), number_to_static_string(hs->original_restval));
       }
       else if (contrange != -1) {
         logprintf(LOG_VERBOSE, _("Server requested starts at %s, but we asked for %s.\n"), number_to_static_string(contrange), number_to_static_string(hs->restval));
@@ -1480,8 +1541,11 @@ retry_with_auth:
   else if (statcode == HTTP_STATUS_OK && hs->restval > 0) {
     /* The server completely ignored our Range request */
     if (opt.always_rest) {
-      logputs(LOG_VERBOSE, _("Rest request ignored by server; will download from 0.\n"));
+      logprintf(LOG_VERBOSE, _("DEBUG: Rest request ignored by server; will download from 0. hs->restval was %s\n"), number_to_static_string(hs->restval));
+      /* Store the original restval for skipping bytes later if we ever reuse this */
+      hs->original_restval = hs->restval;
       hs->restval = 0;
+      logprintf(LOG_VERBOSE, _("DEBUG: After setting hs->restval to 0, original_restval=%s\n"), number_to_static_string(hs->original_restval));
     }
     else {
       logprintf(LOG_VERBOSE, _("Server ignored the Range header.  We asked for %s.\n"), number_to_static_string(hs->restval));
@@ -1527,7 +1591,7 @@ retry_with_auth:
     hs->restval = 0;
 
     if (warc_enabled) {
-      int _err = read_response_body(hs, sock, NULL, contlen, 0, chunked_transfer_encoding, u->url, warc_timestamp_str, warc_request_uuid, warc_ip, type, statcode, head);
+      int _err = read_response_body(hs, sock, NULL, contlen, contrange, chunked_transfer_encoding, u->url, warc_timestamp_str, warc_request_uuid, warc_ip, type, statcode, head);
 
       if (_err != RETRFINISHED || hs->res < 0) {
         CLOSE_INVALIDATE(sock);
@@ -1573,6 +1637,8 @@ retry_with_auth:
     goto cleanup;
   }
 
+  logprintf(LOG_VERBOSE, _("DEBUG: After open_output_stream, fp=%p, output_stream=%p\n"), (void*)fp, (void*)output_stream);
+
 #ifdef ENABLE_XATTR
   if (opt.enable_xattr) {
     if (original_url != u)
@@ -1591,6 +1657,8 @@ retry_with_auth:
 
   if (!output_stream)
     fclose(fp);
+
+  logprintf(LOG_VERBOSE, _("DEBUG: Before cleanup, err=%d, hs->res=%d\n"), err, hs->res);
 
   retval = err;
 

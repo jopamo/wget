@@ -248,3 +248,4 @@ configure_file(
 config_inc = include_directories('.')
 
 subdir('src')
+subdir('tests')

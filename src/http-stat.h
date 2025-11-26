@@ -20,6 +20,7 @@ struct http_stat {
   wgint len;               /* received length */
   wgint contlen;           /* expected length */
   wgint restval;           /* the restart value */
+  wgint original_restval;  /* original restart value before server ignored range */
   int res;                 /* the result of last read */
   char* rderrmsg;          /* error message from read error */
   char* newloc;            /* new location (redirection) */

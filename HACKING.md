@@ -26,6 +26,7 @@
 ### Tools & Status
 - [ripgrep Guide](docs/ripgrep.md) - Search tool usage for agents
 - [Project Status](TODO.md) - Running record of implementation progress
+- [Reusability Tests Guide](docs/reusability_tests.md) - Test architecture and patterns
 
 ## Hard Requirements
 
@@ -65,6 +66,83 @@
 - **Implementation details**: Use ripgrep to find existing patterns
 - **Status updates**: Check TODO.md for current progress
 - **Code patterns**: Follow design principles for consistency
+
+## Build and Test Process
+
+### Building with Meson
+
+The project uses the Meson build system. To build and test:
+
+```bash
+# Configure build directory (if not already done)
+meson setup build
+
+# Build the project
+meson compile -C build
+
+# Run all tests
+meson test -C build
+
+# Run specific test suite
+meson test -C build wget:http
+meson test -C build wget:cli
+
+# Run with verbose output
+meson test -C build --verbose
+```
+
+### Test Results and Known Issues
+
+**Current Test Status (2025-11-26):**
+- **25/26 tests pass** ✅
+- **1 test fails** ❌: `wget:cli / cli/continue`
+
+#### Continue Test Failure Analysis
+
+The continue test (`cli/continue`) fails with a segmentation fault (SIGSEGV):
+
+```
+23/26 wget:cli / cli/continue           FAIL            0.25s   (exit status 139 or signal 11 SIGSEGV)
+```
+
+**Test Command:**
+```bash
+./build/src/wget --no-config --continue --output-document=continue_test.txt http://127.0.0.1:18080/hello.txt
+```
+
+**Error:** Segmentation fault during continue functionality execution.
+
+#### Continue Implementation Status
+
+Despite the test failure, the continue option (`-c`/`--continue`) is implemented in the codebase:
+
+- **CLI Option**: Properly parsed and mapped to `opt.always_rest` boolean
+- **File Mode**: Files opened in append mode (`"ab"`) when continue is enabled
+- **HTTP Range Headers**: Correctly generates `Range: bytes=start-` headers
+- **Restart Position**: Calculates restart position using `stat()` on existing files
+- **Server Response**: Handles 206 Partial Content responses appropriately
+
+**Root Cause Investigation Needed:**
+The segmentation fault suggests a runtime issue in the continue functionality, possibly related to:
+- Memory management during file append operations
+- HTTP range request processing
+- File descriptor handling
+- State machine transitions in the continue flow
+
+### Debugging the Continue Test
+
+To investigate the continue test failure:
+
+```bash
+# Run with debug output
+MALLOC_PERTURB_=1 meson test -C build wget:cli / cli/continue --verbose
+
+# Run with address sanitizer (if available)
+ASAN_OPTIONS=detect_leaks=1 meson test -C build wget:cli / cli/continue
+
+# Manual test reproduction
+cd build && ./src/wget --no-config --continue --output-document=continue_test.txt http://127.0.0.1:18080/hello.txt
+```
 
 ---
 

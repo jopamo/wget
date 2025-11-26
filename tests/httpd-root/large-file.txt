@@ -1,0 +1,7 @@
+This is a larger test file for testing range requests and partial downloads.
+Line 2: Testing wget functionality
+Line 3: More content for testing
+Line 4: Additional data
+Line 5: Even more content
+Line 6: Almost done
+Line 7: Final line of test content

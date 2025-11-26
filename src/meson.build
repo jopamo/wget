@@ -110,7 +110,7 @@ elif pcre_dep.found()
   deps += pcre_dep
 endif
 
-executable('wget', sources,
+wget_exe = executable('wget', sources,
   include_directories: incdirs,
   dependencies: deps,
   install: true)
