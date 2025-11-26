@@ -1,4 +1,5 @@
 /* Download progress
+ * src/progress.c
  */
 
 #include "wget.h"
@@ -267,11 +268,7 @@ static const char* eta_to_human_short(int, bool);
  */
 
 #ifndef ADD_DOT_ROWS_THRS
-#if FUZZING
 #define ADD_DOT_ROWS_THRS 2
-#else
-#define ADD_DOT_ROWS_THRS 2
-#endif
 #endif /* ADD_DOT_ROWS_THRS */
 
 /* Prints the stats (percentage of completion, speed, ETA) for current row
@@ -995,23 +992,16 @@ static void bar_set_params(const char* params) {
     }
   }
 
-  if (((opt.lfilename && opt.show_progress != 1)
-#ifdef HAVE_ISATTY
-       || !isatty(fileno(stderr))
-#endif
-           ) &&
-      !current_impl_locked) {
+  if (((opt.lfilename && opt.show_progress != 1) || !isatty(fileno(stderr))) && !current_impl_locked) {
     set_progress_implementation(FALLBACK_PROGRESS_IMPLEMENTATION);
     return;
   }
 }
 
-#ifdef SIGWINCH
 void progress_handle_sigwinch(int sig WGET_ATTR_UNUSED) {
   received_sigwinch = 1;
   signal(SIGWINCH, progress_handle_sigwinch);
 }
-#endif
 
 /* Provide a short human-readable rendition of the ETA
    Display never occupies more than 7 characters of screen space
