@@ -1,71 +1,18 @@
-/* Hash tables.
-   Copyright (C) 2000-2011, 2015, 2018-2024 Free Software Foundation,
-   Inc.
+/* Hash tables
+ * src/hash.c
+ */
 
-This file is part of GNU Wget.
-
-GNU Wget is free software; you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation; either version 3 of the License, or (at
-your option) any later version.
-
-GNU Wget is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with Wget.  If not, see <http://www.gnu.org/licenses/>.
-
-Additional permission under GNU GPL version 3 section 7
-
-If you modify this program, or any covered work, by linking or
-combining it with the OpenSSL project's OpenSSL library (or a
-modified version of that library), containing parts covered by the
-terms of the OpenSSL or SSLeay licenses, the Free Software Foundation
-grants you additional permission to convey the resulting work.
-Corresponding Source for a non-source form of such a combination
-shall include the source code for the parts of OpenSSL used as well
-as that of the covered work.  */
-
-/* With -DSTANDALONE, this file can be compiled outside Wget source
-   tree.  To test, also use -DTEST.  */
-
-#ifndef STANDALONE
 #include "wget.h"
-#else
-#include "config.h"
-#endif
 
+#include <assert.h>
+#include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <assert.h>
 #include <string.h>
-#include <limits.h>
-
-#ifndef STANDALONE
-/* Get Wget's utility headers. */
-#include "utils.h"
-#else
-/* Make do without them. */
-#define xnew(type) (xmalloc(sizeof(type)))
-#define xnew0(type) (xcalloc(1, sizeof(type)))
-#define xnew_array(type, len) (xmalloc((len) * sizeof(type)))
-#define xfree(p)      \
-  do {                \
-    free((void*)(p)); \
-    p = NULL;         \
-  } while (0)
-
-#ifndef countof
-#define countof(x) (sizeof(x) / sizeof((x)[0]))
-#endif
-#include <ctype.h>
-#define c_tolower(x) tolower((unsigned char)(x))
-#include <stdint.h>
-#endif
 
 #include "hash.h"
+#include "utils.h"
 
 /* INTERFACE:
 
@@ -182,9 +129,6 @@ struct hash_table {
    nonnegative integer keys.  */
 
 #define INVALID_PTR ((void*)~(uintptr_t)0)
-#ifndef UCHAR_MAX
-#define UCHAR_MAX 0xff
-#endif
 #define INVALID_PTR_CHAR UCHAR_MAX
 
 /* Whether the cell C is occupied (non-empty). */
@@ -229,7 +173,7 @@ static int prime_size(int size, int* prime_offset) {
          which means we could never return the same prime anyway.
          (If that is not the case, the caller can simply reset
          *prime_offset.)  */
-      *prime_offset = i + 1;
+      *prime_offset = (int)(i + 1);
       return primes[i];
     }
 
@@ -285,7 +229,7 @@ struct hash_table* hash_table_new(int items, unsigned long (*hash_function)(cons
 
   /* Mark cells as empty.  We use 0xff rather than 0 to mark empty
      keys because it allows us to use NULL/0 as keys.  */
-  memset(ht->cells, INVALID_PTR_CHAR, size * sizeof(struct cell));
+  memset(ht->cells, INVALID_PTR_CHAR, (size_t)size * sizeof(struct cell));
 
   ht->count = 0;
 
@@ -375,7 +319,7 @@ static void grow_hash_table(struct hash_table* ht) {
   ht->resize_threshold = (int)(newsize * HASH_MAX_FULLNESS);
 
   cells = xnew_array(struct cell, newsize);
-  memset(cells, INVALID_PTR_CHAR, newsize * sizeof(struct cell));
+  memset(cells, INVALID_PTR_CHAR, (size_t)newsize * sizeof(struct cell));
   ht->cells = cells;
 
   for (c = old_cells; c < old_end; c++)
@@ -464,7 +408,7 @@ int hash_table_remove(struct hash_table* ht, const void* key) {
    remain unchanged.  */
 
 void hash_table_clear(struct hash_table* ht) {
-  memset(ht->cells, INVALID_PTR_CHAR, ht->size * sizeof(struct cell));
+  memset(ht->cells, INVALID_PTR_CHAR, (size_t)ht->size * sizeof(struct cell));
   ht->count = 0;
 }
 
@@ -594,11 +538,11 @@ __attribute__((no_sanitize("integer")))
 #endif
 static unsigned long hash_string(const void* key) {
   const char* p = key;
-  unsigned int h = *p;
+  unsigned int h = (unsigned char)*p;
 
   if (h)
     for (p += 1; *p != '\0'; p++)
-      h = (h << 5) - h + *p;
+      h = (h << 5) - h + (unsigned char)*p;
 
   return h;
 }
@@ -629,11 +573,11 @@ __attribute__((no_sanitize("integer")))
 #endif
 static unsigned long hash_string_nocase(const void* key) {
   const char* p = key;
-  unsigned int h = c_tolower(*p);
+  unsigned int h = (unsigned char)c_tolower(*p);
 
   if (h)
     for (p += 1; *p != '\0'; p++)
-      h = (h << 5) - h + c_tolower(*p);
+      h = (h << 5) - h + (unsigned char)c_tolower(*p);
 
   return h;
 }
@@ -699,7 +643,7 @@ void print_hash(struct hash_table* sht) {
   int count = 0;
 
   for (hash_table_iterate(sht, &iter); hash_table_iter_next(&iter); ++count)
-    printf("%s: %s\n", iter.key, iter.value);
+    printf("%s: %s\n", (char*)iter.key, (char*)iter.value);
   assert(count == sht->count);
 }
 
@@ -716,7 +660,7 @@ int main(void) {
 #endif /* ENABLE_NLS */
 
   while ((fgets(line, sizeof(line), stdin))) {
-    int len = strlen(line);
+    int len = (int)strlen(line);
     if (len <= 1)
       continue;
     line[--len] = '\0';
