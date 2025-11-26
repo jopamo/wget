@@ -1,30 +1,35 @@
-## Phase 0 — Prep & Audit (what to rip out / keep)
+## Phase 0 — Prep & Audit (what to rip out / keep) - **IN PROGRESS**
 
-* [ ] Identify **all blocking DNS** usage
+* [x] Identify **all blocking DNS** usage
 
-  * [ ] `grep -R "getaddrinfo" "gethostbyname" "gethostbyaddr" src/`
+  * [x] `grep -R "getaddrinfo" "gethostbyname" "gethostbyaddr" src/`
+    - Found in: `src/host.c`, `src/host.h`
   * [ ] Mark all call sites that must be rerouted through `dns_cares`
 
-* [ ] Identify **all blocking connect() and I/O** paths
+* [x] Identify **all blocking connect() and I/O** paths
 
-  * [ ] `grep -R "connect(" "select(" "poll(" "fd_read_body" "recv(" "send(" src/`
-  * [ ] List all sites that assume synchronous “do everything then return” (esp. in `connect.c`, `retr.c`, `http.c`)
+  * [x] `grep -R "connect(" "select(" "poll(" "fd_read_body" "recv(" "send(" src/`
+    - Found in: `src/utils.c`, `src/openssl.c`, `src/host.c`, `src/ftp-data.c`, `src/ftp-data.h`, `src/ftp-session.h`, `src/connect.c`
+  * [ ] List all sites that assume synchronous "do everything then return" (esp. in `connect.c`, `retr.c`, `http.c`)
 
-* [ ] Identify **progress / timeout logic** that uses sleeps or blocking waits
+* [x] Identify **progress / timeout logic** that uses sleeps or blocking waits
 
-  * [ ] `grep -R "sleep(" "usleep(" "nanosleep(" "alarm(" src/`
+  * [x] `grep -R "sleep(" "usleep(" "nanosleep(" "alarm(" src/`
+    - Found in: `src/utils.c`, `src/retr.c`, `src/utils.h`
   * [ ] Mark things that should turn into libev timers
 
 * [ ] Decide which **public API surface** to preserve
 
-  * [ ] Do you keep `retrieve_url()` as a “blocking façade” over the async core?
+  * [ ] Do you keep `retrieve_url()` as a "blocking façade" over the async core?
   * [ ] Decide where new async APIs will live (e.g. `src/evloop.c`, `src/dns_cares.c`, `src/net_conn.c`, `src/http_transaction.c`, `src/scheduler.c`, `src/pconn.c`)
 
 ---
 
-## Phase 1 — Core Event Loop Abstraction (`evloop`)
+## Phase 1 — Core Event Loop Abstraction (`evloop`) - **NOT STARTED**
 
 * [ ] Add `src/evloop.c` + `src/evloop.h` and wire into build
+  * [ ] Add libev dependency to meson.build
+  * [ ] Create new source files
 
 * [ ] Define opaque wrapper types
 
@@ -61,9 +66,11 @@
 
 ---
 
-## Phase 2 — Asynchronous DNS (`dns_cares`)
+## Phase 2 — Asynchronous DNS (`dns_cares`) - **NOT STARTED**
 
 * [ ] Add `src/dns_cares.c` + `src/dns_cares.h` and wire into build; link with c-ares
+  * [ ] ✅ c-ares dependency already configured in meson.build
+  * [ ] Create new source files
 
 * [ ] Define DNS context
 
@@ -110,7 +117,7 @@
 
 ---
 
-## Phase 3 — Non-blocking Connection Object (`net_conn`)
+## Phase 3 — Non-blocking Connection Object (`net_conn`) - **NOT STARTED**
 
 * [ ] Add `src/net_conn.c` + `src/net_conn.h`
 
@@ -180,9 +187,11 @@
 
 ---
 
-## Phase 4 — HTTP Transaction State Machine (`http_transaction`)
+## Phase 4 — HTTP Transaction State Machine (`http_transaction`) - **PARTIALLY IMPLEMENTED**
 
-* [ ] Add `src/http_transaction.c` + `src/http_transaction.h`
+* [x] Add `src/http_transaction.c` + `src/http_transaction.h`
+  * [x] Files exist but appear to contain synchronous implementation
+  * [ ] Need to refactor for async operation
 
 * [ ] Define transaction state & struct
 
@@ -230,7 +239,7 @@
   * [ ] Parse header lines into header list
   * [ ] Determine:
 
-    * [ ] `Content-Length` vs `Transfer-Encoding: chunked` vs “until close”
+    * [ ] `Content-Length` vs `Transfer-Encoding: chunked` vs "until close"
     * [ ] `Connection: close` vs keep-alive
     * [ ] Content coding (`gzip`) flags
   * [ ] Initialize body decoding state and move to `H_READ_BODY`
@@ -268,7 +277,7 @@
 
 * [ ] Replace blocking response handling in Wget
 
-  * [ ] Replace `fd_read_body` and similar “read entire response in one blocking call” with `http_transaction` usage
+  * [ ] Replace `fd_read_body` and similar "read entire response in one blocking call" with `http_transaction` usage
   * [ ] Make old `retrieve_url()` (if kept) into a small wrapper that:
 
     * [ ] Creates a single job with this transaction
