@@ -314,22 +314,29 @@ static bool parse_content_disposition(const char* hdr, char** filename) {
 #ifdef HAVE_HSTS
 static bool parse_strict_transport_security(const char* header, int64_t* max_age, bool* include_subdomains) {
   param_token name, value;
-  const char* c_max_age = NULL;
+  char* c_max_age = NULL;
   bool include = false;
   bool is_url_encoded = false;
   bool success = false;
 
-  if (!header)
+  if (!header || !*header)
     return false;
 
-  /* process the STS header; keys must be matched case-insensitively */
   for (; extract_param(&header, &name, &value, ';', &is_url_encoded); is_url_encoded = false) {
+    if (!name.b || name.b == name.e)
+      continue;
+
+    /* handle valueless flags like preload and includeSubDomains */
+    if (!value.b || value.b == value.e) {
+      if (BOUNDED_EQUAL_NO_CASE(name.b, name.e, "includeSubDomains"))
+        include = true;
+      /* ignore preload and other flags */
+      continue;
+    }
+
     if (BOUNDED_EQUAL_NO_CASE(name.b, name.e, "max-age")) {
       xfree(c_max_age);
       c_max_age = strdupdelim(value.b, value.e);
-    }
-    else if (BOUNDED_EQUAL_NO_CASE(name.b, name.e, "includeSubDomains")) {
-      include = true;
     }
   }
 

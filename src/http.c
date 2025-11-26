@@ -90,29 +90,48 @@ static bool check_end(const char* p) {
 bool extract_param(const char** input, param_token* name, param_token* value, char separator, bool* is_url_encoded) {
   const char* p = *input;
 
-  while (*p && c_isspace(*p))
+  /* skip leading whitespace and any stray separators */
+  while (*p && (c_isspace(*p) || *p == separator))
     p++;
 
-  if (!*p)
+  if (!*p) {
+    *input = p;
+    if (is_url_encoded)
+      *is_url_encoded = false;
     return false;
+  }
 
+  /* parse name */
   name->b = p;
   while (*p && *p != '=' && *p != separator && !c_isspace(*p))
     p++;
   name->e = p;
 
+  /* skip whitespace after name */
   while (*p && c_isspace(*p))
     p++;
 
+  /* name-only parameter: no '=' present */
   if (*p != '=') {
     value->b = NULL;
     value->e = NULL;
+
+    /* consume until next separator so caller can make progress */
+    while (*p && *p != separator)
+      p++;
+
+    if (*p == separator)
+      p++;
+
     *input = p;
+
     if (is_url_encoded)
       *is_url_encoded = false;
+
     return true;
   }
 
+  /* value follows '=' */
   p++;
 
   while (*p && c_isspace(*p))
@@ -135,6 +154,7 @@ bool extract_param(const char** input, param_token* name, param_token* value, ch
     value->e = p;
   }
 
+  /* consume up to and including next separator */
   while (*p && *p != separator)
     p++;
 
