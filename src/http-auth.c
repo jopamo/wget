@@ -1,27 +1,30 @@
-/* HTTP authentication management.
-   Separated from http.c. */
+/* HTTP authentication management
+ * src/http-auth.c
+ *
+ * Handles Basic and Digest authentication, with optional NTLM support
+ */
 
 #include "wget.h"
 #include "http-auth.h"
 #include "http.h"
 
+#include <assert.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <assert.h>
-#include <limits.h>
 
+#include "c-ctype.h"
+#include "c-strcase.h"
+#include "gettext.h"
+#include "hash.h"
+#include "log.h"
+#include "md5.h"
+#include "quotearg.h"
 #include "utils.h"
 #include "xalloc.h"
 #include "xstrndup.h"
-#include "c-strcase.h"
-#include "c-ctype.h"
-#include "log.h"
-#include "gettext.h"
-#include "md5.h"
-#include "hash.h"
-#include "quotearg.h"
 
 #ifdef ENABLE_NTLM
 #include "http-ntlm.h"
@@ -29,34 +32,37 @@
 
 static struct hash_table* basic_authed_hosts;
 
-/* Find out if this host has issued a Basic challenge yet; if so, give
- * it the username, password. A temporary measure until we can get
- * proper authentication in place. */
-
+/* If this host is known to have issued a Basic challenge, or
+ * auth_without_challenge is set, attach an Authorization header
+ *
+ * Returns true if credentials were added
+ */
 bool maybe_send_basic_creds(const char* hostname, const char* user, const char* passwd, struct request* req) {
   bool do_challenge = false;
 
   if (opt.auth_without_challenge) {
-    DEBUGP(("Auth-without-challenge set, sending Basic credentials.\n"));
+    DEBUGP(("Auth-without-challenge set, sending Basic credentials\n"));
     do_challenge = true;
   }
   else if (basic_authed_hosts && hash_table_contains(basic_authed_hosts, hostname)) {
-    DEBUGP(("Found %s in basic_authed_hosts.\n", quote(hostname)));
+    DEBUGP(("Found %s in basic_authed_hosts\n", quote(hostname)));
     do_challenge = true;
   }
   else {
-    DEBUGP(("Host %s has not issued a general basic challenge.\n", quote(hostname)));
+    DEBUGP(("Host %s has not issued a general basic challenge\n", quote(hostname)));
   }
+
   if (do_challenge) {
     request_set_header(req, "Authorization", basic_authentication_encode(user, passwd), rel_value);
   }
+
   return do_challenge;
 }
 
 void register_basic_auth_host(const char* hostname) {
-  if (!basic_authed_hosts) {
+  if (!basic_authed_hosts)
     basic_authed_hosts = make_nocase_string_hash_table(1);
-  }
+
   if (!hash_table_contains(basic_authed_hosts, hostname)) {
     hash_table_put(basic_authed_hosts, xstrdup(hostname), NULL);
     DEBUGP(("Inserted %s into basic_authed_hosts\n", quote(hostname)));
@@ -66,21 +72,22 @@ void register_basic_auth_host(const char* hostname) {
 void http_auth_cleanup(void) {
   if (basic_authed_hosts) {
     hash_table_iterator iter;
-    for (hash_table_iterate(basic_authed_hosts, &iter); hash_table_iter_next(&iter);) {
+
+    for (hash_table_iterate(basic_authed_hosts, &iter); hash_table_iter_next(&iter);)
       xfree(iter.key);
-    }
+
     hash_table_destroy(basic_authed_hosts);
     basic_authed_hosts = NULL;
   }
 }
 
-/* Basic Authentication */
-/* Bind user and password together for Basic authentication encoding.
-   This is done by encoding the string "USER:PASS" to base64 and
-   prepending the string "Basic " in front of it.  */
-
+/* Basic authentication
+ *
+ * Encodes "user:pass" as base64 and prefixes "Basic "
+ */
 char* basic_authentication_encode(const char* user, const char* passwd) {
-  char buf_t1[256], buf_t2[256];
+  char buf_t1[256];
+  char buf_t2[256];
   char *t1, *t2, *ret;
   size_t len1 = strlen(user) + 1 + strlen(passwd);
 
@@ -109,10 +116,9 @@ char* basic_authentication_encode(const char* user, const char* passwd) {
 }
 
 #ifdef ENABLE_DIGEST
-/* Dump the hexadecimal representation of HASH to BUF.  HASH should be
-   an array of 16 bytes containing the hash keys, and BUF should be a
-   buffer of 33 writable characters (32 for hex digits plus one for
-   zero termination).  */
+/* Render MD5 hash as a hex string into buf
+ * buf must hold 2 * MD5_DIGEST_SIZE + 1 bytes
+ */
 static void dump_hash(char* buf, const unsigned char* hash) {
   int i;
 
@@ -123,14 +129,22 @@ static void dump_hash(char* buf, const unsigned char* hash) {
   *buf = '\0';
 }
 
-/* Take the line apart to find the challenge, and compose a digest
-   authorization header.  See RFC2069 section 2.1.2.  */
+/* Build a Digest Authorization header from a WWW-Authenticate challenge
+ *
+ * Parses challenge params (realm, nonce, qop, algorithm, opaque) and
+ * computes the appropriate response for RFC 2069 / 2617
+ *
+ * On missing required fields, sets *auth_err and returns NULL
+ */
 static char* digest_authentication_encode(const char* au, const char* user, const char* passwd, const char* method, const char* path, uerr_t* auth_err) {
   static char *realm, *opaque, *nonce, *qop, *algorithm;
   static struct {
     const char* name;
     char** variable;
-  } options[] = {{"realm", &realm}, {"opaque", &opaque}, {"nonce", &nonce}, {"qop", &qop}, {"algorithm", &algorithm}};
+  } options[] = {
+      {"realm", &realm}, {"opaque", &opaque}, {"nonce", &nonce}, {"qop", &qop}, {"algorithm", &algorithm},
+  };
+
   char cnonce[16] = "";
   char* res = NULL;
   int res_len;
@@ -139,24 +153,29 @@ static char* digest_authentication_encode(const char* au, const char* user, cons
 
   realm = opaque = nonce = algorithm = qop = NULL;
 
-  au += 6; /* skip over `Digest' */
+  /* skip "Digest" prefix */
+  au += 6;
   while (extract_param(&au, &name, &value, ',', NULL)) {
     size_t i;
-    size_t namelen = name.e - name.b;
-    for (i = 0; i < countof(options); i++)
-      if (namelen == strlen(options[i].name) && 0 == strncmp(name.b, options[i].name, namelen)) {
+    size_t namelen = (size_t)(name.e - name.b);
+
+    for (i = 0; i < countof(options); i++) {
+      if (namelen == strlen(options[i].name) && strncmp(name.b, options[i].name, namelen) == 0) {
         *options[i].variable = strdupdelim(value.b, value.e);
         break;
       }
+    }
   }
 
   if (qop && strcmp(qop, "auth")) {
-    logprintf(LOG_NOTQUIET, _("Unsupported quality of protection '%s'.\n"), qop);
-    xfree(qop); /* force freeing mem and continue */
+    logprintf(LOG_NOTQUIET, _("Unsupported quality of protection '%s'\n"), qop);
+    xfree(qop);
+    qop = NULL;
   }
   else if (algorithm && strcmp(algorithm, "MD5") && strcmp(algorithm, "MD5-sess")) {
-    logprintf(LOG_NOTQUIET, _("Unsupported algorithm '%s'.\n"), algorithm);
-    xfree(algorithm); /* force freeing mem and continue */
+    logprintf(LOG_NOTQUIET, _("Unsupported algorithm '%s'\n"), algorithm);
+    xfree(algorithm);
+    algorithm = NULL;
   }
 
   if (!realm || !nonce || !user || !passwd || !path || !method) {
@@ -164,11 +183,12 @@ static char* digest_authentication_encode(const char* au, const char* user, cons
     goto cleanup;
   }
 
-  /* Calculate the digest value.  */
+  /* compute response digest */
   {
     struct md5_ctx ctx;
     unsigned char hash[MD5_DIGEST_SIZE];
-    char a1buf[MD5_DIGEST_SIZE * 2 + 1], a2buf[MD5_DIGEST_SIZE * 2 + 1];
+    char a1buf[MD5_DIGEST_SIZE * 2 + 1];
+    char a2buf[MD5_DIGEST_SIZE * 2 + 1];
     char response_digest[MD5_DIGEST_SIZE * 2 + 1];
 
     /* A1BUF = H(user ":" realm ":" password) */
@@ -182,12 +202,11 @@ static char* digest_authentication_encode(const char* au, const char* user, cons
 
     dump_hash(a1buf, hash);
 
-    if (algorithm && !strcmp(algorithm, "MD5-sess")) {
+    if (algorithm && strcmp(algorithm, "MD5-sess") == 0) {
       /* A1BUF = H( H(user ":" realm ":" password) ":" nonce ":" cnonce ) */
       snprintf(cnonce, sizeof(cnonce), "%08x", (unsigned)random_number(INT_MAX));
 
       md5_init_ctx(&ctx);
-      /* md5_process_bytes (hash, MD5_DIGEST_SIZE, &ctx); */
       md5_process_bytes(a1buf, MD5_DIGEST_SIZE * 2, &ctx);
       md5_process_bytes((unsigned char*)":", 1, &ctx);
       md5_process_bytes((unsigned char*)nonce, strlen(nonce), &ctx);
@@ -206,19 +225,18 @@ static char* digest_authentication_encode(const char* au, const char* user, cons
     md5_finish_ctx(&ctx, hash);
     dump_hash(a2buf, hash);
 
-    if (qop && !strcmp(qop, "auth")) {
+    if (qop && strcmp(qop, "auth") == 0) {
       /* RFC 2617 Digest Access Authentication */
-      /* generate random hex string */
       if (!*cnonce)
         snprintf(cnonce, sizeof(cnonce), "%08x", (unsigned)random_number(INT_MAX));
 
-      /* RESPONSE_DIGEST = H(A1BUF ":" nonce ":" noncecount ":" clientnonce ":" qop ": " A2BUF) */
+      /* RESPONSE = H(A1BUF ":" nonce ":" nc ":" cnonce ":" qop ":" A2BUF) */
       md5_init_ctx(&ctx);
       md5_process_bytes((unsigned char*)a1buf, MD5_DIGEST_SIZE * 2, &ctx);
       md5_process_bytes((unsigned char*)":", 1, &ctx);
       md5_process_bytes((unsigned char*)nonce, strlen(nonce), &ctx);
       md5_process_bytes((unsigned char*)":", 1, &ctx);
-      md5_process_bytes((unsigned char*)"00000001", 8, &ctx); /* TODO: keep track of server nonce values */
+      md5_process_bytes((unsigned char*)"00000001", 8, &ctx); /* TODO: track per-nonce counters */
       md5_process_bytes((unsigned char*)":", 1, &ctx);
       md5_process_bytes((unsigned char*)cnonce, strlen(cnonce), &ctx);
       md5_process_bytes((unsigned char*)":", 1, &ctx);
@@ -229,7 +247,7 @@ static char* digest_authentication_encode(const char* au, const char* user, cons
     }
     else {
       /* RFC 2069 Digest Access Authentication */
-      /* RESPONSE_DIGEST = H(A1BUF ":" nonce ":" A2BUF) */
+      /* RESPONSE = H(A1BUF ":" nonce ":" A2BUF) */
       md5_init_ctx(&ctx);
       md5_process_bytes((unsigned char*)a1buf, MD5_DIGEST_SIZE * 2, &ctx);
       md5_process_bytes((unsigned char*)":", 1, &ctx);
@@ -241,12 +259,12 @@ static char* digest_authentication_encode(const char* au, const char* user, cons
 
     dump_hash(response_digest, hash);
 
-    res_size = strlen(user) + strlen(realm) + strlen(nonce) + strlen(path) + 2 * MD5_DIGEST_SIZE /*strlen (response_digest)*/
-               + (opaque ? strlen(opaque) : 0) + (algorithm ? strlen(algorithm) : 0) + (qop ? 128 : 0) + strlen(cnonce) + 128;
+    res_size = strlen(user) + strlen(realm) + strlen(nonce) + strlen(path) + 2 * MD5_DIGEST_SIZE + (opaque ? strlen(opaque) : 0) + (algorithm ? strlen(algorithm) : 0) + (qop ? 128 : 0) +
+               strlen(cnonce) + 128;
 
     res = xmalloc(res_size);
 
-    if (qop && !strcmp(qop, "auth")) {
+    if (qop && strcmp(qop, "auth") == 0) {
       res_len = snprintf(res, res_size,
                          "Digest "
                          "username=\"%s\", realm=\"%s\", nonce=\"%s\", uri=\"%s\", response=\"%s\""
@@ -260,13 +278,11 @@ static char* digest_authentication_encode(const char* au, const char* user, cons
                          user, realm, nonce, path, response_digest);
     }
 
-    if (opaque) {
-      res_len += snprintf(res + res_len, res_size - res_len, ", opaque=\"%s\"", opaque);
-    }
+    if (opaque)
+      res_len += snprintf(res + res_len, res_size - (size_t)res_len, ", opaque=\"%s\"", opaque);
 
-    if (algorithm) {
-      snprintf(res + res_len, res_size - res_len, ", algorithm=\"%s\"", algorithm);
-    }
+    if (algorithm)
+      snprintf(res + res_len, res_size - (size_t)res_len, ", algorithm=\"%s\"", algorithm);
   }
 
 cleanup:
@@ -280,15 +296,14 @@ cleanup:
 }
 #endif /* ENABLE_DIGEST */
 
-/* Computing the size of a string literal must take into account that
-   value returned by sizeof includes the terminating \0.  */
+/* STRSIZE accounts for the trailing NUL in sizeof */
 #define STRSIZE(literal) (sizeof(literal) - 1)
 
-/* Whether chars in [b, e) begin with the literal string provided as
-   first argument and are followed by whitespace or terminating \0.
-   The comparison is case-insensitive.  */
+/* True if [b,e) starts with literal and is followed by whitespace or NUL
+ * comparison is case-insensitive
+ */
 #define STARTS(literal, b, e) \
-  ((e > b) && ((size_t)((e) - (b))) >= STRSIZE(literal) && 0 == c_strncasecmp(b, literal, STRSIZE(literal)) && ((size_t)((e) - (b)) == STRSIZE(literal) || c_isspace(b[STRSIZE(literal)])))
+  ((e > (b)) && ((size_t)((e) - (b))) >= STRSIZE(literal) && c_strncasecmp((b), (literal), STRSIZE(literal)) == 0 && (((size_t)((e) - (b))) == STRSIZE(literal) || c_isspace((b)[STRSIZE(literal)])))
 
 bool known_authentication_scheme_p(const char* hdrbeg, const char* hdrend) {
   return STARTS("Basic", hdrbeg, hdrend)
@@ -303,11 +318,18 @@ bool known_authentication_scheme_p(const char* hdrbeg, const char* hdrend) {
 
 #undef STARTS
 
-/* Create the HTTP authorization request header.  When the
-   `WWW-Authenticate' response header is seen, according to the
-   authorization scheme specified in that header (`Basic' and `Digest'
-   are supported by the current implementation), produce an
-   appropriate HTTP authorization request header.  */
+/* Build an Authorization header for a supported scheme
+ *
+ * au       challenge header value (e.g. \"Basic ...\", \"Digest ...\")
+ * user     username
+ * passwd   password
+ * method   HTTP method used for the request
+ * path     request path
+ * finished set to true once the auth handshake is complete
+ * auth_err set on Digest errors
+ *
+ * Returns a newly allocated header value or NULL on error
+ */
 char* create_authorization_line(const char* au,
                                 const char* user,
                                 const char* passwd,
@@ -320,8 +342,7 @@ char* create_authorization_line(const char* au,
                                 struct ntlmdata* ntlm
 #endif
 ) {
-  /* We are called only with known schemes, so we can dispatch on the
-     first letter. */
+  /* We are called only with known schemes, so dispatch on the first letter */
   switch (c_toupper(*au)) {
     case 'B': /* Basic */
       *finished = true;
@@ -340,8 +361,7 @@ char* create_authorization_line(const char* au,
       return ntlm_output(ntlm, user, passwd, finished);
 #endif
     default:
-      /* We shouldn't get here -- this function should be only called
-         with values approved by known_authentication_scheme_p.  */
+      /* only called for schemes accepted by known_authentication_scheme_p */
       abort();
   }
 }
