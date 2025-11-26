@@ -28,6 +28,11 @@ Corresponding Source for a non-source form of such a combination
 shall include the source code for the parts of OpenSSL used as well
 as that of the covered work.  */
 
+#ifndef OPTIONS_H
+#define OPTIONS_H
+
+#include "wget.h"
+
 enum CHECK_CERT_MODES { CHECK_CERT_OFF, CHECK_CERT_ON, CHECK_CERT_QUIET };
 
 struct options {
@@ -325,3 +330,5 @@ struct options {
 };
 
 extern struct options opt;
+
+#endif /* OPTIONS_H */
