@@ -404,4 +404,19 @@ else
     is_parallel: false,
     timeout: 30,
   )
+
+  # HTTP 302 redirect test (requires Python)
+  python3 = find_program('python3', required: false)
+  if python3.found()
+    test('cli/302-redirect',
+      files('test-302-redirect.sh'),
+      env: {
+        'WGET': meson.project_build_root() / 'src' / 'wget',
+      },
+      suite: 'cli',
+      timeout: 30,
+    )
+  else
+    message('python3 not found, 302 redirect test disabled')
+  endif
 endif

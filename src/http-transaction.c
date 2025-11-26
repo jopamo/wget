@@ -1507,11 +1507,14 @@ retry_with_auth:
 
   if (H_REDIRECTED(statcode) || statcode == HTTP_STATUS_MULTIPLE_CHOICES) {
     if (hs->newloc) {
-      xfree(type);
-      type = NULL;
-      CLOSE_FINISH(sock);
+      DEBUGP(("Redirect (%d) to %s\n", statcode, hs->newloc));
+      keep_alive = false;     /* do not reuse redirect connections */
+      CLOSE_INVALIDATE(sock); /* always close, no reuse */
       retval = NEWLOCATION;
       goto cleanup;
+    }
+    else {
+      DEBUGP(("Redirect status %d but no Location header\n", statcode));
     }
   }
 
