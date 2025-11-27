@@ -1,2 +1,2 @@
-hello from busybox httpd
+hello from lighttpd server
 This is a test file for wget functionality testing.

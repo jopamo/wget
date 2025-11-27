@@ -5,3 +5,9 @@ option('enable_debug_symbols', type: 'boolean', value: false, description: 'Buil
 option('enable_asan', type: 'boolean', value: false, description: 'Build with AddressSanitizer')
 option('enable_opie', type: 'boolean', value: false, description: 'Enable OPIE support')
 option('enable_xattr', type: 'boolean', value: true, description: 'Enable extended attribute support')
+option(
+  'lighttpd_tests',
+  type: 'feature',
+  value: 'auto',
+  description: 'Enable wget tests that require lighttpd'
+)

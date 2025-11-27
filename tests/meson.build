@@ -1,422 +1,190 @@
 # tests/meson.build
 
-busybox = find_program('busybox', required: false)
+lighttpd = find_program('lighttpd', required: false)
 python3 = find_program('python3', required: false)
 
-if not busybox.found()
-  message('busybox not found, HTTP functional tests disabled')
-else
-  httpd_wrapper = find_program(
-    'httpd-wrapper.sh',
-    dirs: meson.current_source_dir(),
-    required: true,
-  )
-
-  httpd_wrapper_extended = find_program(
-    'httpd-wrapper-extended.sh',
-    dirs: meson.current_source_dir(),
-    required: true,
-  )
-
-  cli_wrapper = find_program(
-    'cli-wrapper.sh',
-    dirs: meson.current_source_dir(),
-    required: true,
-  )
-
-  # Basic test suite (Python version)
-  if python3.found()
-    test('http/basic',
-      python3,
-      args: [meson.current_source_dir() / 'test_functional.py'],
-      env: {
-        'WGET': meson.project_build_root() / 'src' / 'wget',
-      },
-      suite: 'http',
-      timeout: 30,
-    )
-  endif
-
-  # Extended test suite with different scenarios
-  test('http/redirect',
-    httpd_wrapper_extended,
+if python3.found()
+  # Individual CLI tests
+  test('cli/help',
+    python3,
+    args: [meson.current_source_dir() / 'test_cli_help.py'],
     env: {
-      'HTTPD': busybox.full_path(),
       'WGET': meson.project_build_root() / 'src' / 'wget',
-      'WGET_TEST_DOCROOT': meson.current_source_dir() / 'httpd-root',
-      'WGET_TEST_MODE': 'redirect',
+    },
+    suite: 'cli',
+    timeout: 30,
+  )
+
+  test('cli/version',
+    python3,
+    args: [meson.current_source_dir() / 'test_cli_version.py'],
+    env: {
+      'WGET': meson.project_build_root() / 'src' / 'wget',
+    },
+    suite: 'cli',
+    timeout: 30,
+  )
+
+  test('cli/unknown-option',
+    python3,
+    args: [meson.current_source_dir() / 'test_cli_unknown_option.py'],
+    env: {
+      'WGET': meson.project_build_root() / 'src' / 'wget',
+    },
+    suite: 'cli',
+    timeout: 30,
+  )
+
+  test('cli/dns-failure',
+    python3,
+    args: [meson.current_source_dir() / 'test_cli_dns_failure.py'],
+    env: {
+      'WGET': meson.project_build_root() / 'src' / 'wget',
+    },
+    suite: 'cli',
+    timeout: 30,
+  )
+
+  test('cli/connection-refused',
+    python3,
+    args: [meson.current_source_dir() / 'test_cli_connection_refused.py'],
+    env: {
+      'WGET': meson.project_build_root() / 'src' / 'wget',
+    },
+    suite: 'cli',
+    timeout: 30,
+  )
+
+  # Individual HTTP tests
+  test('http/basic-download',
+    python3,
+    args: [meson.current_source_dir() / 'test_http_basic_download.py'],
+    env: {
+      'WGET': meson.project_build_root() / 'src' / 'wget',
     },
     suite: 'http',
-    is_parallel: false,
+    timeout: 30,
+  )
+
+  test('http/output-file',
+    python3,
+    args: [meson.current_source_dir() / 'test_http_output_file.py'],
+    env: {
+      'WGET': meson.project_build_root() / 'src' / 'wget',
+    },
+    suite: 'http',
+    timeout: 30,
+  )
+
+  test('http/no-clobber',
+    python3,
+    args: [meson.current_source_dir() / 'test_http_no_clobber.py'],
+    env: {
+      'WGET': meson.project_build_root() / 'src' / 'wget',
+    },
+    suite: 'http',
     timeout: 30,
   )
 
   test('http/404',
-    httpd_wrapper_extended,
+    python3,
+    args: [meson.current_source_dir() / 'test_http_404.py'],
     env: {
-      'HTTPD': busybox.full_path(),
       'WGET': meson.project_build_root() / 'src' / 'wget',
-      'WGET_TEST_DOCROOT': meson.current_source_dir() / 'httpd-root',
-      'WGET_TEST_MODE': '404',
     },
     suite: 'http',
-    is_parallel: false,
     timeout: 30,
   )
 
   test('http/post',
-    httpd_wrapper_extended,
+    python3,
+    args: [meson.current_source_dir() / 'test_http_post.py'],
     env: {
-      'HTTPD': busybox.full_path(),
       'WGET': meson.project_build_root() / 'src' / 'wget',
-      'WGET_TEST_DOCROOT': meson.current_source_dir() / 'httpd-root',
-      'WGET_TEST_MODE': 'post',
     },
     suite: 'http',
-    is_parallel: false,
     timeout: 30,
   )
 
-  test('http/range',
-    httpd_wrapper_extended,
+  test('http/redirect-302',
+    python3,
+    args: [meson.current_source_dir() / 'test_http_redirect_302.py'],
     env: {
-      'HTTPD': busybox.full_path(),
       'WGET': meson.project_build_root() / 'src' / 'wget',
-      'WGET_TEST_DOCROOT': meson.current_source_dir() / 'httpd-root',
-      'WGET_TEST_MODE': 'range',
     },
     suite: 'http',
-    is_parallel: false,
     timeout: 30,
   )
 
-  test('http/multiple',
-    httpd_wrapper_extended,
+  test('http/404-handling',
+    python3,
+    args: [meson.current_source_dir() / 'test_http_404_handling.py'],
     env: {
-      'HTTPD': busybox.full_path(),
       'WGET': meson.project_build_root() / 'src' / 'wget',
-      'WGET_TEST_DOCROOT': meson.current_source_dir() / 'httpd-root',
-      'WGET_TEST_MODE': 'multiple',
     },
     suite: 'http',
-    is_parallel: false,
     timeout: 30,
   )
 
-  test('http/recursive',
-    httpd_wrapper_extended,
+  test('http/range-request',
+    python3,
+    args: [meson.current_source_dir() / 'test_http_range_request.py'],
     env: {
-      'HTTPD': busybox.full_path(),
       'WGET': meson.project_build_root() / 'src' / 'wget',
-      'WGET_TEST_DOCROOT': meson.current_source_dir() / 'httpd-root',
-      'WGET_TEST_MODE': 'recursive',
     },
     suite: 'http',
-    is_parallel: false,
     timeout: 30,
   )
 
-  test('http/comprehensive',
-    httpd_wrapper_extended,
+  test('http/multiple-files',
+    python3,
+    args: [meson.current_source_dir() / 'test_http_multiple_files.py'],
     env: {
-      'HTTPD': busybox.full_path(),
       'WGET': meson.project_build_root() / 'src' / 'wget',
-      'WGET_TEST_DOCROOT': meson.current_source_dir() / 'httpd-root',
-      'WGET_TEST_MODE': 'comprehensive',
     },
     suite: 'http',
-    is_parallel: false,
     timeout: 30,
   )
 
-  # CLI functionality tests (don't need HTTP server)
-  test('cli/help',
-    cli_wrapper,
+  test('http/recursive-download',
+    python3,
+    args: [meson.current_source_dir() / 'test_http_recursive_download.py'],
     env: {
       'WGET': meson.project_build_root() / 'src' / 'wget',
-      'WGET_TEST_MODE': 'help',
     },
-    suite: 'cli',
-    timeout: 10,
-  )
-
-  test('cli/version',
-    cli_wrapper,
-    env: {
-      'WGET': meson.project_build_root() / 'src' / 'wget',
-      'WGET_TEST_MODE': 'version',
-    },
-    suite: 'cli',
-    timeout: 10,
-  )
-
-  test('cli/unknown-option',
-    cli_wrapper,
-    env: {
-      'WGET': meson.project_build_root() / 'src' / 'wget',
-      'WGET_TEST_MODE': 'unknown_option',
-    },
-    suite: 'cli',
-    timeout: 10,
-  )
-
-  # CLI tests that need HTTP server
-  test('cli/no-clobber',
-    cli_wrapper,
-    env: {
-      'HTTPD': busybox.full_path(),
-      'WGET': meson.project_build_root() / 'src' / 'wget',
-      'WGET_TEST_DOCROOT': meson.current_source_dir() / 'httpd-root',
-      'WGET_TEST_MODE': 'no_clobber',
-    },
-    suite: 'cli',
-    is_parallel: false,
+    suite: 'http',
     timeout: 30,
   )
 
-  test('cli/output-file',
-    cli_wrapper,
-    env: {
-      'HTTPD': busybox.full_path(),
-      'WGET': meson.project_build_root() / 'src' / 'wget',
-      'WGET_TEST_DOCROOT': meson.current_source_dir() / 'httpd-root',
-      'WGET_TEST_MODE': 'output_file',
-    },
-    suite: 'cli',
-    is_parallel: false,
-    timeout: 30,
-  )
-
-  test('cli/quiet-mode',
-    cli_wrapper,
-    env: {
-      'HTTPD': busybox.full_path(),
-      'WGET': meson.project_build_root() / 'src' / 'wget',
-      'WGET_TEST_DOCROOT': meson.current_source_dir() / 'httpd-root',
-      'WGET_TEST_MODE': 'quiet_mode',
-    },
-    suite: 'cli',
-    is_parallel: false,
-    timeout: 30,
-  )
-
-  test('cli/progress-dot',
-    cli_wrapper,
-    env: {
-      'HTTPD': busybox.full_path(),
-      'WGET': meson.project_build_root() / 'src' / 'wget',
-      'WGET_TEST_DOCROOT': meson.current_source_dir() / 'httpd-root',
-      'WGET_TEST_MODE': 'progress_dot',
-    },
-    suite: 'cli',
-    is_parallel: false,
-    timeout: 30,
-  )
-
-  test('cli/progress-bar',
-    cli_wrapper,
-    env: {
-      'HTTPD': busybox.full_path(),
-      'WGET': meson.project_build_root() / 'src' / 'wget',
-      'WGET_TEST_DOCROOT': meson.current_source_dir() / 'httpd-root',
-      'WGET_TEST_MODE': 'progress_bar',
-    },
-    suite: 'cli',
-    is_parallel: false,
-    timeout: 30,
-  )
-
-  test('cli/non-interactive',
-    cli_wrapper,
-    env: {
-      'HTTPD': busybox.full_path(),
-      'WGET': meson.project_build_root() / 'src' / 'wget',
-      'WGET_TEST_DOCROOT': meson.current_source_dir() / 'httpd-root',
-      'WGET_TEST_MODE': 'non_interactive',
-    },
-    suite: 'cli',
-    is_parallel: false,
-    timeout: 30,
-  )
-
-  # Error handling tests
-  test('cli/dns-failure',
-    cli_wrapper,
-    env: {
-      'WGET': meson.project_build_root() / 'src' / 'wget',
-      'WGET_TEST_MODE': 'dns_failure',
-    },
-    suite: 'cli',
-    timeout: 10,
-  )
-
-  test('cli/connection-refused',
-    cli_wrapper,
-    env: {
-      'WGET': meson.project_build_root() / 'src' / 'wget',
-      'WGET_TEST_MODE': 'connection_refused',
-    },
-    suite: 'cli',
-    timeout: 10,
-  )
-
-  test('cli/http-404',
-    cli_wrapper,
-    env: {
-      'HTTPD': busybox.full_path(),
-      'WGET': meson.project_build_root() / 'src' / 'wget',
-      'WGET_TEST_DOCROOT': meson.current_source_dir() / 'httpd-root',
-      'WGET_TEST_MODE': 'http_404',
-    },
-    suite: 'cli',
-    is_parallel: false,
-    timeout: 30,
-  )
-
-  # Configuration tests
-  test('cli/config',
-    cli_wrapper,
-    env: {
-      'HTTPD': busybox.full_path(),
-      'WGET': meson.project_build_root() / 'src' / 'wget',
-      'WGET_TEST_DOCROOT': meson.current_source_dir() / 'httpd-root',
-      'WGET_TEST_MODE': 'config_test',
-    },
-    suite: 'cli',
-    is_parallel: false,
-    timeout: 30,
-  )
-
-  test('cli/no-config',
-    cli_wrapper,
-    env: {
-      'HTTPD': busybox.full_path(),
-      'WGET': meson.project_build_root() / 'src' / 'wget',
-      'WGET_TEST_DOCROOT': meson.current_source_dir() / 'httpd-root',
-      'WGET_TEST_MODE': 'no_config_test',
-    },
-    suite: 'cli',
-    is_parallel: false,
-    timeout: 30,
-  )
-
-  test('cli/logging',
-    cli_wrapper,
-    env: {
-      'HTTPD': busybox.full_path(),
-      'WGET': meson.project_build_root() / 'src' / 'wget',
-      'WGET_TEST_DOCROOT': meson.current_source_dir() / 'httpd-root',
-      'WGET_TEST_MODE': 'logging_test',
-    },
-    suite: 'cli',
-    is_parallel: false,
-    timeout: 30,
-  )
-
-  test('cli/exit-code',
-    cli_wrapper,
-    env: {
-      'HTTPD': busybox.full_path(),
-      'WGET': meson.project_build_root() / 'src' / 'wget',
-      'WGET_TEST_DOCROOT': meson.current_source_dir() / 'httpd-root',
-      'WGET_TEST_MODE': 'exit_code_test',
-    },
-    suite: 'cli',
-    is_parallel: false,
-    timeout: 30,
-  )
-
-  test('cli/pipeline',
-    cli_wrapper,
-    env: {
-      'HTTPD': busybox.full_path(),
-      'WGET': meson.project_build_root() / 'src' / 'wget',
-      'WGET_TEST_DOCROOT': meson.current_source_dir() / 'httpd-root',
-      'WGET_TEST_MODE': 'pipeline_test',
-    },
-    suite: 'cli',
-    is_parallel: false,
-    timeout: 30,
-  )
-
-  test('cli/continue',
-    cli_wrapper,
-    env: {
-      'HTTPD': busybox.full_path(),
-      'WGET': meson.project_build_root() / 'src' / 'wget',
-      'WGET_TEST_DOCROOT': meson.current_source_dir() / 'httpd-root',
-      'WGET_TEST_MODE': 'continue_test',
-    },
-    suite: 'cli',
-    is_parallel: false,
-    timeout: 30,
-  )
-
-  # HTTPS tests
-  test('cli/https_basic',
-    cli_wrapper,
-    env: {
-      'HTTPD': busybox.full_path(),
-      'WGET': meson.project_build_root() / 'src' / 'wget',
-      'WGET_TEST_DOCROOT': meson.current_source_dir() / 'httpd-root',
-      'WGET_TEST_MODE': 'https_basic',
-    },
-    suite: 'cli',
-    is_parallel: false,
-    timeout: 30,
-  )
-
-  test('cli/https_cert_verify',
-    cli_wrapper,
-    env: {
-      'HTTPD': busybox.full_path(),
-      'WGET': meson.project_build_root() / 'src' / 'wget',
-      'WGET_TEST_DOCROOT': meson.current_source_dir() / 'httpd-root',
-      'WGET_TEST_MODE': 'https_cert_verify',
-    },
-    suite: 'cli',
-    is_parallel: false,
-    timeout: 30,
-  )
-
-  # WARC tests
-  test('cli/warc_basic',
-    cli_wrapper,
-    env: {
-      'HTTPD': busybox.full_path(),
-      'WGET': meson.project_build_root() / 'src' / 'wget',
-      'WGET_TEST_DOCROOT': meson.current_source_dir() / 'httpd-root',
-      'WGET_TEST_MODE': 'warc_basic',
-    },
-    suite: 'cli',
-    is_parallel: false,
-    timeout: 30,
-  )
-
-  test('cli/warc_multi',
-    cli_wrapper,
-    env: {
-      'HTTPD': busybox.full_path(),
-      'WGET': meson.project_build_root() / 'src' / 'wget',
-      'WGET_TEST_DOCROOT': meson.current_source_dir() / 'httpd-root',
-      'WGET_TEST_MODE': 'warc_multi',
-    },
-    suite: 'cli',
-    is_parallel: false,
-    timeout: 30,
-  )
-
-  # HTTP 302 redirect test (requires Python)
-  if python3.found()
-    test('cli/302-redirect',
-      files('test-302-redirect.sh'),
+  # Unified lighttpd-based tests with shared server
+  if lighttpd.found()
+    test('lighttpd/all',
+      python3,
+      args: [meson.current_source_dir() / 'run_wget_lighttpd_tests.py'],
       env: {
         'WGET': meson.project_build_root() / 'src' / 'wget',
+        'HTTPD_ROOT': meson.current_source_dir() / 'httpd-root',
+        'LIGHTTPD': lighttpd.path(),
+        'LIGHTTPD_CONF_TEMPLATE': meson.current_source_dir() / 'lighttpd.conf',
       },
-      suite: 'cli',
-      timeout: 30,
+      suite: ['cli', 'http', 'warc'],
+      timeout: 180,
     )
   else
-    message('python3 not found, 302 redirect test disabled')
+    message('lighttpd not found, HTTP tests disabled')
   endif
+
+  # Python functional tests (no HTTP server required)
+  test('functional-python',
+    python3,
+    args: [meson.current_source_dir() / 'test_functional.py'],
+    env: {
+      'WGET': meson.project_build_root() / 'src' / 'wget',
+    },
+    suite: 'functional',
+    timeout: 60,
+  )
+
+else
+  message('python3 not found, Python-based tests disabled')
 endif
