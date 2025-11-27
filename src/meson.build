@@ -46,6 +46,7 @@ sources = [
   'recur.c',
   'res.c',
   'retr.c',
+  'scheduler.c',
   'spider.c',
   'strcase.c',
   'threading.c',
@@ -146,3 +147,10 @@ unit_net_conn = executable('unit-net-conn', 'unit-tests/test_net_conn.c',
   link_with: wget_lib)
 
 test('unit-net-conn', unit_net_conn)
+
+unit_scheduler = executable('unit-scheduler', 'unit-tests/test_scheduler.c',
+  include_directories: incdirs,
+  dependencies: deps,
+  link_with: wget_lib)
+
+test('unit-scheduler', unit_scheduler)
