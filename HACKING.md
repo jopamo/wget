@@ -3,7 +3,7 @@
 This guide is for **agents working on the wget codebase**.
 It explains the **repo layout**, **what you may modify**, and **current architecture**.
 
-**IMPORTANT STATUS NOTE**: This project is currently in a **transition phase** from synchronous to asynchronous architecture. The CLAUDE.md documentation describes the **target async architecture**, but much of it is **not yet implemented**. The current codebase is primarily synchronous with some async DNS components.
+**IMPORTANT STATUS NOTE**: This project is currently in a **transition phase** from synchronous to asynchronous architecture. The HACKING.md documentation describes the **target async architecture**, but much of it is **not yet implemented**. The current codebase is primarily synchronous with some async DNS components.
 
 ---
 
