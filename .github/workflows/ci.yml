@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+
+      - name: Install BusyBox
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y busybox
+          busybox httpd --help  # just check installed
+
+      - name: Install build tools
+        run: python3 -m pip install --upgrade meson ninja
+
+      - name: Configure build
+        run: meson setup builddir
+
+      - name: Build
+        run: meson compile -C builddir
+
+      - name: Run tests
+        env:
+          HTTPD: busybox
+          # possibly set other test harness env variables here e.g. ports, DOCROOT
+        run: meson test -C builddir --verbose
