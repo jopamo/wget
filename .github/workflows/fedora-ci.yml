@@ -23,6 +23,7 @@ jobs:
             openssl-devel c-ares-devel libev-devel zlib-devel \
             libpsl-devel libidn2-devel ca-certificates \
             libproxy-devel pcre2-devel \
+            flex \
             valgrind procps curl wget diffutils
 
       - name: Checkout wget
