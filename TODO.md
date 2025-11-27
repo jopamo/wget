@@ -25,39 +25,39 @@
 
 ---
 
-## Phase 1 — Core Event Loop Abstraction (`evloop`) - **NOT STARTED**
+## Phase 1 — Core Event Loop Abstraction (`evloop`) - **COMPLETED**
 
-* [ ] Add `src/evloop.c` + `src/evloop.h` and wire into build
-  * [ ] Add libev dependency to meson.build
-  * [ ] Create new source files
+* [x] Add `src/evloop.c` + `src/evloop.h` and wire into build
+  * [x] Add libev dependency to meson.build
+  * [x] Create new source files
 
-* [ ] Define opaque wrapper types
+* [x] Define opaque wrapper types
 
-  * [ ] `struct evloop_io` wrapping `ev_io`
-  * [ ] `struct evloop_timer` wrapping `ev_timer`
-  * [ ] Optional: wrapper for `ev_async` and `ev_signal`
+  * [x] `struct evloop_io` wrapping `ev_io`
+  * [x] `struct evloop_timer` wrapping `ev_timer`
+  * [x] Optional: wrapper for `ev_async` and `ev_signal` (Not implemented yet)
 
-* [ ] Define callback types in `evloop.h`
+* [x] Define callback types in `evloop.h`
 
-  * [ ] `typedef void (*ev_io_cb_t)(int fd, int revents, void *arg);`
-  * [ ] `typedef void (*ev_timer_cb_t)(void *arg);`
+  * [x] `typedef void (*ev_io_cb_t)(int fd, int revents, void *arg);`
+  * [x] `typedef void (*ev_timer_cb_t)(void *arg);`
 
-* [ ] Implement event loop API
+* [x] Implement event loop API
 
-  * [ ] `struct ev_loop *evloop_get_default(void);`
-  * [ ] `struct evloop_io *evloop_io_start(struct ev_loop *loop, int fd, int events, ev_io_cb_t cb, void *arg);`
-  * [ ] `void evloop_io_update(struct evloop_io *io, int events);`
-  * [ ] `void evloop_io_stop(struct evloop_io *io);`
-  * [ ] `struct evloop_timer *evloop_timer_start(struct ev_loop *loop, double after, double repeat, ev_timer_cb_t cb, void *arg);`
-  * [ ] `void evloop_timer_reschedule(struct evloop_timer *t, double after, double repeat);`
-  * [ ] `void evloop_timer_stop(struct evloop_timer *t);`
-  * [ ] `void evloop_run(struct ev_loop *loop);`
-  * [ ] `void evloop_break(struct ev_loop *loop);`
+  * [x] `struct ev_loop *evloop_get_default(void);`
+  * [x] `struct evloop_io *evloop_io_start(struct ev_loop *loop, int fd, int events, ev_io_cb_t cb, void *arg);`
+  * [x] `void evloop_io_update(struct evloop_io *io, int events);`
+  * [x] `void evloop_io_stop(struct evloop_io *io);`
+  * [x] `struct evloop_timer *evloop_timer_start(struct ev_loop *loop, double after, double repeat, ev_timer_cb_t cb, void *arg);`
+  * [x] `void evloop_timer_reschedule(struct evloop_timer *t, double after, double repeat);`
+  * [x] `void evloop_timer_stop(struct evloop_timer *t);`
+  * [x] `void evloop_run(struct ev_loop *loop);`
+  * [x] `void evloop_break(struct ev_loop *loop);`
 
-* [ ] Hide all raw libev symbols from the rest of the tree
+* [x] Hide all raw libev symbols from the rest of the tree
 
-  * [ ] No direct `ev_io_*`, `ev_timer_*`, `ev_run` calls outside `evloop.c`
-  * [ ] Internal static trampolines translate libev callbacks into `ev_io_cb_t` / `ev_timer_cb_t`
+  * [x] No direct `ev_io_*`, `ev_timer_*`, `ev_run` calls outside `evloop.c`
+  * [x] Internal static trampolines translate libev callbacks into `ev_io_cb_t` / `ev_timer_cb_t`
 
 * [ ] Add optional `ev_async` support
 

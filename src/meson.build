@@ -8,6 +8,7 @@ sources = [
   'cookies.c',
   'css-url.c',
   'digest.c',
+  'evloop.c',
   'exits.c',
   'ftp-auth.c',
   'ftp-basic.c',
@@ -100,6 +101,9 @@ if libproxy_dep.found()
 endif
 if libcares_dep.found()
   deps += libcares_dep
+endif
+if libev_dep.found()
+  deps += libev_dep
 endif
 if uuid_dep.found()
   deps += uuid_dep

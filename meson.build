@@ -47,6 +47,7 @@ if not libproxy_dep.found()
   libproxy_dep = dependency('libproxy', required: false)
 endif
 libcares_dep = dependency('libcares', required: false)
+libev_dep = dependency('libev', required: true)
 uuid_dep = dependency('uuid', required: false)
 
 pcre2_dep = dependency('libpcre2-8', required: false)
@@ -120,6 +121,9 @@ if libproxy_dep.found()
 endif
 if libcares_dep.found()
   conf.set('HAVE_LIBCARES', 1)
+endif
+if libev_dep.found()
+  conf.set('HAVE_LIBEV', 1)
 endif
 if uuid_dep.found()
   conf.set('HAVE_LIBUUID', 1)
@@ -225,6 +229,9 @@ if libproxy_dep.found()
 endif
 if libcares_dep.found()
   link_components += ['libcares']
+endif
+if libev_dep.found()
+  link_components += ['libev']
 endif
 if uuid_dep.found()
   link_components += ['libuuid']
