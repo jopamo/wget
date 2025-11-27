@@ -246,7 +246,7 @@
   * [x] `http/post` test fails (Fixed: handled static string free in headers)
   * [x] `cli/pipeline` test fails (Fixed: handled stdout output)
   * [ ] `cli/continue` test fails (Exit status 1, content missing)
-  * [ ] CLI timeouts on connection failure tests (`connection-refused`, `dns-failure`)
+  * [x] CLI timeouts on connection failure tests (`connection-refused`, `dns-failure`)
   * [ ] CLI timeouts on HTTPS tests (`https_basic`, `https_cert_verify`)
 
 ---
