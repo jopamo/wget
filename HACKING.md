@@ -257,6 +257,62 @@ Use these as primary references:
    * Mark completed tasks in `TODO.md`
    * Add concise new tasks if you discover necessary follow-ups
 
+### Commit Message Standards
+
+All commits must follow consistent formatting and content standards:
+
+**Format**:
+```
+<type>: <description>
+
+<body>
+```
+
+**Types**:
+- `feat:` - New functionality or features
+- `fix:` - Bug fixes or corrections
+- `refactor:` - Code restructuring without changing behavior
+- `docs:` - Documentation changes only
+- `chore:` - Maintenance tasks, build improvements, etc.
+- `test:` - Test-related changes only
+
+**Description Requirements**:
+- Use imperative mood ("Add", "Fix", "Improve", not "Added", "Fixed", "Improved")
+- Keep first line under 50 characters
+- Be specific and descriptive
+- Start with lowercase letter
+- No trailing punctuation
+
+**Body Requirements**:
+- Explain the "why" not just the "what"
+- Use bullet points for multiple changes
+- Reference specific files or functions when relevant
+- Include technical details for complex changes
+
+**Examples**:
+```
+fix: enhance HSTS header parsing and parameter extraction
+
+- Handle valueless flags like includeSubDomains in HSTS headers properly
+- Make c_max_age non-const to allow modification during parsing
+- Improve parameter extraction to handle URL-encoded values and separators
+```
+
+```
+feat: enhance test infrastructure and fix continue functionality
+
+- Add CLI test wrapper with multiple test modes (help, version, no-clobber, etc.)
+- Create test data files and HTTP server wrapper scripts
+- Fix continue functionality with improved range request handling
+- Add original_restval tracking for server-ignored range requests
+```
+
+**Avoid**:
+- Vague messages like "improve documentation" or "fix bug"
+- Messages without clear type prefix
+- Incomplete or misleading descriptions
+- Multiple unrelated changes in one commit
+
 ### Things Agents Must Not Do
 
 * Rename top-level directories (`src`, `docs`, `build`, etc)
