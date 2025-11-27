@@ -47,7 +47,13 @@ if not libproxy_dep.found()
   libproxy_dep = dependency('libproxy', required: false)
 endif
 libcares_dep = dependency('libcares', required: false)
-libev_dep = dependency('libev', required: true)
+libev_dep = dependency('libev', required: false)
+if not libev_dep.found()
+  libev_dep = cc.find_library('ev', required: true)
+  if not cc.has_header('ev.h')
+    error('libev header "ev.h" not found')
+  endif
+endif
 uuid_dep = dependency('uuid', required: false)
 
 pcre2_dep = dependency('libpcre2-8', required: false)
