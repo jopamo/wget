@@ -1,6 +1,7 @@
 # tests/meson.build
 
 busybox = find_program('busybox', required: false)
+python3 = find_program('python3', required: false)
 
 if not busybox.found()
   message('busybox not found, HTTP functional tests disabled')
@@ -23,18 +24,18 @@ else
     required: true,
   )
 
-  # Basic test suite
-  test('http/basic',
-    httpd_wrapper,
-    env: {
-      'HTTPD': busybox.full_path(),                              # busybox binary
-      'WGET': meson.project_build_root() / 'src' / 'wget',       # the built wget in build directory
-      'WGET_TEST_DOCROOT': meson.current_source_dir() / 'httpd-root',
-    },
-    suite: 'http',
-    is_parallel: false,                                          # one httpd at a time, simple and safe
-    timeout: 30,
-  )
+  # Basic test suite (Python version)
+  if python3.found()
+    test('http/basic',
+      python3,
+      args: [meson.current_source_dir() / 'test_functional.py'],
+      env: {
+        'WGET': meson.project_build_root() / 'src' / 'wget',
+      },
+      suite: 'http',
+      timeout: 30,
+    )
+  endif
 
   # Extended test suite with different scenarios
   test('http/redirect',
@@ -406,7 +407,6 @@ else
   )
 
   # HTTP 302 redirect test (requires Python)
-  python3 = find_program('python3', required: false)
   if python3.found()
     test('cli/302-redirect',
       files('test-302-redirect.sh'),
