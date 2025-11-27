@@ -17,10 +17,20 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Install BusyBox
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y busybox
+          sudo apt-get install -y \
+            busybox \
+            libev-dev \
+            zlib1g-dev \
+            libssl-dev \
+            libidn2-dev \
+            libpsl-dev \
+            libc-ares-dev \
+            libproxy-dev \
+            libpcre2-dev \
+            uuid-dev
           busybox httpd --help  # just check installed
 
       - name: Install build tools
