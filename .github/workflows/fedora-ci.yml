@@ -29,8 +29,20 @@ jobs:
       - name: Checkout wget
         uses: actions/checkout@v4
 
-      - name: "Meson: Configure, build and test wget"
+      - name: "Meson: Configure, build and test wget (default)"
         run: |
           meson setup build
           meson compile -C build
           meson test -C build
+
+      - name: "Meson: Configure, build and test wget with ASan"
+        env:
+          CFLAGS: "-fno-omit-frame-pointer"
+        run: |
+          meson setup build-asan -Db_sanitize=address
+          meson compile -C build-asan
+          meson test -C build-asan
+
+      - name: "Meson: Run tests under Valgrind"
+        run: |
+          meson test -C build --wrap='valgrind --leak-check=full --error-exitcode=1'
