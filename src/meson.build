@@ -37,6 +37,7 @@ sources = [
   'http.c',
   'init.c',
   'log.c',
+  'net_conn.c',
   'netrc.c',
   'path.c',
   'progress.c',
@@ -138,3 +139,10 @@ unit_evloop = executable('unit-evloop', 'unit-tests/test_evloop.c',
   link_with: wget_lib)
 
 test('unit-evloop', unit_evloop)
+
+unit_net_conn = executable('unit-net-conn', 'unit-tests/test_net_conn.c',
+  include_directories: incdirs,
+  dependencies: deps,
+  link_with: wget_lib)
+
+test('unit-net-conn', unit_net_conn)
