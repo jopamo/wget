@@ -231,27 +231,30 @@ char* aprintf(const char* fmt, ...) {
 #endif
 }
 
-/* was: size_t strlcpy(char* dst, const char* src, size_t size) { */
-size_t wget_strlcpy(char* dst, const char* src, size_t size) {
-  const char* old = src
+#include <stdarg.h>
+#include <string.h>
 
-      if (size) {
+size_t wget_strlcpy(char* dst, const char* src, size_t size) {
+  const char* old = src;
+
+  if (size) {
     while (--size) {
       if (!(*dst++ = *src++))
-        return (size_t)(src - old - 1)
+        return (size_t)(src - old - 1);
     }
-    *dst = 0
+    *dst = 0;
   }
 
   while (*src++)
     ;
-  return (size_t)(src - old - 1)
+  return (size_t)(src - old - 1);
 }
 
 char* concat_strings(const char* str0, ...) {
   va_list args;
   const char* arg;
-  size_t length = 0, pos = 0;
+  size_t length = 0;
+  size_t pos = 0;
   char* s;
 
   if (!str0)
@@ -265,8 +268,11 @@ char* concat_strings(const char* str0, ...) {
   s = xmalloc(length + 1);
 
   va_start(args, str0);
-  for (arg = str0; arg; arg = va_arg(args, const char*))
-    pos += wget_strlcpy(s + pos, arg, length - pos + 1) va_end(args);
+  for (arg = str0; arg; arg = va_arg(args, const char*)) {
+    size_t copied = wget_strlcpy(s + pos, arg, length - pos + 1);
+    pos += copied;
+  }
+  va_end(args);
 
   return s;
 }
