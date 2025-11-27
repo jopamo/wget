@@ -66,51 +66,51 @@
 
 ---
 
-## Phase 2 — Asynchronous DNS (`dns_cares`) - **NOT STARTED**
+## Phase 2 — Asynchronous DNS (`dns_cares`) - **INFRASTRUCTURE READY**
 
-* [ ] Add `src/dns_cares.c` + `src/dns_cares.h` and wire into build; link with c-ares
-  * [ ] ✅ c-ares dependency already configured in meson.build
-  * [ ] Create new source files
+* [x] Add `src/dns_cares.c` + `src/dns_cares.h` and wire into build; link with c-ares
+  * [x] ✅ c-ares dependency already configured in meson.build
+  * [x] Create new source files
 
-* [ ] Define DNS context
+* [x] Define DNS context
 
-  * [ ] `struct dns_ev_ctx { struct ev_loop *loop; ares_channel channel; /* sockfd -> evloop_io map */ struct evloop_timer *timeout; };`
+  * [x] `struct dns_ev_ctx { struct ev_loop *loop; ares_channel channel; /* sockfd -> evloop_io map */ struct evloop_timer *timeout; };`
 
-* [ ] Implement DNS initialization
+* [x] Implement DNS initialization
 
-  * [ ] `int dns_init(struct ev_loop *loop);` to create `ares_channel` with `ares_init_options`
-  * [ ] Store `dns_ev_ctx` singleton for the process
+  * [x] `int dns_init(struct ev_loop *loop);` to create `ares_channel` with `ares_init_options`
+  * [x] Store `dns_ev_ctx` singleton for the process
 
-* [ ] Implement socket watching glue
+* [x] Implement socket watching glue
 
-  * [ ] Implement helper to call `ares_getsock()` and:
+  * [x] Implement helper to call `ares_getsock()` and:
 
-    * [ ] Start or update `evloop_io` watchers for each active c-ares socket
-    * [ ] Stop watchers for sockets that disappeared
-  * [ ] Implement `dns_sock_cb(int fd, int revents, void *arg)`
+    * [x] Start or update `evloop_io` watchers for each active c-ares socket
+    * [x] Stop watchers for sockets that disappeared
+  * [x] Implement `dns_sock_cb(int fd, int revents, void *arg)`
 
-    * [ ] Call `ares_process_fd(channel, rd_fd, wr_fd)`
-    * [ ] Recompute watched sockets afterwards
+    * [x] Call `ares_process_fd(channel, rd_fd, wr_fd)`
+    * [x] Recompute watched sockets afterwards
 
-* [ ] Implement DNS timeout management
+* [x] Implement DNS timeout management
 
-  * [ ] Use `ares_timeout(channel, NULL, NULL)` to get next timeout
-  * [ ] Schedule `evloop_timer` accordingly
-  * [ ] Timer callback calls `ares_process_fd(channel, ARES_SOCKET_BAD, ARES_SOCKET_BAD)` and reschedules next timeout
+  * [x] Use `ares_timeout(channel, NULL, NULL)` to get next timeout
+  * [x] Schedule `evloop_timer` accordingly
+  * [x] Timer callback calls `ares_process_fd(channel, ARES_SOCKET_BAD, ARES_SOCKET_BAD)` and reschedules next timeout
 
-* [ ] Implement public async resolve API
+* [x] Implement public async resolve API
 
-  * [ ] `typedef void (*dns_result_cb)(int status, const struct addrinfo *ai, void *arg);`
-  * [ ] `void dns_resolve_async(struct ev_loop *loop, const char *hostname, const char *service, int family, int socktype, int protocol, dns_result_cb cb, void *arg);`
-  * [ ] Implement glue to use `ares_getaddrinfo` or `ares_query` and translate results into `struct addrinfo`-like data
-  * [ ] Allocate a per-query context holding `cb`, `arg`, hostname, etc.
-  * [ ] In the c-ares completion callback, call user `dns_result_cb` and free c-ares result + context
+  * [x] `typedef void (*dns_result_cb)(int status, const struct addrinfo *ai, void *arg);`
+  * [x] `void dns_resolve_async(struct ev_loop *loop, const char *hostname, const char *service, int family, int socktype, int protocol, dns_result_cb cb, void *arg);`
+  * [x] Implement glue to use `ares_getaddrinfo` or `ares_query` and translate results into `struct addrinfo`-like data
+  * [x] Allocate a per-query context holding `cb`, `arg`, hostname, etc.
+  * [x] In the c-ares completion callback, call user `dns_result_cb` and free c-ares result + context
 
-* [ ] Add teardown
+* [x] Add teardown
 
-  * [ ] `void dns_shutdown(void);` calling `ares_destroy(channel)` and stopping DNS timers and watchers
+  * [x] `void dns_shutdown(void);` calling `ares_destroy(channel)` and stopping DNS timers and watchers
 
-* [ ] Replace synchronous DNS in Wget
+* [ ] Replace synchronous DNS in Wget (Deferred to Phase 3/8)
 
   * [ ] Replace all `getaddrinfo` / host lookup paths with `dns_resolve_async` and corresponding callbacks in the new connection logic
   * [ ] Ensure no DNS calls block anywhere

@@ -8,6 +8,7 @@ sources = [
   'cookies.c',
   'css-url.c',
   'digest.c',
+  'dns_cares.c',
   'evloop.c',
   'exits.c',
   'ftp-auth.c',
@@ -36,7 +37,6 @@ sources = [
   'http.c',
   'init.c',
   'log.c',
-  'main.c',
   'netrc.c',
   'path.c',
   'progress.c',
@@ -114,7 +114,27 @@ elif pcre_dep.found()
   deps += pcre_dep
 endif
 
-wget_exe = executable('wget', sources,
+wget_lib = static_library('wget_lib', sources,
+  include_directories: incdirs,
+  dependencies: deps)
+
+wget_exe = executable('wget', 'main.c',
   include_directories: incdirs,
   dependencies: deps,
+  link_with: wget_lib,
   install: true)
+  
+# Unit tests
+unit_dns = executable('unit-dns', 'unit-tests/test_dns_async.c',
+  include_directories: incdirs,
+  dependencies: deps,
+  link_with: wget_lib)
+
+test('unit-dns', unit_dns)
+
+unit_evloop = executable('unit-evloop', 'unit-tests/test_evloop.c',
+  include_directories: incdirs,
+  dependencies: deps,
+  link_with: wget_lib)
+
+test('unit-evloop', unit_evloop)
