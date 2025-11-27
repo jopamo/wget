@@ -7,6 +7,7 @@
 #include "net_conn.h"
 #include "evloop.h"
 #include "dns_cares.h"
+#include "host.h"
 #include "utils.h"
 #include "xalloc.h"
 
@@ -27,11 +28,7 @@
 #endif
 
 /* Helper macro for debug logging */
-#define LOG(fmt, ...)                                       \
-  do {                                                      \
-    fprintf(stderr, "[net_conn] " fmt "\n", ##__VA_ARGS__); \
-    fflush(stderr);                                         \
-  } while (0)
+#define LOG(fmt, ...) DEBUGP(("[net_conn] " fmt, ##__VA_ARGS__))
 
 struct net_conn {
   enum conn_state state;
@@ -258,14 +255,25 @@ static void conn_io_cb(int fd, int revents, void* arg) {
           set_error(c, "SSL_CTX_new failed");
           return;
         }
-        /* Set default paths? SSL_CTX_set_default_verify_paths(simple_ctx); */
+        SSL_CTX_set_default_verify_paths(simple_ctx);
+        if (opt.ca_cert || opt.ca_directory)
+          SSL_CTX_load_verify_locations(simple_ctx, opt.ca_cert, opt.ca_directory);
       }
+
+      /* Honor certificate verification setting */
+      int verify_mode = (opt.check_cert == CHECK_CERT_ON) ? SSL_VERIFY_PEER : SSL_VERIFY_NONE;
+      SSL_CTX_set_verify(simple_ctx, verify_mode, NULL);
 
       c->ssl = SSL_new(simple_ctx);
       if (!c->ssl) {
         set_error(c, "SSL_new failed");
         return;
       }
+
+      /* Enable SNI when hostname is not an IP literal */
+      if (c->host && !is_valid_ip_address(c->host))
+        SSL_set_tlsext_host_name(c->ssl, c->host);
+
       SSL_set_fd(c->ssl, c->fd);
       SSL_set_connect_state(c->ssl);
 
@@ -309,7 +317,12 @@ static void conn_io_cb(int fd, int revents, void* arg) {
         evloop_timer_stop(c->connect_timer);
       if (c->on_ready)
         c->on_ready(c, c->cb_arg);
-      evloop_io_update(c->io_watcher, 0);
+      int events = 0;
+      if (c->readable_cb)
+        events |= EVLOOP_READ;
+      if (c->writable_cb)
+        events |= EVLOOP_WRITE;
+      evloop_io_update(c->io_watcher, events);
     }
     else {
       int err = SSL_get_error(c->ssl, r);
@@ -321,7 +334,15 @@ static void conn_io_cb(int fd, int revents, void* arg) {
         evloop_io_update(c->io_watcher, EVLOOP_WRITE);
       }
       else {
-        set_error(c, "TLS Handshake failed");
+        unsigned long e = ERR_peek_last_error();
+        if (e) {
+          char buf[128];
+          ERR_error_string_n(e, buf, sizeof(buf));
+          set_error(c, buf);
+        }
+        else {
+          set_error(c, "TLS Handshake failed");
+        }
       }
     }
     return;
