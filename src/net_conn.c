@@ -457,3 +457,15 @@ enum conn_state conn_get_state(struct net_conn* c) {
 const char* conn_get_error_msg(struct net_conn* c) {
   return c ? c->error_msg : NULL;
 }
+
+const char* conn_get_host(struct net_conn* c) {
+  return c ? c->host : NULL;
+}
+
+const char* conn_get_port(struct net_conn* c) {
+  return c ? c->port : NULL;
+}
+
+bool conn_get_use_tls(struct net_conn* c) {
+  return c ? c->use_tls : false;
+}

@@ -47,6 +47,7 @@ sources = [
   'res.c',
   'retr.c',
   'scheduler.c',
+  'pconn.c',
   'spider.c',
   'strcase.c',
   'threading.c',

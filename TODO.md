@@ -2,8 +2,8 @@
 
 **Current Status**: Async architecture is **LIVE AND OPERATIONAL**
 
-**Completed Phases**: 0, 1, 2, 3, 4, 5
-**Remaining Phases**: 6, 7, 8, 9
+**Completed Phases**: 0, 1, 2, 3, 4, 5, 6
+**Remaining Phases**: 7, 8, 9
 
 **Key Achievements**:
 - ✅ Event loop abstraction (`evloop`) with libev
@@ -318,36 +318,39 @@
 
 ---
 
-## Phase 6 — Persistent Connection Pool (`pconn`)
+## Phase 6 — Persistent Connection Pool (`pconn`) - **COMPLETED**
 
-* [ ] Add `src/pconn.c` + `src/pconn.h`
+* [x] Add `src/pconn.c` + `src/pconn.h`
+  * [x] ✅ Persistent connection pool source files created and wired into build system
 
-* [ ] Design pool key and structures
+* [x] Design pool key and structures
 
-  * [ ] Key = scheme + host + port tuple (`char *key = "https://example.com:443";`)
-  * [ ] Value = list of idle `net_conn *` for that key
-  * [ ] Track idle count per key and maybe last-used timestamps
+  * [x] Key = scheme + host + port + TLS tuple (`struct pconn_key`)
+  * [x] Value = list of idle `net_conn *` for that key with last-used timestamps
+  * [x] Hash table with bucket chaining for efficient lookup
 
-* [ ] Implement acquire/release
+* [x] Implement acquire/release
 
-  * [ ] `struct net_conn *pconn_acquire(struct ev_loop *loop, const char *scheme, const char *host, const char *port, bool use_tls, void (*on_ready)(struct net_conn *, void *), void (*on_error)(struct net_conn *, void *), void *arg);`
+  * [x] `struct net_conn *pconn_acquire(struct pconn_pool *pool, const char *scheme, const char *host, const char *port, bool use_tls, void (*on_ready)(struct net_conn *, void *), void (*on_error)(struct net_conn *, void *), void *arg);`
 
-    * [ ] If idle available: pop, attach callbacks, return
-    * [ ] Else: create new `net_conn` and start connect
-  * [ ] `void pconn_release(struct net_conn *c, bool keep_alive_ok);`
+    * [x] If idle available: pop, attach callbacks, return
+    * [x] Else: create new `net_conn` and start connect
+  * [x] `void pconn_release(struct pconn_pool *pool, struct net_conn *conn, bool keep_alive_ok);`
 
-    * [ ] If `keep_alive_ok` and under idle limit: push to idle list
-    * [ ] Else: `conn_close(c)`
+    * [x] If `keep_alive_ok` and under idle limit: push to idle list
+    * [x] Else: `conn_close(conn)`
 
-* [ ] Implement cleanup helpers
+* [x] Implement cleanup helpers
 
-  * [ ] `void pconn_flush_for_host(const char *host);`
-  * [ ] `void pconn_shutdown_all(void);`
+  * [x] `void pconn_flush_for_host(struct pconn_pool *pool, const char *host);`
+  * [x] `void pconn_shutdown_all(struct pconn_pool *pool);`
+  * [x] Automatic cleanup of expired connections based on idle timeout
 
 * [ ] Integrate with scheduler and http_transaction
 
   * [ ] Scheduler uses `pconn_acquire` when starting a transaction
   * [ ] Transaction uses `pconn_release` when done
+  * [ ] **Note**: Integration with scheduler and http_transaction deferred to Phase 7
 
 ---
 

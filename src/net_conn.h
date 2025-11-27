@@ -51,5 +51,8 @@ void conn_set_writable_callback(struct net_conn* c, conn_event_cb cb, void* arg)
 /* Accessors */
 enum conn_state conn_get_state(struct net_conn* c);
 const char* conn_get_error_msg(struct net_conn* c);
+const char* conn_get_host(struct net_conn* c);
+const char* conn_get_port(struct net_conn* c);
+bool conn_get_use_tls(struct net_conn* c);
 
 #endif /* WGET_NET_CONN_H */
