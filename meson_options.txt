@@ -1,5 +1,7 @@
 option('system_wgetrc', type: 'string', value: '/etc/wgetrc', description: 'Location of the system-wide wgetrc')
 option('locale_dir', type: 'string', value: '/usr/share/locale', description: 'Locale directory path')
-option('enable_debug_logging', type: 'boolean', value: false, description: 'Build with debug logging enabled')
+option('enable_debug_logging', type: 'boolean', value: false, description: 'Build with debug logging enabled (requires --debug flag at runtime)')
+option('enable_debug_symbols', type: 'boolean', value: false, description: 'Build with debug symbols (-g flag)')
+option('enable_asan', type: 'boolean', value: false, description: 'Build with AddressSanitizer')
 option('enable_opie', type: 'boolean', value: false, description: 'Enable OPIE support')
 option('enable_xattr', type: 'boolean', value: true, description: 'Enable extended attribute support')

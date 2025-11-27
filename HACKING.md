@@ -1,7 +1,9 @@
-# Agent Guide: Event-Driven Web Downloader Implementation
+# Agent Guide: Wget Codebase
 
-This guide is for **agents working on the asynchronous web downloader**.  
-It explains the **repo layout**, **what you may modify**, and **core rules** for a non-blocking, event-driven codebase.
+This guide is for **agents working on the wget codebase**.
+It explains the **repo layout**, **what you may modify**, and **current architecture**.
+
+**IMPORTANT STATUS NOTE**: This project is currently in a **transition phase** from synchronous to asynchronous architecture. The CLAUDE.md documentation describes the **target async architecture**, but much of it is **not yet implemented**. The current codebase is primarily synchronous with some async DNS components.
 
 ---
 
@@ -19,7 +21,7 @@ If you are an automated agent operating on this repo:
 
 **Do**
 
-- Preserve the architecture: **libev + c-ares + non-blocking sockets**
+- Preserve the **current architecture** while being aware of the planned async migration
 - Keep changes small and testable
 - Update docs and tests when behavior changes
 - Run relevant tests before and after changes
@@ -69,43 +71,48 @@ Top-level build description.
 
 ### `src/`
 
-Main C implementation of the async web downloader.
+Main C implementation of wget.
 
-Key modules include:
+**Current Architecture** (synchronous with some async DNS):
+* `host.c` – DNS resolution with c-ares (partially async)
+* `http-transaction.c` – HTTP state machine (synchronous)
+* `connect.c` – Connection management (synchronous)
+* `retr.c` – Main retrieval logic (synchronous)
+* `http.c` – HTTP protocol handling (synchronous)
+* `main.c` – CLI entry point
 
+**Planned Async Architecture** (from TODO.md - NOT YET IMPLEMENTED):
 * `evloop.*` – libev abstraction
 * `dns_cares.*` – c-ares integration
 * `net_conn.*` – non-blocking connection object
-* `http_transaction.*` – HTTP state machine
 * `scheduler.*` – download job scheduler
 * `pconn.*` – persistent connection pool
-* CLI and legacy glue (`main`, `retr`, etc)
 
 You may:
 
-* Implement or update async logic in these modules
-* Refactor legacy blocking code into the async abstractions
+* Implement or update async logic when working on the async migration
+* Refactor legacy blocking code into async abstractions when appropriate
 
 You must not:
 
 * Reintroduce `select`, `poll`, `getaddrinfo`, `sleep`, `alarm` in new paths
-* Call `ev_*` directly outside `evloop.c`
+* Call `ev_*` directly outside `evloop.c` (when async architecture is implemented)
 
 ### `docs/`
 
 Architecture and component docs.
 
-Important files:
+**Important files** (note: many describe planned async architecture, not current implementation):
 
-* `docs/overview.md` – big-picture system design
-* `docs/design-principles.md` – rules and constraints
-* `docs/event-loop.md` – `evloop` abstraction
-* `docs/dns-resolver.md` – `dns_cares` details
-* `docs/connection-management.md` – `net_conn` lifecycle
-* `docs/http-transaction.md` – HTTP state machines
-* `docs/scheduler.md` – download scheduler
-* `docs/connection-pool.md` – persistent connection pooling
-* `docs/cli-integration.md` – CLI and top-level flow
+* `docs/overview.md` – big-picture system design (describes planned async architecture)
+* `docs/design-principles.md` – rules and constraints (for planned async architecture)
+* `docs/event-loop.md` – `evloop` abstraction (planned, not implemented)
+* `docs/dns-resolver.md` – `dns_cares` details (planned, not implemented)
+* `docs/connection-management.md` – `net_conn` lifecycle (planned, not implemented)
+* `docs/http-transaction.md` – HTTP state machines (planned async version)
+* `docs/scheduler.md` – download scheduler (planned, not implemented)
+* `docs/connection-pool.md` – persistent connection pooling (planned, not implemented)
+* `docs/cli-integration.md` – CLI and top-level flow (planned async version)
 
 You may update these to reflect behavior changes or new modules.
 
@@ -137,45 +144,60 @@ Live status of async migration and remaining work.
 
 Use these as primary references:
 
-* **Design**
+* **Status & Planning**
 
-  * [`docs/overview.md`](docs/overview.md) – architecture and component roles
-  * [`docs/design-principles.md`](docs/design-principles.md) – non-negotiable rules
+  * [`TODO.md`](TODO.md) – current phase and priorities (most important reference)
 
-* **Components**
+* **Design** (describes planned async architecture)
 
-  * [`docs/event-loop.md`](docs/event-loop.md) – `evloop` / libev
-  * [`docs/dns-resolver.md`](docs/dns-resolver.md) – async DNS / c-ares
-  * [`docs/connection-management.md`](docs/connection-management.md) – `net_conn`
-  * [`docs/http-transaction.md`](docs/http-transaction.md) – HTTP state machine
-  * [`docs/scheduler.md`](docs/scheduler.md) – download scheduler
-  * [`docs/connection-pool.md`](docs/connection-pool.md) – connection reuse
-  * [`docs/cli-integration.md`](docs/cli-integration.md) – CLI flow
+  * [`docs/overview.md`](docs/overview.md) – planned architecture and component roles
+  * [`docs/design-principles.md`](docs/design-principles.md) – rules for planned async architecture
 
-* **Status**
+* **Components** (planned async architecture - NOT YET IMPLEMENTED)
 
-  * [`TODO.md`](TODO.md) – current phase and priorities
+  * [`docs/event-loop.md`](docs/event-loop.md) – `evloop` / libev (planned)
+  * [`docs/dns-resolver.md`](docs/dns-resolver.md) – async DNS / c-ares (planned)
+  * [`docs/connection-management.md`](docs/connection-management.md) – `net_conn` (planned)
+  * [`docs/http-transaction.md`](docs/http-transaction.md) – HTTP state machine (planned async version)
+  * [`docs/scheduler.md`](docs/scheduler.md) – download scheduler (planned)
+  * [`docs/connection-pool.md`](docs/connection-pool.md) – connection reuse (planned)
+  * [`docs/cli-integration.md`](docs/cli-integration.md) – CLI flow (planned async version)
 
 ---
 
-## 4. Hard Requirements
+## 4. Current Architecture vs Planned Requirements
 
-All changes must respect these.
+### Current Architecture (Reality)
 
-### DNS
+**DNS**:
+* c-ares is available but not fully integrated
+* Some DNS resolution uses async c-ares via `host.c`
+* Some DNS resolution may still use blocking methods
 
-* c-ares is **mandatory**
-* All hostname resolution goes through the async resolver layer
+**I/O and Concurrency**:
+* Primarily synchronous with blocking operations
+* Uses `select()` for I/O multiplexing in some places
+* Contains blocking `connect()`, `read()`, `write()` operations
+* Uses `sleep()` and other blocking timeouts
+
+**Architecture**:
+* Synchronous "do everything then return" patterns
+* No event loop abstraction
+* No non-blocking connection management
+
+### Planned Requirements (Target Async Architecture)
+
+**DNS**:
+* c-ares will be **mandatory**
+* All hostname resolution will go through async resolver layer
 * No direct `getaddrinfo`, `gethostbyname`, `gethostbyaddr`, etc
 
-### Event loop
-
-* libev is **mandatory**
+**Event loop**:
+* libev will be **mandatory**
 * Only `evloop.c` may call `ev_io`, `ev_timer`, `ev_run`, etc
 * All other code uses `evloop_*` wrappers
 
-### I/O and concurrency
-
+**I/O and concurrency**:
 * No blocking paths:
 
   * No synchronous `connect` loops
@@ -184,14 +206,11 @@ All changes must respect these.
 * All timeouts use event loop timers
 * Design must scale to thousands of connections
 
-### Architecture
-
+**Architecture**:
 * State machines + callbacks drive all network operations
 * Work per event must remain bounded
 * Core runs in a single event-loop thread
 * Cross-thread interaction must use safe primitives (e.g. `ev_async` inside `evloop`)
-
-If you violate these, revert the change.
 
 ---
 
@@ -203,28 +222,24 @@ If you violate these, revert the change.
 
    * Check [`TODO.md`](TODO.md) for:
 
-     * Current phase
+     * Current phase (currently Phase 0 - Audit)
      * Active modules
      * Known issues
+   * **Important**: Understand that most async components are NOT YET IMPLEMENTED
 
-2. **Review docs**
+2. **Review current code**
 
-   * Event loop: `docs/event-loop.md`
-   * DNS: `docs/dns-resolver.md`
-   * HTTP: `docs/http-transaction.md`
-   * Scheduler/concurrency: `docs/scheduler.md`
+   * Examine actual source files in `src/` to understand current implementation
+   * Check `TODO.md` to understand what's planned vs what exists
+   * Be aware that many docs describe planned async architecture, not current reality
 
 3. **Plan the change**
 
    * Identify the module(s) to touch
-   * Ensure the change fits the async architecture and design principles
-   * When replacing blocking code, use:
-
-     * `evloop`
-     * `dns_cares`
-     * `net_conn`
-     * `http_transaction`
-     * `scheduler`
+   * Determine if change should:
+     * Work within current synchronous architecture, OR
+     * Contribute to async migration (if working on Phase 1+ tasks)
+   * When working on async migration, follow the planned architecture from `TODO.md`
 
 4. **Implement and test**
 
@@ -253,14 +268,24 @@ If you violate these, revert the change.
 
 ## 6. Key Design Principles
 
-* All DNS is async via **c-ares** (`dns_cares` layer)
-* All I/O is event-driven via **libev** (`evloop` abstraction)
+### Current Architecture (Reality)
+
+* Primarily synchronous operation
+* Some async DNS via c-ares in `host.c`
+* Blocking I/O operations throughout
+* Uses `select()` for I/O multiplexing where needed
+* Timeouts use `sleep()` and other blocking methods
+
+### Planned Async Architecture (Target)
+
+* All DNS will be async via **c-ares** (`dns_cares` layer)
+* All I/O will be event-driven via **libev** (`evloop` abstraction)
 * No blocking calls in network or DNS paths
 * Use callbacks and immediate returns; do not wait synchronously
-* Timeouts use event loop timers only
-* HTTP parsing is incremental and streaming
-* Work per event is bounded
-* The core runs in a single event-loop thread
+* Timeouts will use event loop timers only
+* HTTP parsing will be incremental and streaming
+* Work per event will be bounded
+* The core will run in a single event-loop thread
 
 ---
 
@@ -296,22 +321,28 @@ If tests fail after your change:
 
 ---
 
-## 8. Blocking Code = Bug
+## 8. Current Status: Transition to Async
 
-This project is **event-driven by design**.
+This project is **in transition** from synchronous to event-driven architecture.
 
-If you find:
+**Current Reality**:
+* The codebase contains significant blocking code
+* This is expected during the transition phase
+* Blocking code should be gradually replaced as the async migration progresses
+
+**When you find blocking code**:
 
 * A direct `getaddrinfo` / `gethostbyname` / `gethostbyaddr`
 * A blocking `connect` loop
 * `sleep` / `usleep` / `nanosleep` / `alarm` in network code
 * Direct `select` / `poll` around sockets
 
-You have found a bug or legacy path.
+This is **expected legacy code** during the transition.
 
-Agents should either:
+Agents should:
 
-* Replace it with non-blocking logic using `evloop`, `dns_cares`, `net_conn`, and `http_transaction`, or
-* Record it in `TODO.md` with a short description and location if it cannot be fully migrated in one change
+* If working on async migration: Replace with non-blocking logic following the planned architecture
+* If not working on async migration: Note the location in `TODO.md` for future migration
+* Understand that full async migration is a multi-phase process documented in `TODO.md`
 
 ---

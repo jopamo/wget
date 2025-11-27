@@ -686,11 +686,11 @@ static struct request* initialize_request(const struct url* u,
   }
 
   if (hs->restval) {
-    logprintf(LOG_VERBOSE, _("DEBUG: Setting Range header: bytes=%s-\n"), number_to_static_string(hs->restval));
+    DEBUGP((_("DEBUG: Setting Range header: bytes=%s-\n"), number_to_static_string(hs->restval)));
     request_set_header(req, "Range", aprintf("bytes=%s-", number_to_static_string(hs->restval)), rel_value);
   }
   else {
-    logprintf(LOG_VERBOSE, _("DEBUG: No Range header (hs->restval=0)\n"));
+    DEBUGP((_("DEBUG: No Range header (hs->restval=0)\n")));
   }
 
   request_set_user_agent(req);
@@ -925,10 +925,10 @@ static uerr_t open_output_stream(struct http_stat* hs, int count, FILE** fp) {
       /* Reposition to the beginning of the file */
       rewind(output_stream);
       fflush(output_stream);
-      logprintf(LOG_VERBOSE, _("DEBUG: After truncating output_stream, position=%ld\n"), ftell(output_stream));
+      DEBUGP((_("DEBUG: After truncating output_stream, position=%ld\n"), ftell(output_stream)));
     }
     else if (hs->restval == 0) {
-      logprintf(LOG_VERBOSE, _("DEBUG: hs->restval is 0 but output_stream_regular is false\n"));
+      DEBUGP((_("DEBUG: hs->restval is 0 but output_stream_regular is false\n")));
     }
     *fp = output_stream;
   }
@@ -1013,12 +1013,12 @@ static int read_response_body(struct http_stat* hs,
 
     /* Don't skip if we restarted from byte 0 and truncated the file */
     if (skip_bytes > 0 && hs->restval > 0) {
-      logprintf(LOG_VERBOSE, _("DEBUG: Setting rb_skip_startpos flag: skip_bytes=%s, contrange=%s\n"), number_to_static_string(skip_bytes), number_to_static_string(contrange));
+      DEBUGP((_("DEBUG: Setting rb_skip_startpos flag: skip_bytes=%s, contrange=%s\n"), number_to_static_string(skip_bytes), number_to_static_string(contrange)));
       flags |= rb_skip_startpos;
     }
     else {
-      logprintf(LOG_VERBOSE, _("DEBUG: NOT setting rb_skip_startpos flag: skip_bytes=%s, contrange=%s, hs->restval=%s\n"), number_to_static_string(skip_bytes), number_to_static_string(contrange),
-                number_to_static_string(hs->restval));
+      DEBUGP((_("DEBUG: NOT setting rb_skip_startpos flag: skip_bytes=%s, contrange=%s, hs->restval=%s\n"), number_to_static_string(skip_bytes), number_to_static_string(contrange),
+              number_to_static_string(hs->restval)));
     }
   }
 
@@ -1035,7 +1035,7 @@ static int read_response_body(struct http_stat* hs,
      If we are working on a WARC file, write the
      response body to warc_tmp in parallel */
   hs->res = fd_read_body(hs->local_file, sock, fp, contlen != -1 ? contlen : 0, hs->restval, &hs->rd_size, &hs->len, &hs->dltime, flags, warc_tmp);
-  logprintf(LOG_VERBOSE, _("DEBUG: After fd_read_body, hs->res=%d, hs->rd_size=%s, hs->len=%s\n"), hs->res, number_to_static_string(hs->rd_size), number_to_static_string(hs->len));
+  DEBUGP((_("DEBUG: After fd_read_body, hs->res=%d, hs->rd_size=%s, hs->len=%s\n"), hs->res, number_to_static_string(hs->rd_size), number_to_static_string(hs->len)));
   if (hs->res >= 0) {
     if (warc_tmp != NULL) {
       /* Create a response record and write it to the WARC file.
@@ -1533,13 +1533,12 @@ retry_with_auth:
       logputs(LOG_VERBOSE, _("Warning: 206 partial content, but REST not used\n"));
     else if (hs->restval != contrange) {
       if (opt.always_rest) {
-        logprintf(LOG_VERBOSE, _("DEBUG: Rest request ignored by server; will download from 0. hs->restval was %s, contrange=%s\n"), number_to_static_string(hs->restval),
-                  number_to_static_string(contrange));
+        DEBUGP((_("DEBUG: Rest request ignored by server; will download from 0. hs->restval was %s, contrange=%s\n"), number_to_static_string(hs->restval), number_to_static_string(contrange)));
         /* Store the original restval for potential future use */
         hs->original_restval = hs->restval;
         /* The server did not start at our requested offset; treat as restart from 0 */
         hs->restval = 0;
-        logprintf(LOG_VERBOSE, _("DEBUG: After setting hs->restval to 0, original_restval=%s\n"), number_to_static_string(hs->original_restval));
+        DEBUGP((_("DEBUG: After setting hs->restval to 0, original_restval=%s\n"), number_to_static_string(hs->original_restval)));
       }
       else if (contrange != -1) {
         logprintf(LOG_VERBOSE, _("Server requested starts at %s, but we asked for %s.\n"), number_to_static_string(contrange), number_to_static_string(hs->restval));
@@ -1551,11 +1550,11 @@ retry_with_auth:
   else if (statcode == HTTP_STATUS_OK && hs->restval > 0) {
     /* The server completely ignored our Range request */
     if (opt.always_rest) {
-      logprintf(LOG_VERBOSE, _("DEBUG: Rest request ignored by server; will download from 0. hs->restval was %s\n"), number_to_static_string(hs->restval));
+      DEBUGP((_("DEBUG: Rest request ignored by server; will download from 0. hs->restval was %s\n"), number_to_static_string(hs->restval)));
       /* Store the original restval for skipping bytes later if we ever reuse this */
       hs->original_restval = hs->restval;
       hs->restval = 0;
-      logprintf(LOG_VERBOSE, _("DEBUG: After setting hs->restval to 0, original_restval=%s\n"), number_to_static_string(hs->original_restval));
+      DEBUGP((_("DEBUG: After setting hs->restval to 0, original_restval=%s\n"), number_to_static_string(hs->original_restval)));
     }
     else {
       logprintf(LOG_VERBOSE, _("Server ignored the Range header.  We asked for %s.\n"), number_to_static_string(hs->restval));
@@ -1647,7 +1646,7 @@ retry_with_auth:
     goto cleanup;
   }
 
-  logprintf(LOG_VERBOSE, _("DEBUG: After open_output_stream, fp=%p, output_stream=%p\n"), (void*)fp, (void*)output_stream);
+  DEBUGP((_("DEBUG: After open_output_stream, fp=%p, output_stream=%p\n"), (void*)fp, (void*)output_stream));
 
 #ifdef ENABLE_XATTR
   if (opt.enable_xattr) {
@@ -1668,7 +1667,7 @@ retry_with_auth:
   if (!output_stream)
     fclose(fp);
 
-  logprintf(LOG_VERBOSE, _("DEBUG: Before cleanup, err=%d, hs->res=%d\n"), err, hs->res);
+  DEBUGP((_("DEBUG: Before cleanup, err=%d, hs->res=%d\n"), err, hs->res));
 
   retval = err;
 

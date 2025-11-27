@@ -1,7 +1,8 @@
-project('wget', 'c', version: '1.25.0', default_options: ['warning_level=2', 'c_std=gnu11'])
+project('wget', 'c', version: '1.25.0', default_options: ['warning_level=2', 'c_std=c17'])
 
 cc = meson.get_compiler('c')
-add_project_arguments('-D_GNU_SOURCE', '-D_FILE_OFFSET_BITS=64', language: 'c')
+# GNU extensions required for wget functionality
+add_project_arguments('-D_GNU_SOURCE', language: 'c')
 
 conf = configuration_data()
 conf.set_quoted('PACKAGE_NAME', 'wget')
@@ -14,9 +15,21 @@ conf.set('SIZEOF_OFF_T', cc.sizeof('off_t'))
 conf.set('ENABLE_DIGEST', 1)
 conf.set('ENABLE_IPV6', 1)
 conf.set('ENABLE_NTLM', 1)
+# Debug logging support
 if get_option('enable_debug_logging')
   conf.set('ENABLE_DEBUG', 1)
 endif
+
+# Debug symbols
+if get_option('enable_debug_symbols')
+  add_project_arguments('-g', language: 'c')
+endif
+
+# AddressSanitizer (use Meson's built-in b_sanitize option instead)
+# if get_option('enable_asan')
+#   add_project_arguments('-fsanitize=address', language: 'c')
+#   add_project_link_arguments('-fsanitize=address', language: 'c')
+# endif
 if get_option('enable_opie')
   conf.set('ENABLE_OPIE', 1)
 endif

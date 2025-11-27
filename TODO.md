@@ -411,6 +411,18 @@
 
 ---
 
+## Debug Build Improvements - **COMPLETED**
+
+* [x] Enhanced Meson build options for debug builds
+  * [x] Added `enable_debug_logging` option to gate debug output at compile time
+  * [x] Added `enable_debug_symbols` option for easy debug symbol builds
+  * [x] Documented use of Meson's built-in `b_sanitize` option for ASAN/other sanitizers
+  * [x] Created comprehensive documentation in `docs/debug-builds.md`
+
+* [x] Gated all debug output behind proper compile-time and runtime checks
+  * [x] Converted all direct `logprintf(LOG_VERBOSE, "DEBUG: ...")` calls in `http-transaction.c` to use `DEBUGP()` macro
+  * [x] Ensured debug output requires both `--enable-debug-logging` at build time and `--debug` at runtime
+
 ## Phase 9 — Testing, Performance, and Hardening
 
 * [ ] Unit-test small pieces
