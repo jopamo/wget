@@ -18,15 +18,16 @@ jobs:
         run: |
           dnf update -y
           dnf install -y \
-  			gcc gcc-c++ make autoconf automake libtool cmake git \
-  			ninja-build gdb pkgconf meson python3-pip \
-  			openssl-devel c-ares-devel libev-devel zlib-devel \
-  			libpsl-devel libidn2-devel ca-certificates \
-  			libproxy-devel pcre2-devel \
-  			valgrind procps curl wget diffutils
+            gcc gcc-c++ make autoconf automake libtool cmake git \
+            ninja-build gdb pkgconf meson python3-pip \
+            openssl-devel c-ares-devel libev-devel zlib-devel \
+            libpsl-devel libidn2-devel ca-certificates \
+            libproxy-devel pcre2-devel \
+            valgrind procps curl wget diffutils
 
       - name: Checkout wget
         uses: actions/checkout@v4
+
       - name: "Meson: Configure, build and test wget"
         run: |
           meson setup build
