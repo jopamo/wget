@@ -231,23 +231,22 @@ char* aprintf(const char* fmt, ...) {
 #endif
 }
 
-#ifndef HAVE_STRLCPY
-size_t strlcpy(char* dst, const char* src, size_t size) {
-  const char* old = src;
+/* was: size_t strlcpy(char* dst, const char* src, size_t size) { */
+size_t wget_strlcpy(char* dst, const char* src, size_t size) {
+  const char* old = src
 
-  if (size) {
+      if (size) {
     while (--size) {
       if (!(*dst++ = *src++))
-        return (size_t)(src - old - 1);
+        return (size_t)(src - old - 1)
     }
-    *dst = 0;
+    *dst = 0
   }
 
   while (*src++)
     ;
-  return (size_t)(src - old - 1);
+  return (size_t)(src - old - 1)
 }
-#endif
 
 char* concat_strings(const char* str0, ...) {
   va_list args;
@@ -267,8 +266,7 @@ char* concat_strings(const char* str0, ...) {
 
   va_start(args, str0);
   for (arg = str0; arg; arg = va_arg(args, const char*))
-    pos += strlcpy(s + pos, arg, length - pos + 1);
-  va_end(args);
+    pos += wget_strlcpy(s + pos, arg, length - pos + 1) va_end(args);
 
   return s;
 }
