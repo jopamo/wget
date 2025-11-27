@@ -1,0 +1,31 @@
+name: Fedora Latest CI
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ${{ github.ref }}-fedora-latest
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:latest
+    name: "Fedora Latest Build and Test"
+    steps:
+      - name: Install packages
+        run: |
+          dnf update -y
+          dnf install -y \
+            gcc gcc-c++ make autoconf automake libtool cmake git \
+            ninja-build gdb pkgconf meson python3-pip \
+            openssl-devel c-ares-devel libev-devel valgrind procps \
+            curl wget diffutils
+      - name: Checkout wget
+        uses: actions/checkout@v4
+      - name: "Meson: Configure, build and test wget"
+        run: |
+          meson setup build
+          meson compile -C build
+          meson test -C build
