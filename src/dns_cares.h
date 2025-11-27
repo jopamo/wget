@@ -28,16 +28,13 @@
 struct ev_loop;
 
 /* Callback type for async resolution */
-typedef void (*dns_result_cb)(int status, const struct addrinfo *ai, void *arg);
+typedef void (*dns_result_cb)(int status, const struct addrinfo* ai, void* arg);
 
 /* Initialization and Cleanup */
-int dns_init(struct ev_loop *loop);
+int dns_init(struct ev_loop* loop);
 void dns_shutdown(void);
 
 /* Public Async API */
-void dns_resolve_async(struct ev_loop *loop,
-                       const char *hostname, const char *service,
-                       int family, int socktype, int protocol,
-                       dns_result_cb cb, void *arg);
+void dns_resolve_async(struct ev_loop* loop, const char* hostname, const char* service, int family, int socktype, int protocol, dns_result_cb cb, void* arg);
 
 #endif /* WGET_DNS_CARES_H */

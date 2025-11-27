@@ -241,7 +241,7 @@ char* request_string(const struct request* req, size_t* len) {
  * Returns negative on error, >= 0 on success
  */
 int request_send(const struct request* req, int fd, FILE* warc_tmp) {
-  char *req_str;
+  char* req_str;
   size_t size;
   int write_error;
 

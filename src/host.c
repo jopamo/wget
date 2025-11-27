@@ -763,9 +763,9 @@ static void wait_ares(ares_channel channel) {
     size_t event_count = 0;
 
     if (ares_watch_count == 0) {
-        /* Process timeouts even if no watches. */
-        ares_process_fds(channel, NULL, 0, ARES_PROCESS_FLAG_NONE);
-        break;
+      /* Process timeouts even if no watches. */
+      ares_process_fds(channel, NULL, 0, ARES_PROCESS_FLAG_NONE);
+      break;
     }
 
     FD_ZERO(&read_fds);
@@ -786,9 +786,9 @@ static void wait_ares(ares_channel channel) {
     }
 
     if (nfds == 0) {
-        /* Process timeouts even if no active fds. */
-        ares_process_fds(channel, NULL, 0, ARES_PROCESS_FLAG_NONE);
-        break;
+      /* Process timeouts even if no active fds. */
+      ares_process_fds(channel, NULL, 0, ARES_PROCESS_FLAG_NONE);
+      break;
     }
 
     if (timer) {

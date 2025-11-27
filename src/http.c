@@ -451,8 +451,8 @@ uerr_t http_loop(const struct url* u, struct url* original_url, char** newloc, c
         continue;
       case CONERROR:
         if (opt.retry_connrefused) {
-            printwhat(count, opt.ntry);
-            continue;
+          printwhat(count, opt.ntry);
+          continue;
         }
         ret = err;
         goto exit;
