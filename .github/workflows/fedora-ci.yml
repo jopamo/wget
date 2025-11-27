@@ -30,12 +30,8 @@ jobs:
       - name: Checkout wget
         uses: actions/checkout@v4
 
-      - name: "Meson: Configure, build and test wget (default)"
+      - name: "Meson: Configure, build and test wget (Valgrind)"
         run: |
           meson setup build   -Dbuildtype=debug   -Db_lto=false   -Db_ndebug=false
           meson compile -C build
-          meson test -C build
-
-      - name: "Meson: Run tests under Valgrind"
-        run: |
           meson test -C build --wrap='valgrind --leak-check=full --error-exitcode=1'
