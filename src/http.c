@@ -515,6 +515,9 @@ uerr_t http_loop(const struct url* u, struct url* original_url, char** newloc, c
       case RETRUNNEEDED:
         ret = RETROK;
         goto exit;
+      case RETROK:
+        ret = RETROK;
+        goto exit;
       case RETRFINISHED:
         /* treat a finished retrieval as success and exit loop */
         *dt |= RETROKF;
