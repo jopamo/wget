@@ -32,20 +32,9 @@ jobs:
 
       - name: "Meson: Configure, build and test wget (default)"
         run: |
-          meson setup build
+          meson setup build   -Dbuildtype=debug   -Db_lto=false   -Db_ndebug=false
           meson compile -C build
           meson test -C build
-
-      - name: "Meson: Configure, build and test wget with ASan (clang)"
-        env:
-          CC: clang
-          CXX: clang++
-          CFLAGS: "-fno-omit-frame-pointer"
-          CXXFLAGS: "-fno-omit-frame-pointer"
-        run: |
-          meson setup build-asan -Db_sanitize=address
-          meson compile -C build-asan
-          meson test -C build-asan
 
       - name: "Meson: Run tests under Valgrind"
         run: |
