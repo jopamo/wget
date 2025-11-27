@@ -24,11 +24,18 @@ fi
 python3 "$(dirname "$0")/test-302-redirect.py" &
 SERVER_PID=$!
 
-# Give server time to start and verify it's running
-sleep 2
+# Wait for server to start (up to 10 seconds)
+echo "Waiting for server to start..."
+for i in $(seq 1 20); do
+    if curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${PORT}/hello.txt" | grep -q "200"; then
+        echo "Server is up!"
+        break
+    fi
+    sleep 0.5
+done
 
 # Verify server is actually running
-if ! curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:${PORT}/hello.txt | grep -q "200"; then
+if ! curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:${PORT}/hello.txt" | grep -q "200"; then
     echo "Error: Test server failed to start on port ${PORT}" >&2
     kill $SERVER_PID 2>/dev/null || true
     exit 1

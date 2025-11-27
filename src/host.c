@@ -758,9 +758,15 @@ static void wait_ares(ares_channel channel) {
     fd_set read_fds, write_fds;
     int nfds = 0;
     size_t i;
+    int rc;
+    ares_fd_events_t* events = NULL;
+    size_t event_count = 0;
 
-    if (ares_watch_count == 0)
-      break;
+    if (ares_watch_count == 0) {
+        /* Process timeouts even if no watches. */
+        ares_process_fds(channel, NULL, 0, ARES_PROCESS_FLAG_NONE);
+        break;
+    }
 
     FD_ZERO(&read_fds);
     FD_ZERO(&write_fds);
@@ -779,8 +785,11 @@ static void wait_ares(ares_channel channel) {
       }
     }
 
-    if (nfds == 0)
-      break;
+    if (nfds == 0) {
+        /* Process timeouts even if no active fds. */
+        ares_process_fds(channel, NULL, 0, ARES_PROCESS_FLAG_NONE);
+        break;
+    }
 
     if (timer) {
       double elapsed = ptimer_measure(timer);
@@ -798,46 +807,42 @@ static void wait_ares(ares_channel channel) {
     else
       tvp = ares_timeout(channel, NULL, &tv);
 
-    {
-      int rc = select(nfds, &read_fds, &write_fds, NULL, tvp);
-      ares_fd_events_t* events = NULL;
-      size_t event_count = 0;
+    rc = select(nfds, &read_fds, &write_fds, NULL, tvp);
 
-      if (rc == 0) {
-        if (timer && ptimer_measure(timer) >= opt.dns_timeout) {
-          ares_cancel(channel);
-          break;
-        }
-        continue;
-      }
-      else if (rc < 0) {
-        if (errno == EINTR)
-          continue;
+    if (rc == 0) {
+      if (timer && ptimer_measure(timer) >= opt.dns_timeout) {
+        ares_cancel(channel);
         break;
       }
+      continue;
+    }
+    else if (rc < 0) {
+      if (errno == EINTR)
+        continue;
+      break;
+    }
 
-      if (rc > 0) {
-        events = xnew_array(ares_fd_events_t, ares_watch_count);
-        for (i = 0; i < ares_watch_count; ++i) {
-          unsigned int mask = 0;
-          const struct ares_socket_watch* watch = &ares_watches[i];
+    if (rc > 0) {
+      events = xnew_array(ares_fd_events_t, ares_watch_count);
+      for (i = 0; i < ares_watch_count; ++i) {
+        unsigned int mask = 0;
+        const struct ares_socket_watch* watch = &ares_watches[i];
 
-          if (watch->readable && FD_ISSET(watch->fd, &read_fds))
-            mask |= ARES_FD_EVENT_READ;
-          if (watch->writable && FD_ISSET(watch->fd, &write_fds))
-            mask |= ARES_FD_EVENT_WRITE;
+        if (watch->readable && FD_ISSET(watch->fd, &read_fds))
+          mask |= ARES_FD_EVENT_READ;
+        if (watch->writable && FD_ISSET(watch->fd, &write_fds))
+          mask |= ARES_FD_EVENT_WRITE;
 
-          if (mask != 0) {
-            events[event_count].fd = watch->fd;
-            events[event_count].events = mask;
-            ++event_count;
-          }
+        if (mask != 0) {
+          events[event_count].fd = watch->fd;
+          events[event_count].events = mask;
+          ++event_count;
         }
       }
-
-      ares_process_fds(channel, events, event_count, ARES_PROCESS_FLAG_NONE);
-      xfree(events);
     }
+
+    ares_process_fds(channel, events, event_count, ARES_PROCESS_FLAG_NONE);
+    xfree(events);
   }
 
   if (timer)

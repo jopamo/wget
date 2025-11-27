@@ -72,7 +72,8 @@ def main():
     httpd_root = os.path.join(script_dir, 'httpd-root')
     os.chdir(httpd_root)
 
-    with socketserver.TCPServer(("", PORT), RedirectHTTPRequestHandler) as httpd:
+    # Use HTTPServer which has allow_reuse_address = True by default
+    with http.server.HTTPServer(("", PORT), RedirectHTTPRequestHandler) as httpd:
         print(f"Test HTTP server running on port {PORT}")
         print("Available test endpoints:")
         print("  /redirect-302 - Single 302 redirect to /hello.txt")
