@@ -15,6 +15,7 @@ void request_set_header(struct request* req, const char* name, const char* value
 void request_set_user_header(struct request* req, const char* header);
 void request_set_user_agent(struct request* req);
 bool request_remove_header(struct request* req, const char* name);
+char* request_string(const struct request* req, size_t* len);
 int request_send(const struct request* req, int fd, FILE* warc_tmp);
 void request_free(struct request** req_ref);
 

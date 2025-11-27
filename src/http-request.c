@@ -178,15 +178,14 @@ void request_set_user_agent(struct request* req) {
     (p) += A_len;               \
   } while (0)
 
-/* Serialize REQ as an HTTP/1.1 request and write to fd
- * If warc_tmp is non-NULL, a copy of the bytes is also written there
- * Returns negative on error, >= 0 on success
+/* Serialize REQ as an HTTP/1.1 request string.
+ * Returns a newly allocated string that must be freed by caller.
+ * If len is not NULL, it is set to the length of the string (excluding NUL).
  */
-int request_send(const struct request* req, int fd, FILE* warc_tmp) {
-  char *request_string, *p;
+char* request_string(const struct request* req, size_t* len) {
+  char *str, *p;
   int i;
   int size;
-  int write_error;
 
   /* Compute total request size
    * METHOD SP ARG SP "HTTP/1.1" CRLF
@@ -202,7 +201,7 @@ int request_send(const struct request* req, int fd, FILE* warc_tmp) {
   /* final CRLF and trailing NUL */
   size += 3;
 
-  p = request_string = xmalloc((size_t)size);
+  p = str = xmalloc((size_t)size);
 
   /* Start line */
 
@@ -229,28 +228,45 @@ int request_send(const struct request* req, int fd, FILE* warc_tmp) {
   *p++ = '\n';
   *p++ = '\0';
 
-  assert(p - request_string == size);
+  assert(p - str == size);
 
-#undef APPEND
+  if (len)
+    *len = (size_t)size - 1;
 
-  DEBUGP(("\n---request begin---\n%s---request end---\n", request_string));
+  return str;
+}
+
+/* Serialize REQ as an HTTP/1.1 request and write to fd
+ * If warc_tmp is non-NULL, a copy of the bytes is also written there
+ * Returns negative on error, >= 0 on success
+ */
+int request_send(const struct request* req, int fd, FILE* warc_tmp) {
+  char *req_str;
+  size_t size;
+  int write_error;
+
+  req_str = request_string(req, &size);
+
+  DEBUGP(("\n---request begin---\n%s---request end---\n", req_str));
 
   /* Send bytes to the server */
 
-  write_error = fd_write(fd, request_string, (size_t)size - 1, -1);
+  write_error = fd_write(fd, req_str, size, -1);
   if (write_error < 0)
     logprintf(LOG_VERBOSE, _("Failed writing HTTP request: %s.\n"), fd_errstr(fd));
   else if (warc_tmp) {
     /* mirror request into WARC payload */
-    size_t want = (size_t)size - 1;
-    size_t wrote = fwrite(request_string, 1, want, warc_tmp);
+    size_t want = size;
+    size_t wrote = fwrite(req_str, 1, want, warc_tmp);
     if (wrote != want)
       write_error = -2;
   }
 
-  xfree(request_string);
+  xfree(req_str);
   return write_error;
 }
+
+#undef APPEND
 
 /* Free REQ and clear the caller's reference
  * Safe to call with a pointer to NULL

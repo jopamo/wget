@@ -128,6 +128,7 @@ struct http_transaction {
   bool output_opened;
   wgint contlen;
   wgint contrange;
+  bool parsed_content_range;
   bool chunked;
   wgint chunk_size; /* For chunked decoding */
   int chunk_state;  /* 0=size, 1=data, 2=CRLF */
@@ -472,6 +473,24 @@ static void on_writable(struct net_conn *c, void *arg) {
     }
 }
 
+
+// Helper function to parse Content-Range header
+// Expected format: "bytes START-END/TOTAL" or "bytes START-END/*"
+// Returns TOTAL or -1 if TOTAL is not specified or parsing fails.
+static wgint parse_content_range(const char* header_val) {
+    if (!header_val || strncmp(header_val, "bytes ", 6) != 0) {
+        return -1; // Not a bytes range or invalid format
+    }
+    const char* slash = strchr(header_val + 6, '/');
+    if (!slash) {
+        return -1; // Missing total length part
+    }
+    if (strcmp(slash + 1, "*") == 0) {
+        return -1; // Total length is unknown
+    }
+    return str_to_wgint(slash + 1, NULL, 10);
+}
+
 static void on_readable(struct net_conn *c, void *arg) {
     struct http_transaction *txn = arg;
     
@@ -517,6 +536,7 @@ static void on_readable(struct net_conn *c, void *arg) {
                  }
                  txn->hs->statcode = code;
                  txn->state = H_READ_HEADERS;
+                 DEBUGP(("[http-txn] H_READ_STATUS: statcode=%d\n", code));
                  
                  /* Log status */
                  logprintf(LOG_VERBOSE, "%2d %s\n", code, (p && strchr(p,' ')) ? strchr(p,' ')+1 : "");
@@ -538,17 +558,31 @@ static void on_readable(struct net_conn *c, void *arg) {
             
             if (eoh) {
                 size_t head_len = (eoh - txn->recv_buf);
-                size_t term_len = (eoh[1] == '\n' ? 2 : 4);
+                /* Consume the full header terminator. Use 4 bytes for \r\n\r\n and 2 for \n\n. */
+                size_t term_len = (eoh[0] == '\r' && eoh[1] == '\n') ? 4 : 2;
                 
                 txn->resp_data = xstrndup(txn->recv_buf, head_len);
                 txn->resp = resp_new(txn->resp_data);
                 
-                /* Handle headers (Content-Length, etc.) */
+                /* Handle headers (Content-Length, Content-Range, etc.) */
                 char val[1024];
                 if (resp_header_copy(txn->resp, "Content-Length", val, sizeof(val))) {
                     txn->contlen = str_to_wgint(val, NULL, 10);
                 } else {
                     txn->contlen = -1;
+                }
+                DEBUGP(("[http-txn] H_READ_HEADERS: Content-Length=%lld\n", (long long)txn->contlen));
+
+                if (txn->hs->statcode == HTTP_STATUS_PARTIAL_CONTENTS) {
+                    char *range_header_val = resp_header_strdup(txn->resp, "Content-Range");
+                    if (range_header_val) {
+                        txn->contrange = parse_content_range(range_header_val);
+                        txn->parsed_content_range = true;
+                        DEBUGP(("[http-txn] H_READ_HEADERS: Content-Range='%s', parsed_contrange=%lld\n", range_header_val, (long long)txn->contrange));
+                        xfree(range_header_val);
+                    } else {
+                        DEBUGP(("[http-txn] H_READ_HEADERS: Content-Range header missing for 206 response!\n"));
+                    }
                 }
                 
                 /* Handle Content-Type */
@@ -612,6 +646,14 @@ static void on_readable(struct net_conn *c, void *arg) {
                      return;
                 }
                 
+                // Initialize txn->hs->len with the current file size if appending
+                if (txn->hs->restval > 0 && txn->hs->statcode == HTTP_STATUS_PARTIAL_CONTENTS) {
+                    txn->hs->len = txn->hs->restval;
+                } else {
+                    txn->hs->len = 0; // Ensure it's reset for new downloads
+                }
+                DEBUGP(("[http-txn] H_READ_HEADERS: Initial txn->hs->len=%lld (from restval=%lld)\n", (long long)txn->hs->len, (long long)txn->hs->restval));
+
                 logprintf(LOG_VERBOSE, _("Saving to: %s\n"), quote(txn->hs->local_file));
                 
                 /* Shift remaining body data */
@@ -637,7 +679,13 @@ static void on_readable(struct net_conn *c, void *arg) {
         }
         if (n == 0) {
              /* EOF */
-             if (txn->contlen != -1 && txn->hs->len < txn->contlen) {
+             if (txn->hs->statcode == HTTP_STATUS_PARTIAL_CONTENTS && txn->parsed_content_range) {
+                 if (txn->contrange != -1 && txn->hs->len < txn->contrange) {
+                     txn_set_error(txn, RETRFINISHED, "Connection closed before full length (partial content)"); /* Warning */
+                 } else {
+                     txn_finish(txn, RETRFINISHED);
+                 }
+             } else if (txn->contlen != -1 && txn->hs->len < txn->contlen) {
                  txn_set_error(txn, RETRFINISHED, "Connection closed before full length"); /* Warning */
              } else {
                  txn_finish(txn, RETRFINISHED);
@@ -647,12 +695,20 @@ static void on_readable(struct net_conn *c, void *arg) {
         
         fwrite(txn->recv_buf, 1, n, txn->fp);
         txn->hs->len += n;
+        DEBUGP(("[http-txn] H_READ_BODY: Read %zd bytes, total_len=%lld, contlen=%lld, contrange=%lld\n", n, (long long)txn->hs->len, (long long)txn->contlen, (long long)txn->contrange));
         
-        if (txn->contlen != -1 && txn->hs->len >= txn->contlen) {
+        if (txn->hs->statcode == HTTP_STATUS_PARTIAL_CONTENTS && txn->parsed_content_range) {
+            if (txn->contrange != -1 && txn->hs->len >= txn->contrange) {
+                DEBUGP(("[http-txn] H_READ_BODY: Finishing due to full contrange (%lld >= %lld)\n", (long long)txn->hs->len, (long long)txn->contrange));
+                txn_finish(txn, RETRFINISHED);
+            }
+        } else if (txn->contlen != -1 && txn->hs->len >= txn->contlen) {
+            DEBUGP(("[http-txn] H_READ_BODY: Finishing due to full contlen (%lld >= %lld)\n", (long long)txn->hs->len, (long long)txn->contlen));
             txn_finish(txn, RETRFINISHED);
         }
     }
 }
+
 
 
 /* --- Wrapper Implementation --- */

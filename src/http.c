@@ -442,7 +442,6 @@ uerr_t http_loop(const struct url* u, struct url* original_url, char** newloc, c
       case HERR:
       case HEOF:
       case CONSOCKERR:
-      case CONERROR:
       case READERR:
       case WRITEFAILED:
       case RANGEERR:
@@ -450,6 +449,13 @@ uerr_t http_loop(const struct url* u, struct url* original_url, char** newloc, c
       case GATEWAYTIMEOUT:
         printwhat(count, opt.ntry);
         continue;
+      case CONERROR:
+        if (opt.retry_connrefused) {
+            printwhat(count, opt.ntry);
+            continue;
+        }
+        ret = err;
+        goto exit;
       case FWRITEERR:
       case FOPENERR:
         logputs(LOG_VERBOSE, "\n");
