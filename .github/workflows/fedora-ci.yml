@@ -25,7 +25,7 @@ jobs:
             libproxy-devel pcre2-devel \
             flex \
             clang llvm llvm-devel libasan \
-            valgrind procps curl wget diffutils
+            valgrind procps curl wget diffutils busybox
 
       - name: Checkout wget
         uses: actions/checkout@v4
