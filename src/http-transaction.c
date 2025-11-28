@@ -32,6 +32,8 @@
 #include "evloop.h"
 #include "net_conn.h"
 #include "options.h"
+#include "progress.h"
+#include "ptimer.h"
 
 #ifdef ENABLE_XATTR
 #include "xattr.h"
@@ -144,6 +146,11 @@ struct http_transaction {
 
   /* Result */
   uerr_t err_code;
+
+  /* Progress tracking */
+  void* progress;
+  bool progress_interactive;
+  struct ptimer* progress_timer;
 };
 
 /* Forward decls for helpers that we need to reimplement or link */
@@ -277,6 +284,11 @@ http_txn_new(struct ev_loop* loop, const struct url* u, struct url* original_url
   txn->recv_cap = 4096;
   txn->recv_buf = xmalloc(txn->recv_cap);
 
+  /* Initialize progress tracking */
+  txn->progress = NULL;
+  txn->progress_interactive = false;
+  txn->progress_timer = NULL;
+
   return txn;
 }
 
@@ -302,6 +314,14 @@ void http_txn_free(struct http_transaction* txn) {
   xfree(txn->recv_buf);
   /* User/Passwd are usually pointers to u->user or opt.user, not owned, unless strdup'd.
      initialize_request logic handles this. */
+
+  /* Clean up progress tracking */
+  if (txn->progress) {
+    progress_finish(txn->progress, txn->progress_timer ? ptimer_read(txn->progress_timer) : 0.0);
+  }
+  if (txn->progress_timer) {
+    ptimer_destroy(txn->progress_timer);
+  }
 
   xfree(txn);
 }
@@ -675,6 +695,37 @@ static void on_readable(struct net_conn* c, void* arg) {
           mode = "ab";
         }
 
+        /* Initialize progress tracking if enabled */
+        if (opt.show_progress) {
+          const char* filename_progress;
+          wgint start = 0;
+          wgint total = txn->contlen;
+
+          /* For partial content responses, adjust progress tracking */
+          if (txn->hs->statcode == HTTP_STATUS_PARTIAL_CONTENTS && txn->parsed_content_range) {
+            if (txn->contrange != -1) {
+              total = txn->contrange;
+            }
+          }
+
+          /* Use filename without directory prefix for display */
+          if (opt.dir_prefix && txn->hs->local_file) {
+            filename_progress = txn->hs->local_file + strlen(opt.dir_prefix) + 1;
+          }
+          else {
+            filename_progress = txn->hs->local_file;
+          }
+
+          /* Create progress indicator */
+          txn->progress = progress_create(filename_progress, start, total);
+          txn->progress_interactive = progress_interactive_p(txn->progress);
+
+          /* Start progress timer */
+          if (txn->progress) {
+            txn->progress_timer = ptimer_new();
+          }
+        }
+
         if (strcmp(txn->hs->local_file, "-") == 0) {
           txn->fp = stdout;
           /* Don't set output_opened for stdout to avoid closing it */
@@ -754,6 +805,11 @@ static void on_readable(struct net_conn* c, void* arg) {
     fwrite(txn->recv_buf, 1, n, txn->fp);
     txn->hs->len += n;
     DEBUGP(("[http-txn] H_READ_BODY: Read %zd bytes, total_len=%lld, contlen=%lld, contrange=%lld\n", n, (long long)txn->hs->len, (long long)txn->contlen, (long long)txn->contrange));
+
+    /* Update progress indicator */
+    if (txn->progress && txn->progress_timer) {
+      progress_update(txn->progress, n, ptimer_read(txn->progress_timer));
+    }
 
     if (txn->hs->statcode == HTTP_STATUS_PARTIAL_CONTENTS && txn->parsed_content_range) {
       if (txn->contrange != -1 && txn->hs->len >= txn->contrange) {

@@ -12,10 +12,11 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <ev.h>
+
 #include "c-strcase.h"
 #include "progress.h"
 #include "retr.h"
-#include "threading.h"
 #include "utils.h"
 
 struct progress_implementation {
@@ -42,6 +43,20 @@ static void bar_draw(void*);
 static void bar_finish(void*, double);
 static void bar_set_params(const char*);
 
+/* libev integration */
+
+static struct ev_loop* progress_loop;
+static ev_timer progress_timer;
+static ev_signal sigwinch_watcher;
+
+/* there is still a single active progress object, same as classic wget */
+static void* current_progress;
+
+static void progress_tick_cb(EV_P_ ev_timer* w, int revents);
+static void progress_sigwinch_cb(EV_P_ ev_signal* w, int revents);
+
+/* Progress implementations */
+
 static struct progress_implementation implementations[] = {
     {"dot", 0, dot_create, dot_update, dot_draw, dot_finish, dot_set_params},
     {"bar", 1, bar_create, bar_update, bar_draw, bar_finish, bar_set_params},
@@ -49,20 +64,9 @@ static struct progress_implementation implementations[] = {
 
 static struct progress_implementation* current_impl;
 static int current_impl_locked;
-static wget_mutex_t progress_mutex;
 
-static void progress_lock(void) {
-  static bool initialized = false;
-  if (!initialized) {
-    wget_mutex_init(&progress_mutex);
-    initialized = true;
-  }
-  wget_mutex_lock(&progress_mutex);
-}
-
-static void progress_unlock(void) {
-  wget_mutex_unlock(&progress_mutex);
-}
+static volatile sig_atomic_t output_redirected;
+static volatile sig_atomic_t received_sigwinch;
 
 /* Progress implementation used by default
    Can be overridden in wgetrc or by the fallback one
@@ -101,8 +105,6 @@ void set_progress_implementation(const char* name) {
   struct progress_implementation* pi = implementations;
   const char* colon;
 
-  progress_lock();
-
   if (!name)
     name = DEFAULT_PROGRESS_IMPLEMENTATION;
 
@@ -120,16 +122,68 @@ void set_progress_implementation(const char* name) {
       if (pi->set_params)
         pi->set_params(colon);
 
-      progress_unlock();
       return;
     }
   }
 
-  progress_unlock();
-  abort();
+  /* fallback instead of hard abort, keeps async daemon use safer */
+  current_impl = &implementations[0];
+  current_impl_locked = 0;
+  if (current_impl->set_params)
+    current_impl->set_params(NULL);
 }
 
-static volatile sig_atomic_t output_redirected;
+/* libev driven periodic redraw
+   called from the event loop thread only */
+
+static void progress_tick_cb(EV_P_ ev_timer* w, int revents) {
+  (void)w;
+  (void)revents;
+
+  if (!current_impl || !current_progress)
+    return;
+
+  if (!current_impl->interactive)
+    return;
+
+  current_impl->draw(current_progress);
+}
+
+/* SIGWINCH from libev signal watcher */
+
+static void progress_sigwinch_cb(EV_P_ ev_signal* w, int revents) {
+  (void)w;
+  (void)revents;
+  received_sigwinch = 1;
+}
+
+/* external init/shutdown to hook into libev loop */
+
+void progress_init(struct ev_loop* loop) {
+  progress_loop = loop;
+
+  /* tick every 200ms which matches the old REFRESH_INTERVAL */
+  ev_timer_init(&progress_timer, progress_tick_cb, 0.2, 0.2);
+  ev_timer_start(progress_loop, &progress_timer);
+
+#ifdef SIGWINCH
+  ev_signal_init(&sigwinch_watcher, progress_sigwinch_cb, SIGWINCH);
+  ev_signal_start(progress_loop, &sigwinch_watcher);
+#endif
+}
+
+void progress_shutdown(void) {
+  if (!progress_loop)
+    return;
+
+  ev_timer_stop(progress_loop, &progress_timer);
+#ifdef SIGWINCH
+  ev_signal_stop(progress_loop, &sigwinch_watcher);
+#endif
+  progress_loop = NULL;
+}
+
+/* Redirect handling from logging subsystem */
 
 void progress_schedule_redirect(void) {
   output_redirected = 1;
@@ -144,7 +198,6 @@ void progress_schedule_redirect(void) {
 void* progress_create(const char* f_download, wgint initial, wgint total) {
   void* progress;
 
-  progress_lock();
   /* Check if the log status has changed under our feet */
   if (output_redirected) {
     if (!current_impl_locked)
@@ -152,8 +205,11 @@ void* progress_create(const char* f_download, wgint initial, wgint total) {
     output_redirected = 0;
   }
 
+  if (!current_impl)
+    set_progress_implementation(NULL);
+
   progress = current_impl->create(f_download, initial, total);
-  progress_unlock();
+  current_progress = progress;
   return progress;
 }
 
@@ -162,11 +218,11 @@ void* progress_create(const char* f_download, wgint initial, wgint total) {
  */
 
 bool progress_interactive_p(void* progress WGET_ATTR_UNUSED) {
-  bool interactive;
+  bool interactive = false;
 
-  progress_lock();
-  interactive = current_impl->interactive;
-  progress_unlock();
+  if (current_impl)
+    interactive = current_impl->interactive;
+
   return interactive;
 }
 
@@ -184,10 +240,11 @@ void progress_update(void* progress, wgint howmuch, double dltime) {
   if (howmuch < 0)
     howmuch = 0;
 
-  progress_lock();
+  if (!current_impl || !progress)
+    return;
+
+  /* async friendly, no drawing here */
   current_impl->update(progress, howmuch, dltime);
-  current_impl->draw(progress);
-  progress_unlock();
 }
 
 /* Tell the progress gauge to clean up
@@ -201,9 +258,13 @@ void progress_finish(void* progress, double dltime) {
   else if (dltime < 0)
     dltime = 0;
 
-  progress_lock();
+  if (!current_impl || !progress)
+    return;
+
   current_impl->finish(progress, dltime);
-  progress_unlock();
+
+  if (progress == current_progress)
+    current_progress = NULL;
 }
 
 /* Dot-printing */
@@ -485,40 +546,18 @@ static void dot_set_params(const char* params) {
 #define DEFAULT_SCREEN_WIDTH 80
 
 /* Minimum screen width we'll try to work with
-   If this is too small, create_image will overflow the buffer
- */
+   If this is too small, the progress layout would get cramped */
 #define MINIMUM_SCREEN_WIDTH 51
 
-/* The last known screen width
-   This can be updated by the code that detects that SIGWINCH was received
- */
-
 static int screen_width;
-
-/* A flag that, when set, means SIGWINCH was received */
-
-static volatile sig_atomic_t received_sigwinch;
 
 /* Size of the download speed history ring */
 
 #define DLSPEED_HISTORY_SIZE 20
 
-/* The minimum time length of a history sample
-   By default, each sample is at least 150ms long
- */
-
 #define DLSPEED_SAMPLE_MIN 0.15
-
-/* The time after which the download starts to be considered "stalled" */
-
 #define STALL_START_TIME 5
-
-/* Time between screen refreshes will not be shorter than this */
-
 #define REFRESH_INTERVAL 0.2
-
-/* Don't refresh the ETA too often to avoid jerkiness in predictions */
-
 #define ETA_REFRESH_INTERVAL 0.99
 
 struct bar_progress {
@@ -554,6 +593,7 @@ struct bar_progress {
 
 static void create_image(struct bar_progress*, double, bool);
 static void display_image(char*);
+static void update_speed_ring(struct bar_progress*, wgint, double);
 
 static size_t prepare_filename(char* dest, const char* src) {
   size_t ret = 1;
@@ -577,6 +617,68 @@ static size_t prepare_filename(char* dest, const char* src) {
   return ret;
 }
 
+/* helper to truncate long filenames with .. in the middle to fit width chars */
+
+static void format_filename_middle(char* dst, size_t width, const char* src) {
+  size_t len = strlen(src);
+
+  if (width == 0) {
+    dst[0] = '\0';
+    return;
+  }
+
+  if (len <= width) {
+    memcpy(dst, src, len);
+    if (len < width)
+      memset(dst + len, ' ', width - len);
+    dst[width] = '\0';
+    return;
+  }
+
+  if (width <= 2) {
+    memset(dst, '.', width);
+    dst[width] = '\0';
+    return;
+  }
+
+  size_t keep = width - 2;
+  size_t head = keep * 2 / 3;
+  size_t tail = keep - head;
+
+  memcpy(dst, src, head);
+  dst[head] = '.';
+  dst[head + 1] = '.';
+  memcpy(dst + head + 2, src + len - tail, tail);
+  dst[width] = '\0';
+}
+
+/* optional ANSI coloring for the bar on modern terminals */
+
+static bool progress_use_color(void) {
+  static int cached = -1;
+
+  if (cached != -1)
+    return cached;
+
+  if (!isatty(fileno(stderr))) {
+    cached = 0;
+    return false;
+  }
+
+  if (getenv("NO_COLOR")) {
+    cached = 0;
+    return false;
+  }
+
+  cached = 1;
+  return true;
+}
+
+#define C_RESET "\033[0m"
+#define C_CYAN "\033[36m"
+#define C_GREEN "\033[32m"
+#define C_YELLOW "\033[33m"
+
 static void* bar_create(const char* f_download, wgint initial, wgint total) {
   struct bar_progress* bp = xnew0(struct bar_progress);
 
@@ -589,8 +691,6 @@ static void* bar_create(const char* f_download, wgint initial, wgint total) {
   bp->f_download = xmalloc(prepare_filename(NULL, f_download));
   prepare_filename(bp->f_download, f_download);
 
-  /* Initialize screen_width if this hasn't been done or if it might
-     have changed, as indicated by receiving SIGWINCH */
   if (!screen_width || received_sigwinch) {
     screen_width = determine_screen_width();
     if (!screen_width)
@@ -600,21 +700,15 @@ static void* bar_create(const char* f_download, wgint initial, wgint total) {
     received_sigwinch = 0;
   }
 
-  /* - 1 because we don't want to use the last screen column */
   bp->width = screen_width - 1;
 
 #define BUF_LEN (bp->width * 2 + 100)
   bp->buffer = xcalloc(BUF_LEN, 1);
 
-  logputs(LOG_VERBOSE, "\n");
-
-  create_image(bp, 0, false);
-  display_image(bp->buffer);
+  /* no initial draw here, wait until we have some data */
 
   return bp;
 }
-
-static void update_speed_ring(struct bar_progress*, wgint, double);
 
 static void bar_update(void* progress, wgint howmuch, double dltime) {
   struct bar_progress* bp = progress;
@@ -650,6 +744,10 @@ static void bar_draw(void* progress) {
     received_sigwinch = 0;
   }
 
+  /* do not bother drawing before we have any data or time */
+  if (bp->count == 0 && !force_screen_update)
+    return;
+
   if (bp->dltime - bp->last_screen_update < REFRESH_INTERVAL && !force_screen_update)
     return;
 
@@ -675,9 +773,7 @@ static void bar_finish(void* progress, double dltime) {
   xfree(bp);
 }
 
-/* This code attempts to maintain the notion of a "current" download speed
-   over the course of no less than 3s
- */
+/* maintain current download speed over a sliding window */
 
 static void update_speed_ring(struct bar_progress* bp, wgint howmuch, double dltime) {
   struct bar_progress_hist* hist = &bp->hist;
@@ -717,255 +813,185 @@ static void update_speed_ring(struct bar_progress* bp, wgint howmuch, double dlt
     hist->pos = 0;
 }
 
-static int count_cols(const char* mbs) {
-  return (int)strlen(mbs);
-}
-
-static int cols_to_bytes(const char* mbs, const int cols, int* ncols) {
-  int len = (int)strlen(mbs);
-  int ret = len < cols ? len : cols;
-  *ncols = ret;
-  return ret;
-}
-
-static const char* get_eta(int* bcd) {
-  static const char eta_str[] = N_("    eta %s");
-  static const char* eta_trans;
-  static int bytes_cols_diff;
-  if (eta_trans == NULL) {
-    int nbytes;
-    int ncols;
-
-    eta_trans = eta_str;
-
-    nbytes = (int)strlen(eta_trans);
-    ncols = count_cols(eta_trans);
-    bytes_cols_diff = nbytes - ncols;
-  }
-
-  if (bcd != NULL)
-    *bcd = bytes_cols_diff;
-
-  return eta_trans;
-}
-
-#define APPEND_LITERAL(s)        \
-  do {                           \
-    memcpy(p, s, sizeof(s) - 1); \
-    p += sizeof(s) - 1;          \
-  } while (0)
+/* build a single human friendly progress line */
 
 static void create_image(struct bar_progress* bp, double dl_total_time, bool done) {
-  const int MAX_FILENAME_COLS = bp->width / 4;
-  char* p = bp->buffer;
+  char* buf = bp->buffer;
+  char* p = buf;
+
   wgint size = bp->initial_length + bp->count;
-
   struct bar_progress_hist* hist = &bp->hist;
-  int orig_filename_cols = count_cols(bp->f_download);
 
-  int padding;
-
-#define PROGRESS_FILENAME_LEN MAX_FILENAME_COLS + 1
-#define PROGRESS_PERCENT_LEN 4
-#define PROGRESS_DECORAT_LEN 2
-#define PROGRESS_FILESIZE_LEN 7 + 1
-#define PROGRESS_DWNLOAD_RATE 8 + 2
-#define PROGRESS_ETA_LEN 15
-
-  int progress_size = bp->width - (PROGRESS_FILENAME_LEN + PROGRESS_PERCENT_LEN + PROGRESS_DECORAT_LEN + PROGRESS_FILESIZE_LEN + PROGRESS_DWNLOAD_RATE + PROGRESS_ETA_LEN);
-
-  int bytes_cols_diff = 0;
-  int cols_diff;
-  const char* down_size;
-
-  if (progress_size < 5)
-    progress_size = 0;
-
-  /* sanitize input */
   if (dl_total_time >= INT_MAX)
     dl_total_time = INT_MAX - 1;
   else if (dl_total_time < 0)
     dl_total_time = 0;
 
-  if (orig_filename_cols < MAX_FILENAME_COLS) {
-    p += sprintf(p, "%s", bp->f_download);
-    padding = MAX_FILENAME_COLS - orig_filename_cols + 1;
-    memset(p, ' ', padding);
-    p += padding;
-  }
-  else {
-    int offset_cols;
-    int bytes_in_filename, offset_bytes, col;
-    int* cols_ret = &col;
+  const int term_width = bp->width > 60 ? bp->width : 60;
 
-#define MIN_SCROLL_TEXT 5
-    if ((orig_filename_cols > MAX_FILENAME_COLS + MIN_SCROLL_TEXT) && !opt.noscroll && !done) {
-      offset_cols = ((int)bp->tick + orig_filename_cols + MAX_FILENAME_COLS / 2) % (orig_filename_cols + MAX_FILENAME_COLS);
-      if (offset_cols > orig_filename_cols) {
-        padding = MAX_FILENAME_COLS - (offset_cols - orig_filename_cols);
-        memset(p, ' ', padding);
-        p += padding;
-        offset_cols = 0;
-      }
-      else
-        padding = 0;
-    }
-    else {
-      padding = 0;
-      offset_cols = 0;
-    }
-    offset_bytes = cols_to_bytes(bp->f_download, offset_cols, cols_ret);
-    bytes_in_filename = cols_to_bytes(bp->f_download + offset_bytes, MAX_FILENAME_COLS - padding, cols_ret);
-    memcpy(p, bp->f_download + offset_bytes, (size_t)bytes_in_filename);
-    p += bytes_in_filename;
-    padding = MAX_FILENAME_COLS - (padding + *cols_ret);
-    memset(p, ' ', padding + 1);
-    p += padding + 1;
-  }
+  const int file_col_width = 28;
+  const int bar_width = 24;
+
+  char fname[file_col_width + 1];
+  format_filename_middle(fname, file_col_width, bp->f_download);
+
+  p += sprintf(p, "%-*s  ", file_col_width, fname);
+
+  char size_buf[32];
+  char total_buf[32];
+
+  const char* hs = human_readable(size, 1000, 2);
+  snprintf(size_buf, sizeof(size_buf), "%s", hs);
 
   if (bp->total_length > 0) {
-    int percentage = 100.0 * size / bp->total_length;
-    assert(percentage <= 100);
-    p += sprintf(p, "%3d%%", percentage);
+    const char* ht = human_readable(bp->total_length, 1000, 2);
+    snprintf(total_buf, sizeof(total_buf), "%s", ht);
+    p += sprintf(p, "%7s/%-7s  ", size_buf, total_buf);
   }
   else {
-    memset(p, ' ', PROGRESS_PERCENT_LEN);
-    p += PROGRESS_PERCENT_LEN;
+    p += sprintf(p, "%7s        ", size_buf);
+    *p++ = ' ';
+    *p++ = ' ';
   }
 
-  if (progress_size && bp->total_length > 0) {
-    int insz = (int)((double)bp->initial_length / bp->total_length * progress_size);
-    int dlsz = (int)((double)size / bp->total_length * progress_size);
-    char* begin;
+  bool use_color = progress_use_color();
+  double frac = 0.0;
+  if (bp->total_length > 0)
+    frac = (double)size / (double)bp->total_length;
+  if (frac < 0.0)
+    frac = 0.0;
+  if (frac > 1.0)
+    frac = 1.0;
 
-    assert(dlsz <= progress_size);
-    assert(insz <= dlsz);
+  int filled = (int)(frac * bar_width + 0.5);
+  if (filled > bar_width)
+    filled = bar_width;
 
-    *p++ = '[';
-    begin = p;
+  if (!done && bp->total_length <= 0) {
+    int pos = bp->tick % bar_width;
 
-    memset(p, '+', insz);
-    p += insz;
-
-    dlsz -= insz;
-    if (dlsz > 0) {
-      memset(p, '=', dlsz - 1);
-      p += dlsz - 1;
-      *p++ = '>';
-    }
-
-    memset(p, ' ', (size_t)(progress_size - (p - begin)));
-    p += progress_size - (p - begin);
-    *p++ = ']';
-  }
-  else if (progress_size) {
-    int ind = bp->tick % (progress_size * 2 - 6);
-    int i, pos;
-
-    if (ind < progress_size - 2)
-      pos = ind + 1;
+    if (use_color)
+      p += sprintf(p, "%s[", C_CYAN);
     else
-      pos = progress_size - (ind - progress_size + 5);
+      *p++ = '[';
 
-    *p++ = '[';
-    for (i = 0; i < progress_size; i++) {
-      if (i == pos - 1)
-        *p++ = '<';
-      else if (i == pos)
-        *p++ = '=';
-      else if (i == pos + 1)
+    for (int i = 0; i < bar_width; i++) {
+      if (i == pos)
         *p++ = '>';
       else
         *p++ = ' ';
     }
-    *p++ = ']';
-  }
-  ++bp->tick;
 
-  down_size = human_readable(size, 1000, 2);
-  cols_diff = PROGRESS_FILESIZE_LEN - count_cols(down_size);
-  if (cols_diff > 0) {
-    memset(p, ' ', (size_t)cols_diff);
-    p += cols_diff;
+    if (use_color) {
+      *p++ = ']';
+      p += sprintf(p, "%s", C_RESET);
+    }
+    else {
+      *p++ = ']';
+    }
   }
-  p += sprintf(p, "%s", down_size);
+  else {
+    const char* bar_color = C_CYAN;
+    if (done)
+      bar_color = C_GREEN;
+    else if (bp->stalled)
+      bar_color = C_YELLOW;
+
+    if (use_color)
+      p += sprintf(p, "%s[", bar_color);
+    else
+      *p++ = '[';
+
+    for (int i = 0; i < bar_width; i++) {
+      if (i < filled)
+        *p++ = '=';
+      else
+        *p++ = ' ';
+    }
+
+    if (use_color) {
+      *p++ = ']';
+      p += sprintf(p, "%s", C_RESET);
+    }
+    else {
+      *p++ = ']';
+    }
+  }
+
+  *p++ = ' ';
+  *p++ = ' ';
+
+  if (bp->total_length > 0) {
+    int percentage = 100.0 * size / bp->total_length;
+    if (percentage < 0)
+      percentage = 0;
+    if (percentage > 100)
+      percentage = 100;
+    p += sprintf(p, "%3d%%  ", percentage);
+  }
+  else {
+    p += sprintf(p, "     ");
+  }
 
   if (hist->total_time > 0 && hist->total_bytes) {
-    static const char* short_units[] = {" B/s", "KB/s", "MB/s", "GB/s", "TB/s"};
-    static const char* short_units_bits[] = {" b/s", "Kb/s", "Mb/s", "Gb/s", "Tb/s"};
+    static const char* short_units[] = {"B/s", "KB/s", "MB/s", "GB/s", "TB/s"};
+    static const char* short_units_bits[] = {"b/s", "Kb/s", "Mb/s", "Gb/s", "Tb/s"};
     int units = 0;
     wgint dlquant = hist->total_bytes + bp->recent_bytes;
     double dltime = hist->total_time + (dl_total_time - bp->recent_start);
     double dlspeed = calc_rate(dlquant, dltime, &units);
-    p += sprintf(p, "  %4.*f%s", dlspeed >= 99.95 ? 0 : dlspeed >= 9.995 ? 1 : 2, dlspeed, !opt.report_bps ? short_units[units] : short_units_bits[units]);
+
+    const char* unit_str = !opt.report_bps ? short_units[units] : short_units_bits[units];
+
+    p += sprintf(p, "%4.*f%s  ", dlspeed >= 99.95 ? 0 : dlspeed >= 9.995 ? 1 : 2, dlspeed, unit_str);
   }
-  else
-    APPEND_LITERAL("  --.-KB/s");
+  else {
+    p += sprintf(p, "  --.-KB/s  ");
+  }
 
   if (!done) {
-    if (bp->total_length > 0 && bp->count > 0 && dl_total_time > 3) {
+    if (bp->total_length > 0 && bp->count > 0 && dl_total_time > 1.0) {
       int eta;
 
-      if (bp->total_length != size && bp->last_eta_value != 0 && dl_total_time - bp->last_eta_time < ETA_REFRESH_INTERVAL)
+      if (bp->total_length != size && bp->last_eta_value != 0 && dl_total_time - bp->last_eta_time < ETA_REFRESH_INTERVAL) {
         eta = bp->last_eta_value;
+      }
       else {
         wgint bytes_remaining = bp->total_length - size;
         double eta_ = dl_total_time * bytes_remaining / bp->count;
         if (eta_ >= INT_MAX - 1)
-          goto skip_eta;
+          eta_ = INT_MAX - 1;
+        if (eta_ < 0)
+          eta_ = 0;
         eta = (int)(eta_ + 0.5);
         bp->last_eta_value = eta;
         bp->last_eta_time = dl_total_time;
       }
 
-      p += sprintf(p, get_eta(&bytes_cols_diff), eta_to_human_short(eta, false));
+      p += sprintf(p, "%s", eta_to_human_short(eta, true));
     }
     else if (bp->total_length > 0) {
-    skip_eta:
-      memset(p, ' ', PROGRESS_ETA_LEN);
-      p += PROGRESS_ETA_LEN;
+      p += sprintf(p, "  --");
     }
   }
   else {
-    int nbytes;
-    int ncols;
-
-    strcpy(p, _("    in "));
-    nbytes = (int)strlen(p);
-    ncols = count_cols(p);
-    bytes_cols_diff = nbytes - ncols;
     if (dl_total_time >= 10)
-      ncols += sprintf(p + nbytes, "%s", eta_to_human_short((int)(dl_total_time + 0.5), false));
+      p += sprintf(p, "%s", eta_to_human_short((int)(dl_total_time + 0.5), true));
     else
-      ncols += sprintf(p + nbytes, "%ss", print_decimal(dl_total_time));
-    p += ncols + bytes_cols_diff;
-    if (ncols < PROGRESS_ETA_LEN) {
-      memset(p, ' ', (size_t)(PROGRESS_ETA_LEN - ncols));
-      p += PROGRESS_ETA_LEN - ncols;
-    }
+      p += sprintf(p, "%ss", print_decimal(dl_total_time));
   }
 
   *p = '\0';
-
-  padding = bp->width - count_cols(bp->buffer);
-  assert(padding >= 0 && "Padding length became non-positive!");
-  if (padding > 0) {
-    memset(p, ' ', (size_t)padding);
-    p += padding;
-    *p = '\0';
-  }
-
-  assert(count_cols(bp->buffer) == bp->width);
+  bp->tick++;
 }
-
-/* Print the contents of the buffer as a one-line ASCII image so
-   that it can be overwritten next time
- */
 
 static void display_image(char* buf) {
   bool old = log_set_save_context(false);
-  logputs(LOG_PROGRESS, "\r");
+
+  /* move to column 0 and clear whole line */
+  logputs(LOG_PROGRESS, "\r\033[2K");
   logputs(LOG_PROGRESS, buf);
+
   log_set_save_context(old);
 }
 
@@ -1013,9 +1039,12 @@ static void bar_set_params(const char* params) {
   }
 }
 
+/* legacy entry point kept for compatibility
+   in the async build, SIGWINCH is driven via libev and this simply marks the flag */
+
 void progress_handle_sigwinch(int sig WGET_ATTR_UNUSED) {
+  (void)sig;
   received_sigwinch = 1;
-  signal(SIGWINCH, progress_handle_sigwinch);
 }
 
 /* Provide a short human-readable rendition of the ETA

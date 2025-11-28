@@ -41,6 +41,8 @@
 #include "dns_cares.h"
 #include "scheduler.h"
 #include "pconn.h"
+#include "progress.h"
+#include "html-url.h" /* for get_urls_file, free_urlpos */
 
 #ifdef TESTING
 /* Rename the main function so we can have a main() in fuzzing code
@@ -1376,7 +1378,7 @@ int main(int argc, char** argv) {
     opt.verbose = !opt.quiet;
 
   if (!opt.verbose && opt.show_progress == -1)
-    opt.show_progress = false;
+    opt.show_progress = true;
 
   if (opt.quiet && opt.show_progress == -1)
     opt.show_progress = false;
@@ -1763,6 +1765,10 @@ only if outputting to a regular file.\n"));
     exit(WGET_EXIT_GENERIC_ERROR);
   }
 
+  /* Initialize progress system with event loop */
+  if (opt.show_progress)
+    progress_init(global_loop);
+
   if (dns_init(global_loop) != 0) {
     fprintf(stderr, "%s", _("Failed to initialize DNS resolver\n"));
     exit(WGET_EXIT_GENERIC_ERROR);
@@ -1831,11 +1837,59 @@ only if outputting to a regular file.\n"));
 
   /* Create jobs from input file, if any */
   if (opt.input_filename) {
-    /* For now, we'll process input files synchronously to keep things simple */
-    int count;
-    int status;
-    status = retrieve_from_file(opt.input_filename, opt.force_html, &count);
-    inform_exit_status(status);
+    /* Read URLs from input file and add them to the scheduler */
+    bool read_again = false;
+    struct urlpos* url_list = get_urls_file(opt.input_filename, &read_again);
+    int count = 0;
+
+    if (url_list) {
+      struct urlpos* cur_url;
+      for (cur_url = url_list; cur_url; cur_url = cur_url->next) {
+        if (cur_url->ignore_when_downloading)
+          continue;
+
+        char* url = cur_url->url->url;
+
+        /* Determine output path based on options */
+        char* output_path = NULL;
+        if (opt.output_document) {
+          output_path = xstrdup(opt.output_document);
+        }
+        else {
+          /* Use URL-based filename */
+          struct url* url_parsed = url_parse(url, NULL, NULL, false);
+          if (url_parsed) {
+            output_path = url_file_name(url_parsed, NULL);
+            url_free(url_parsed);
+          }
+        }
+
+        if (!output_path) {
+          /* Fallback to a default name */
+          output_path = xstrdup("index.html");
+        }
+
+        struct download_job* job = download_job_new(url, output_path);
+        if (job) {
+          /* Set job options based on command-line flags */
+          job->recursive = opt.recursive;
+          job->timestamping = opt.timestamping;
+          job->no_clobber = opt.noclobber;
+          job->start_pos = opt.start_pos;
+
+          scheduler_add_job(global_scheduler, job);
+          /* Don't free output_path - it's owned by the job now */
+          output_path = NULL;
+          count++;
+        }
+
+        if (output_path)
+          xfree(output_path);
+      }
+
+      free_urlpos(url_list);
+    }
+
     if (!count)
       logprintf(LOG_NOTQUIET, _("No URLs found in %s.\n"), opt.input_filename);
   }
@@ -1890,6 +1944,9 @@ only if outputting to a regular file.\n"));
     global_pconn_pool = NULL;
   }
   dns_shutdown();
+
+  /* Clean up progress system */
+  progress_shutdown();
 
   cleanup();
 
