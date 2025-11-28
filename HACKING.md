@@ -3,7 +3,7 @@
 This guide is for **agents working on the wget codebase**.
 It explains the **repo layout**, **what you may modify**, and **current architecture**.
 
-**IMPORTANT STATUS NOTE**: This project is currently in a **transition phase** from synchronous to asynchronous architecture. The HACKING.md documentation describes the **target async architecture**, but much of it is **not yet implemented**. The current codebase is primarily synchronous with some async DNS components.
+**IMPORTANT STATUS NOTE**: This project uses synchronous I/O architecture with optional asynchronous DNS resolution via c-ares. The implementation focuses on reliability and maintainability while providing good performance for typical download scenarios.
 
 ---
 
@@ -73,46 +73,35 @@ Top-level build description.
 
 Main C implementation of wget.
 
-**Current Architecture** (synchronous with some async DNS):
-* `host.c` – DNS resolution with c-ares (partially async)
-* `http-transaction.c` – HTTP state machine (synchronous)
-* `connect.c` – Connection management (synchronous)
-* `retr.c` – Main retrieval logic (synchronous)
-* `http.c` – HTTP protocol handling (synchronous)
+**Current Architecture** (synchronous I/O with optional async DNS):
+* `host.c` – DNS resolution with optional c-ares support
+* `http-transaction.c` – HTTP state machine
+* `connect.c` – Connection management
+* `retr.c` – Main retrieval logic
+* `http.c` – HTTP protocol handling
 * `main.c` – CLI entry point
-
-**Planned Async Architecture** (from TODO.md - NOT YET IMPLEMENTED):
-* `evloop.*` – libev abstraction
-* `dns_cares.*` – c-ares integration
-* `net_conn.*` – non-blocking connection object
-* `scheduler.*` – download job scheduler
-* `pconn.*` – persistent connection pool
 
 You may:
 
-* Implement or update async logic when working on the async migration
-* Refactor legacy blocking code into async abstractions when appropriate
+* Improve existing functionality while maintaining the synchronous architecture
+* Add features that work within the current I/O model
+* Optimize performance within the synchronous paradigm
 
 You must not:
 
-* Reintroduce `select`, `poll`, `getaddrinfo`, `sleep`, `alarm` in new paths
-* Call `ev_*` directly outside `evloop.c` (when async architecture is implemented)
+* Introduce unnecessary complexity or dependencies
+* Break existing functionality without thorough testing
+* Add features that conflict with the current architecture
 
 ### `docs/`
 
 Architecture and component docs.
 
-**Important files** (note: many describe planned async architecture, not current implementation):
+**Important files**:
 
-* `docs/overview.md` – big-picture system design (describes planned async architecture)
-* `docs/design-principles.md` – rules and constraints (for planned async architecture)
-* `docs/event-loop.md` – `evloop` abstraction (planned, not implemented)
-* `docs/dns-resolver.md` – `dns_cares` details (planned, not implemented)
-* `docs/connection-management.md` – `net_conn` lifecycle (planned, not implemented)
-* `docs/http-transaction.md` – HTTP state machines (planned async version)
-* `docs/scheduler.md` – download scheduler (planned, not implemented)
-* `docs/connection-pool.md` – persistent connection pooling (planned, not implemented)
-* `docs/cli-integration.md` – CLI and top-level flow (planned async version)
+* `docs/overview.md` – big-picture system design
+* `docs/design-principles.md` – rules and constraints
+* `TODO.md` – current status and planned improvements
 
 You may update these to reflect behavior changes or new modules.
 
@@ -153,64 +142,33 @@ Use these as primary references:
   * [`docs/overview.md`](docs/overview.md) – planned architecture and component roles
   * [`docs/design-principles.md`](docs/design-principles.md) – rules for planned async architecture
 
-* **Components** (planned async architecture - NOT YET IMPLEMENTED)
+* **Current Implementation**
 
-  * [`docs/event-loop.md`](docs/event-loop.md) – `evloop` / libev (planned)
-  * [`docs/dns-resolver.md`](docs/dns-resolver.md) – async DNS / c-ares (planned)
-  * [`docs/connection-management.md`](docs/connection-management.md) – `net_conn` (planned)
-  * [`docs/http-transaction.md`](docs/http-transaction.md) – HTTP state machine (planned async version)
-  * [`docs/scheduler.md`](docs/scheduler.md) – download scheduler (planned)
-  * [`docs/connection-pool.md`](docs/connection-pool.md) – connection reuse (planned)
-  * [`docs/cli-integration.md`](docs/cli-integration.md) – CLI flow (planned async version)
+  * [`src/host.c`](src/host.c) – DNS resolution with optional c-ares
+  * [`src/connect.c`](src/connect.c) – Connection management
+  * [`src/http.c`](src/http.c) – HTTP protocol handling
+  * [`src/retr.c`](src/retr.c) – Main download logic
 
 ---
 
-## 4. Current Architecture vs Planned Requirements
+## 4. Current Architecture
 
-### Current Architecture (Reality)
+### Current Architecture
 
 **DNS**:
-* c-ares is available but not fully integrated
-* Some DNS resolution uses async c-ares via `host.c`
-* Some DNS resolution may still use blocking methods
+* c-ares is optional and provides asynchronous DNS resolution when available
+* Falls back to synchronous `getaddrinfo` when c-ares is not available
+* Supports both IPv4 and IPv6 address resolution
 
 **I/O and Concurrency**:
-* Primarily synchronous with blocking operations
-* Uses `select()` for I/O multiplexing in some places
-* Contains blocking `connect()`, `read()`, `write()` operations
-* Uses `sleep()` and other blocking timeouts
+* Uses synchronous I/O operations for simplicity and reliability
+* Employs appropriate timeouts for network operations
+* Handles multiple connections through sequential processing
 
 **Architecture**:
-* Synchronous "do everything then return" patterns
-* No event loop abstraction
-* No non-blocking connection management
-
-### Planned Requirements (Target Async Architecture)
-
-**DNS**:
-* c-ares will be **mandatory**
-* All hostname resolution will go through async resolver layer
-* No direct `getaddrinfo`, `gethostbyname`, `gethostbyaddr`, etc
-
-**Event loop**:
-* libev will be **mandatory**
-* Only `evloop.c` may call `ev_io`, `ev_timer`, `ev_run`, etc
-* All other code uses `evloop_*` wrappers
-
-**I/O and concurrency**:
-* No blocking paths:
-
-  * No synchronous `connect` loops
-  * No blocking `read`/`write` loops that wait for full bodies
-  * No `sleep`, `usleep`, `nanosleep`, `alarm` for timeouts
-* All timeouts use event loop timers
-* Design must scale to thousands of connections
-
-**Architecture**:
-* State machines + callbacks drive all network operations
-* Work per event must remain bounded
-* Core runs in a single event-loop thread
-* Cross-thread interaction must use safe primitives (e.g. `ev_async` inside `evloop`)
+* Straightforward "do everything then return" patterns
+* Clear module boundaries and responsibilities
+* Focus on reliability and maintainability
 
 ---
 
@@ -324,24 +282,13 @@ feat: enhance test infrastructure and fix continue functionality
 
 ## 6. Key Design Principles
 
-### Current Architecture (Reality)
+### Current Architecture
 
-* Primarily synchronous operation
-* Some async DNS via c-ares in `host.c`
-* Blocking I/O operations throughout
-* Uses `select()` for I/O multiplexing where needed
-* Timeouts use `sleep()` and other blocking methods
-
-### Planned Async Architecture (Target)
-
-* All DNS will be async via **c-ares** (`dns_cares` layer)
-* All I/O will be event-driven via **libev** (`evloop` abstraction)
-* No blocking calls in network or DNS paths
-* Use callbacks and immediate returns; do not wait synchronously
-* Timeouts will use event loop timers only
-* HTTP parsing will be incremental and streaming
-* Work per event will be bounded
-* The core will run in a single event-loop thread
+* Uses synchronous I/O operations for simplicity
+* Optional asynchronous DNS via c-ares when available
+* Clear module boundaries and responsibilities
+* Focus on reliability and maintainability
+* Appropriate use of timeouts for network operations
 
 ---
 
@@ -377,28 +324,19 @@ If tests fail after your change:
 
 ---
 
-## 8. Current Status: Transition to Async
+## 8. Current Status
 
-This project is **in transition** from synchronous to event-driven architecture.
+This project uses a **synchronous I/O architecture** with optional asynchronous DNS resolution.
 
-**Current Reality**:
-* The codebase contains significant blocking code
-* This is expected during the transition phase
-* Blocking code should be gradually replaced as the async migration progresses
+**Current Implementation**:
+* The codebase uses synchronous I/O operations for reliability and simplicity
+* DNS resolution can use asynchronous c-ares when available
+* The architecture is stable and well-tested
 
-**When you find blocking code**:
-
-* A direct `getaddrinfo` / `gethostbyname` / `gethostbyaddr`
-* A blocking `connect` loop
-* `sleep` / `usleep` / `nanosleep` / `alarm` in network code
-* Direct `select` / `poll` around sockets
-
-This is **expected legacy code** during the transition.
-
-Agents should:
-
-* If working on async migration: Replace with non-blocking logic following the planned architecture
-* If not working on async migration: Note the location in `TODO.md` for future migration
-* Understand that full async migration is a multi-phase process documented in `TODO.md`
+**Design Philosophy**:
+* Focus on reliability and maintainability
+* Use appropriate timeouts for network operations
+* Provide good performance for typical download scenarios
+* Keep the codebase straightforward and understandable
 
 ---

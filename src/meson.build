@@ -95,9 +95,6 @@ endif
 if libpsl_dep.found()
   deps += libpsl_dep
 endif
-if libproxy_dep.found()
-  deps += libproxy_dep
-endif
 if libcares_dep.found()
   deps += libcares_dep
 endif
@@ -106,8 +103,6 @@ if uuid_dep.found()
 endif
 if pcre2_dep.found()
   deps += pcre2_dep
-elif pcre_dep.found()
-  deps += pcre_dep
 endif
 
 wget_exe = executable('wget', sources,

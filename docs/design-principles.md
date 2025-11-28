@@ -1,104 +1,42 @@
 # Design Principles and Best Practices
 
-To keep the implementation robust and fully asynchronous, follow these rules:
+To keep the implementation robust and maintainable, follow these rules:
 
-## No Blocking Calls
+## I/O Operations
 
-* No `getaddrinfo()` → use c-ares.
-* No blocking `connect()` → always non-blocking.
-* No blocking `read()`/`write()` → non-blocking only and handle `EAGAIN`.
-* No `sleep()` for timeouts → always timers.
+* Use synchronous I/O operations for simplicity and reliability
+* When c-ares is available, use it for asynchronous DNS resolution to improve performance
+* Handle timeouts appropriately using standard system mechanisms
 
-## Callbacks + Immediate Returns
+## Resource Management
 
-* Initiate network operations (DNS, connect, read, write), then return immediately.
-* Completion or progress is signaled via callbacks invoked by the event loop.
+* Use clear object lifecycles with obvious creation and destruction points
+* Implement single teardown paths where possible
+* Ensure proper cleanup of resources (file descriptors, memory)
 
-## Timer-based Timeouts
+## Error Handling
 
-* Use libev timers for:
-
-  * DNS timeouts.
-  * Connect timeouts.
-  * Header wait timeouts.
-  * Inactivity / total request timeouts.
-
-## Incremental Parsing
-
-* HTTP headers and chunked encoding must be parsed incrementally:
-
-  * Accumulate data until you see `\r\n` or `\r\n\r\n`.
-  * Allow split boundaries (e.g., chunk size line split across two reads).
-* Parsers must be able to resume when more data arrives.
-
-## Bounded Work per Event
-
-* In each callback:
-
-  * Process a limited amount of data.
-  * Avoid spinning if a lot of data is ready; process a chunk, then return.
-* Prevent a single socket or transaction from starving others.
-
-## Single-threaded Core
-
-* All libev operations in a single thread.
-* If background threads are later added, they must communicate via `ev_async`.
-
-## Clear Object Lifecycles
-
-* Each `http_transaction`, `net_conn`, `download_job` has obvious creation and destruction points.
-* Use single teardown paths where possible (e.g., `http_transaction_fail()`).
-
-## No Unowned Watchers
-
-* Before freeing any object with active watchers, stop its watchers.
-* Timers for a transaction must be stopped when the transaction finishes.
-
-## Proper libev Usage
-
-* Stick to the default loop (for simplicity).
-* Do not mix multiple loops unless there is a strong reason.
-
-## Error Propagation
-
-* If a lower layer sees an error, propagate it upward:
-
-  * DNS → connection → transaction → scheduler.
-* Avoid silent failures; always notify scheduler for retry/fail decisions.
-
-## Unit Testing of Components
-
-* Test:
-
-  * DNS resolver (`dns_resolve_async`).
-  * `net_conn` on real or mock servers.
-  * HTTP parser with canned responses.
-* Use small test harnesses that run an event loop and verify behavior.
-
-## Extensibility
-
-* Module boundaries:
-
-  * `evloop` hides libev,
-  * `dns_cares` hides c-ares,
-  * `net_conn` hides socket/TLS,
-  * `http_transaction` hides HTTP parsing.
-* This allows swapping components (e.g., different event loop) without redesigning everything.
-
-## Resource Limits
-
-* Be aware of `ulimit -n` and FD limits for many connections.
-* Adjust limits or document requirements.
+* Propagate errors upward through the call chain
+* Avoid silent failures; always handle errors appropriately
+* Provide meaningful error messages to users
 
 ## Memory Management
 
-* Do not buffer entire large downloads in memory; always stream to disk/WARC.
-* Keep header buffers bounded (e.g., reject headers over some max size).
+* Do not buffer entire large downloads in memory; always stream to disk/WARC
+* Keep header buffers bounded (e.g., reject headers over some max size)
+* Use appropriate data structures for efficient memory usage
 
 ## Security
 
-* For TLS, verify certificates (unless explicitly disabled via options).
-* Avoid unsafe buffer handling in parsers.
-* Carefully validate HTTP chunk sizes and header lengths.
+* For TLS, verify certificates (unless explicitly disabled via options)
+* Avoid unsafe buffer handling in parsers
+* Carefully validate HTTP chunk sizes and header lengths
+* Sanitize all user input and URL components
 
-Following these principles yields an efficient, scalable, and maintainable downloader. The event loop and state machines orchestrate all network activity so the program never blocks on a single operation when other work can progress.
+## Testing
+
+* Test components with real and mock servers
+* Verify error handling and edge cases
+* Ensure compatibility across different platforms
+
+Following these principles yields a reliable, maintainable, and secure downloader that performs well for typical use cases while remaining straightforward to understand and modify.

@@ -40,8 +40,6 @@
 #ifdef HAVE_LIBPCRE2
 #define PCRE2_CODE_UNIT_WIDTH 8
 #include <pcre2.h>
-#elif defined HAVE_LIBPCRE
-#include <pcre.h>
 #endif
 
 #ifndef HAVE_SIGSETJMP
@@ -1574,17 +1572,6 @@ void* compile_pcre2_regex(const char* str) {
 }
 #endif
 
-#ifdef HAVE_LIBPCRE
-void* compile_pcre_regex(const char* str) {
-  const char* errbuf;
-  int erroffset;
-  pcre* regex = pcre_compile(str, 0, &errbuf, &erroffset, 0);
-  if (!regex)
-    fprintf(stderr, _("Invalid regular expression %s, %s\n"), quote(str), errbuf);
-  return regex;
-}
-#endif
-
 void* compile_posix_regex(const char* str) {
   regex_t* regex = xmalloc(sizeof(regex_t));
 #ifdef TESTING
@@ -1623,27 +1610,6 @@ bool match_pcre2_regex(const void* regex, const char* str) {
 
   return rc >= 0;
 }
-#endif
-
-#ifdef HAVE_LIBPCRE
-#define OVECCOUNT 30
-
-bool match_pcre_regex(const void* regex, const char* str) {
-  size_t l = strlen(str);
-  int ovector[OVECCOUNT];
-
-  int rc = pcre_exec((const pcre*)regex, 0, str, (int)l, 0, 0, ovector, OVECCOUNT);
-  if (rc == PCRE_ERROR_NOMATCH)
-    return false;
-  else if (rc < 0) {
-    logprintf(LOG_VERBOSE, _("Error while matching %s: %d\n"), quote(str), rc);
-    return false;
-  }
-  else
-    return true;
-}
-
-#undef OVECCOUNT
 #endif
 
 bool match_posix_regex(const void* regex, const char* str) {

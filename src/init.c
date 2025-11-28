@@ -1377,7 +1377,7 @@ static bool cmd_spec_recursive(const char* com, const char* val, void* place_ign
 static bool cmd_spec_regex_type(const char* com, const char* val, void* place_ignored WGET_ATTR_UNUSED) {
   static const struct decode_item choices[] = {
       {"posix", regex_type_posix},
-#if defined HAVE_LIBPCRE || defined HAVE_LIBPCRE2
+#ifdef HAVE_LIBPCRE2
       {"pcre", regex_type_pcre},
 #endif
   };

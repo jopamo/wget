@@ -836,7 +836,7 @@ Recursive accept/reject:\n"),
   -R,  --reject=LIST               comma-separated list of rejected extensions\n"),
                                N_("\
        --accept-regex=REGEX        regex matching accepted URLs\n"),
-#if defined HAVE_LIBPCRE || defined HAVE_LIBPCRE2
+#ifdef HAVE_LIBPCRE2
                                N_("\
        --regex-type=TYPE           regex type (posix|pcre)\n"),
 #else
@@ -1509,12 +1509,6 @@ for details.\n\n"));
     case regex_type_pcre:
       opt.regex_compile_fun = compile_pcre2_regex;
       opt.regex_match_fun = match_pcre2_regex;
-      break;
-#endif
-#ifdef HAVE_LIBPCRE
-    case regex_type_pcre:
-      opt.regex_compile_fun = compile_pcre_regex;
-      opt.regex_match_fun = match_pcre_regex;
       break;
 #endif
 

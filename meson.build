@@ -42,15 +42,15 @@ threads_dep = dependency('threads')
 math_dep = cc.find_library('m', required: false)
 
 libpsl_dep = dependency('libpsl', required: false)
-libproxy_dep = dependency('libproxy-1.0', required: false)
-if not libproxy_dep.found()
-  libproxy_dep = dependency('libproxy', required: false)
+
+if get_option('enable_cares')
+  libcares_dep = dependency('libcares', required: true)
+else
+  libcares_dep = dependency('', required: false)
 endif
-libcares_dep = dependency('libcares', required: false)
 uuid_dep = dependency('uuid', required: false)
 
 pcre2_dep = dependency('libpcre2-8', required: false)
-pcre_dep = dependency('libpcre', required: not pcre2_dep.found())
 
 idn2_dep = dependency('libidn2', required: false)
 have_iconv = cc.has_function('iconv_open', prefix: '#include <iconv.h>')
@@ -115,9 +115,6 @@ conf.set('HAVE_LIBZ', 1)
 if libpsl_dep.found()
   conf.set('HAVE_LIBPSL', 1)
 endif
-if libproxy_dep.found()
-  conf.set('HAVE_LIBPROXY', 1)
-endif
 if libcares_dep.found()
   conf.set('HAVE_LIBCARES', 1)
 endif
@@ -126,9 +123,6 @@ if uuid_dep.found()
 endif
 if pcre2_dep.found()
   conf.set('HAVE_LIBPCRE2', 1)
-endif
-if pcre_dep.found()
-  conf.set('HAVE_LIBPCRE', 1)
 endif
 
 if cc.has_header('pthread.h')
@@ -220,9 +214,6 @@ endif
 if libpsl_dep.found()
   link_components += ['libpsl']
 endif
-if libproxy_dep.found()
-  link_components += ['libproxy']
-endif
 if libcares_dep.found()
   link_components += ['libcares']
 endif
@@ -231,8 +222,6 @@ if uuid_dep.found()
 endif
 if pcre2_dep.found()
   link_components += ['libpcre2']
-elif pcre_dep.found()
-  link_components += ['libpcre']
 endif
 link_components += ['tls=openssl']
 link_string = ''
