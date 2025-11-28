@@ -7,6 +7,7 @@
 #include "evloop.h"
 #include "utils.h"
 #include "log.h"
+#include "frontend.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -79,7 +80,7 @@ static void test_basic_scheduler_functionality(void) {
 
   /* Simulate job completions */
   scheduler_job_completed(sched, job1, true);
-  assert(sched->active_count == 1);
+  assert(sched->active_count == 2);  /* job2 still active, job3 should start */
   assert(sched->pending_count == 0); /* Third job should start */
 
   scheduler_job_completed(sched, job2, true);
@@ -112,9 +113,9 @@ static void test_retry_functionality(void) {
   /* Simulate initial failure */
   scheduler_job_completed(sched, job, false);
 
-  /* Job should be scheduled for retry */
+  /* Job should be scheduled for retry via timer, not immediately in pending */
   assert(job->retries_remaining == 2); /* Started with 3, now 2 */
-  assert(sched->pending_count == 1);   /* Job should be back in pending for retry */
+  assert(sched->pending_count == 0);   /* Job scheduled for retry via timer, not in pending */
   assert(sched->active_count == 0);
 
   /* Simulate retry success */

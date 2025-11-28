@@ -24,8 +24,9 @@
 #include "progress.h" /* for progress_handle_sigwinch */
 #include "convert.h"
 #include "spider.h"
-#include "http.h" /* for save_cookies */
-#include "hsts.h" /* for initializing hsts_store to NULL */
+#include "http.h"     /* for save_cookies */
+#include "hsts.h"     /* for initializing hsts_store to NULL */
+#include "frontend.h" /* for frontend-specific globals */
 #include "ptimer.h"
 #include "warc.h"
 #include "version.h"
@@ -35,6 +36,12 @@
 #include <getopt.h>
 #include <quote.h>
 
+/* Async components */
+#include "evloop.h"
+#include "dns_cares.h"
+#include "scheduler.h"
+#include "pconn.h"
+
 #ifdef TESTING
 /* Rename the main function so we can have a main() in fuzzing code
    and call the original main. */
@@ -43,10 +50,6 @@
 
 #ifndef PATH_SEPARATOR
 #define PATH_SEPARATOR '/'
-#endif
-
-#ifndef ENABLE_IRI
-struct iri dummy_iri;
 #endif
 
 #ifdef HAVE_LIBCARES
@@ -65,9 +68,6 @@ extern char* system_getrc;
 #define TABULATION 4
 
 const char* exec_name;
-
-/* Number of successfully downloaded URLs */
-int numurls = 0;
 
 /* Initialize I18N/L10N.  That amounts to invoking setlocale, and
    setting up gettext's message catalog using bindtextdomain and
@@ -97,8 +97,6 @@ static void redirect_output_signal(int sig) {
 #endif /* defined(SIGHUP) || defined(SIGUSR1) */
 
 #ifdef HAVE_HSTS
-/* make the HSTS store global */
-hsts_store_t hsts_store;
 
 static char* get_hsts_database(void) {
   if (opt.hsts_file)
@@ -1141,7 +1139,11 @@ There is NO WARRANTY, to the extent permitted by law.\n"),
 const char* program_name;      /* Needed by lib/error.c. */
 const char* program_argstring; /* Needed by wget_warc.c. */
 struct ptimer* timer;
-int cleaned_up;
+
+/* Global async components */
+static struct ev_loop* global_loop = NULL;
+static struct scheduler* global_scheduler = NULL;
+static struct pconn_pool* global_pconn_pool = NULL;
 
 int main(int argc, char** argv) {
   char* p;
@@ -1754,79 +1756,82 @@ only if outputting to a regular file.\n"));
     load_hsts();
 #endif
 
-  /* Retrieve the URLs from argument list.  */
-  for (i = 0; i < nurls; i++, optind++) {
-    char* t;
-    char *filename = NULL, *redirected_URL = NULL;
-    int dt = 0, url_err;
-    /* Need to do a new struct iri every time, because
-     * retrieve_url may modify it in some circumstances,
-     * currently. */
-    struct iri* iri = iri_new();
-    struct url* url_parsed;
-
-    t = maybe_prepend_scheme(argv[optind]);
-    if (!t)
-      t = argv[optind];
-
-    set_uri_encoding(iri, opt.locale, true);
-    url_parsed = url_parse(t, &url_err, iri, true);
-
-    if (!url_parsed) {
-      logprintf(LOG_NOTQUIET, "%s: %s.\n", t, url_error(url_err));
-      inform_exit_status(URLERROR);
-    }
-    else {
-      /* Request credentials if use_askpass is set. */
-      if (opt.use_askpass)
-        use_askpass(url_parsed);
-
-      if ((opt.recursive || opt.page_requisites) && ((url_scheme(t) != SCHEME_FTP
-#ifdef HAVE_SSL
-                                                      && url_scheme(t) != SCHEME_FTPS
-#endif
-                                                      ) ||
-                                                     url_uses_proxy(url_parsed))) {
-        int old_follow_ftp = opt.follow_ftp;
-
-        /* Turn opt.follow_ftp on in case of recursive FTP retrieval */
-        if (url_scheme(t) == SCHEME_FTP
-#ifdef HAVE_SSL
-            || url_scheme(t) == SCHEME_FTPS
-#endif
-        )
-          opt.follow_ftp = 1;
-
-        retrieve_tree(url_parsed, NULL);
-
-        opt.follow_ftp = old_follow_ftp;
-      }
-      else {
-        struct transfer_context tctx;
-        transfer_context_prepare(&tctx, &opt, t);
-        retrieve_url(url_parsed, t, &filename, &redirected_URL, NULL, &dt, opt.recursive, iri, true, &tctx);
-        transfer_context_free(&tctx);
-      }
-
-      if (opt.delete_after && filename != NULL && file_exists_p(filename, NULL)) {
-        DEBUGP(("Removing file due to --delete-after in main():\n"));
-        logprintf(LOG_VERBOSE, _("Removing %s.\n"), filename);
-        if (unlink(filename))
-          logprintf(LOG_NOTQUIET, "unlink: %s\n", strerror(errno));
-      }
-      xfree(redirected_URL);
-      xfree(filename);
-      url_free(url_parsed);
-    }
-
-    iri_free(iri);
-
-    if (t != argv[optind])
-      xfree(t);
+  /* Initialize async components */
+  global_loop = evloop_get_default();
+  if (!global_loop) {
+    fprintf(stderr, "%s", _("Failed to initialize event loop\n"));
+    exit(WGET_EXIT_GENERIC_ERROR);
   }
 
-  /* And then from the input file, if any.  */
+  if (dns_init(global_loop) != 0) {
+    fprintf(stderr, "%s", _("Failed to initialize DNS resolver\n"));
+    exit(WGET_EXIT_GENERIC_ERROR);
+  }
+
+  /* Initialize connection pool */
+  global_pconn_pool = pconn_pool_new(global_loop);
+  if (!global_pconn_pool) {
+    fprintf(stderr, "%s", _("Failed to initialize connection pool\n"));
+    exit(WGET_EXIT_GENERIC_ERROR);
+  }
+
+  /* Initialize scheduler with concurrency limits */
+  /* Use default values since opt struct doesn't have connection limit fields yet */
+  int max_global = 8;
+  int max_per_host = 2;
+  global_scheduler = scheduler_new(global_loop, max_global, max_per_host);
+  if (!global_scheduler) {
+    fprintf(stderr, "%s", _("Failed to initialize scheduler\n"));
+    exit(WGET_EXIT_GENERIC_ERROR);
+  }
+
+  /* Create download jobs from command-line URLs */
+  for (i = 0; i < nurls; i++, optind++) {
+    char* url = maybe_prepend_scheme(argv[optind]);
+    if (!url)
+      url = argv[optind];
+
+    /* Determine output path based on options */
+    char* output_path = NULL;
+    if (opt.output_document) {
+      output_path = xstrdup(opt.output_document);
+    }
+    else {
+      /* Use URL-based filename */
+      struct url* url_parsed = url_parse(url, NULL, NULL, false);
+      if (url_parsed) {
+        output_path = url_file_name(url_parsed, NULL);
+        url_free(url_parsed);
+      }
+    }
+
+    if (!output_path) {
+      /* Fallback to a default name */
+      output_path = xstrdup("index.html");
+    }
+
+    struct download_job* job = download_job_new(url, output_path);
+    if (job) {
+      /* Set job options based on command-line flags */
+      job->recursive = opt.recursive;
+      job->timestamping = opt.timestamping;
+      job->no_clobber = opt.noclobber;
+      job->start_pos = opt.start_pos;
+
+      scheduler_add_job(global_scheduler, job);
+      /* Don't free output_path - it's owned by the job now */
+      output_path = NULL;
+    }
+
+    if (output_path)
+      xfree(output_path);
+    if (url != argv[optind])
+      xfree(url);
+  }
+
+  /* Create jobs from input file, if any */
   if (opt.input_filename) {
+    /* For now, we'll process input files synchronously to keep things simple */
     int count;
     int status;
     status = retrieve_from_file(opt.input_filename, opt.force_html, &count);
@@ -1834,6 +1839,9 @@ only if outputting to a regular file.\n"));
     if (!count)
       logprintf(LOG_NOTQUIET, _("No URLs found in %s.\n"), opt.input_filename);
   }
+
+  /* Run the event loop until all jobs are completed */
+  evloop_run(global_loop);
 
   /* Print broken links. */
   if (opt.recursive && opt.spider)
@@ -1870,6 +1878,18 @@ only if outputting to a regular file.\n"));
 
   if ((opt.convert_links || opt.convert_file_only) && !opt.delete_after)
     convert_all_links();
+
+  /* Clean up async components */
+  if (global_scheduler) {
+    scheduler_free(global_scheduler);
+    global_scheduler = NULL;
+  }
+  if (global_pconn_pool) {
+    pconn_shutdown_all(global_pconn_pool);
+    pconn_pool_free(global_pconn_pool);
+    global_pconn_pool = NULL;
+  }
+  dns_shutdown();
 
   cleanup();
 

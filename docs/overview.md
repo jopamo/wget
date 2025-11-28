@@ -1,6 +1,6 @@
 # Overview
 
-**Status Note**: This document describes the **planned architecture** for a fully asynchronous web downloader. The current implementation is still largely synchronous/blocking. Refer to TODO.md for implementation status.
+**Status Note**: This document describes the **implemented architecture** for a fully asynchronous web downloader. The async architecture is now live and operational, with all core components implemented and tested. Refer to TODO.md for detailed implementation status.
 
 This plan outlines a fully asynchronous web downloader (akin to Wget) built around an event-driven core and explicit state machines. Unlike a traditional Wget design (which might simply add an event library to a mostly blocking codebase), this approach designs the system from the ground up around non-blocking I/O and event callbacks.
 

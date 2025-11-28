@@ -1,6 +1,6 @@
 # Design Principles and Best Practices
 
-To keep the implementation robust and fully asynchronous, follow these rules:
+These principles guide the **IMPLEMENTED** async architecture and ensure robust, fully asynchronous operation:
 
 ## No Blocking Calls
 

@@ -121,7 +121,7 @@ wget_lib = static_library('wget_lib', sources,
   include_directories: incdirs,
   dependencies: deps)
 
-wget_exe = executable('wget', 'main.c',
+wget_exe = executable('wget', ['main.c', 'frontend-glue.c'],
   include_directories: incdirs,
   dependencies: deps,
   link_with: wget_lib,
@@ -149,7 +149,7 @@ unit_net_conn = executable('unit-net-conn', 'unit-tests/test_net_conn.c',
 
 test('unit-net-conn', unit_net_conn)
 
-unit_scheduler = executable('unit-scheduler', 'unit-tests/test_scheduler.c',
+unit_scheduler = executable('unit-scheduler', ['unit-tests/test_scheduler.c', 'frontend-glue.c'],
   include_directories: incdirs,
   dependencies: deps,
   link_with: wget_lib)

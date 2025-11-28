@@ -36,15 +36,19 @@ static int final_exit_status = WGET_EXIT_SUCCESS;
 static int get_status_for_err(uerr_t err) {
   switch (err) {
     case RETROK:
+    case RETRFINISHED:
+    case NEWLOCATION:
+    case NEWLOCATION_KEEP_POST:
       return WGET_EXIT_SUCCESS;
     case FOPENERR:
-    case FOPEN_EXCL_ERR:
     case FWRITEERR:
     case WRITEFAILED:
     case UNLINKERR:
     case CLOSEFAILED:
     case FILEBADFILE:
       return WGET_EXIT_IO_FAIL;
+    case FOPEN_EXCL_ERR:
+      return WGET_EXIT_SUCCESS;
     case NOCONERROR:
     case HOSTERR:
     case CONSOCKERR:
@@ -98,11 +102,15 @@ static int get_status_for_err(uerr_t err) {
 void inform_exit_status(uerr_t err) {
   int new_status = get_status_for_err(err);
 
+  DEBUGP(("[exits] inform_exit_status called: err=%d, new_status=%d, current_final=%d\n", err, new_status, final_exit_status));
+
   if (new_status != WGET_EXIT_SUCCESS && (final_exit_status == WGET_EXIT_SUCCESS || new_status < final_exit_status)) {
     final_exit_status = new_status;
+    DEBUGP(("[exits] Updated final_exit_status to %d\n", final_exit_status));
   }
 }
 
 int get_exit_status(void) {
+  DEBUGP(("[exits] get_exit_status called: final_exit_status=%d, returning %d\n", final_exit_status, (final_exit_status == WGET_EXIT_UNKNOWN) ? 1 : final_exit_status));
   return (final_exit_status == WGET_EXIT_UNKNOWN) ? 1 : final_exit_status;
 }

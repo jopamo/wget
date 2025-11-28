@@ -410,12 +410,18 @@ uerr_t http_loop(const struct url* u, struct url* original_url, char** newloc, c
     else
       *dt &= ~HEAD_ONLY;
 
-    if (force_full_retrieve)
+    if (force_full_retrieve) {
       hstat.restval = hstat.len;
-    else if (opt.start_pos >= 0)
+      DEBUGP(("[http_loop] Setting restval from force_full_retrieve: %lld\n", (long long)hstat.restval));
+    }
+    else if (opt.start_pos >= 0) {
       hstat.restval = opt.start_pos;
-    else if (opt.always_rest && got_name && stat(hstat.local_file, &st) == 0 && S_ISREG(st.st_mode))
+      DEBUGP(("[http_loop] Setting restval from opt.start_pos: %lld (opt.start_pos=%ld)\n", (long long)hstat.restval, opt.start_pos));
+    }
+    else if (opt.always_rest && got_name && stat(hstat.local_file, &st) == 0 && S_ISREG(st.st_mode)) {
       hstat.restval = st.st_size;
+      DEBUGP(("[http_loop] Setting restval from file size: %lld\n", (long long)hstat.restval));
+    }
     else if (count > 1) {
       if (hstat.len < hstat.restval)
         hstat.restval -= hstat.len;
@@ -435,8 +441,13 @@ uerr_t http_loop(const struct url* u, struct url* original_url, char** newloc, c
 
     tms = datetime_str(time(NULL));
 
-    if (hstat.newloc && newloc)
+    DEBUGP(("[http_loop] http_transaction_run returned: %d\n", err));
+    DEBUGP(("[http_loop] hstat.newloc: %s\n", hstat.newloc ? hstat.newloc : "NULL"));
+
+    if (hstat.newloc && newloc) {
       *newloc = xstrdup(hstat.newloc);
+      DEBUGP(("[http_loop] Setting newloc: %s\n", *newloc));
+    }
 
     switch (err) {
       case HERR:
@@ -510,7 +521,7 @@ uerr_t http_loop(const struct url* u, struct url* original_url, char** newloc, c
         goto exit;
       case NEWLOCATION:
       case NEWLOCATION_KEEP_POST:
-        if (!newloc || !*newloc) {
+        if (!hstat.newloc) {
           logprintf(LOG_NOTQUIET, _("ERROR: Redirection (%d) without location\n"), hstat.statcode);
           ret = WRONGCODE;
         }

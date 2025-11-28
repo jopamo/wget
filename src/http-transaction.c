@@ -31,6 +31,7 @@
 #include "http.h"
 #include "evloop.h"
 #include "net_conn.h"
+#include "options.h"
 
 #ifdef ENABLE_XATTR
 #include "xattr.h"
@@ -207,8 +208,13 @@ static struct request* initialize_request(const struct url* u,
   request_set_header(req, "Connection", "Close", rel_none); /* Default to close for now for safety in Phase 4 */
 
   /* Range */
-  if (hs->restval)
+  if (hs->restval) {
+    DEBUGP(("[http-txn] Setting Range header: bytes=%s-\n", number_to_static_string(hs->restval)));
     request_set_header(req, "Range", aprintf("bytes=%s-", number_to_static_string(hs->restval)), rel_value);
+  }
+  else {
+    DEBUGP(("[http-txn] No restval set, skipping Range header\n"));
+  }
 
   /* Auth setup (simplified) */
   if (u->user)
@@ -304,6 +310,10 @@ uerr_t http_txn_get_error(struct http_transaction* txn) {
   return txn ? txn->err_code : RETROK;
 }
 
+const char* http_txn_get_newloc(struct http_transaction* txn) {
+  return txn && txn->hs ? txn->hs->newloc : NULL;
+}
+
 void http_txn_start(struct http_transaction* txn) {
   txn_step(txn);
 }
@@ -362,6 +372,8 @@ static void txn_step(struct http_transaction* txn) {
       if (txn->req)
         request_free(&txn->req);
 
+      DEBUGP(("[http-txn] H_INIT: hs->restval=%lld, opt.start_pos=%ld\n", (long long)txn->hs->restval, opt.start_pos));
+      DEBUGP(("[http-txn] H_INIT: hs->local_file=%s\n", txn->hs->local_file ? txn->hs->local_file : "NULL"));
       txn->req = initialize_request(txn->u, txn->hs, txn->dt, txn->proxy, false, &txn->basic_auth_finished, &body_size, &txn->user, &txn->passwd, &ret);
       if (!txn->req) {
         txn_finish(txn, ret);
@@ -555,7 +567,7 @@ static void on_readable(struct net_conn* c, void* arg) {
         }
         txn->hs->statcode = code;
         txn->state = H_READ_HEADERS;
-        DEBUGP(("[http-txn] H_READ_STATUS: statcode=%d\n", code));
+        DEBUGP(("[http-txn] H_READ_STATUS: statcode=%d, H_REDIRECTED=%d\n", code, H_REDIRECTED(code)));
 
         /* Log status */
         logprintf(LOG_VERBOSE, "%2d %s\n", code, (p && strchr(p, ' ')) ? strchr(p, ' ') + 1 : "");
@@ -612,12 +624,18 @@ static void on_readable(struct net_conn* c, void* arg) {
 
         /* Check for Redirects */
         if (H_REDIRECTED(txn->hs->statcode)) {
+          DEBUGP(("[http-transaction] Found redirect status code: %d\n", txn->hs->statcode));
           char* loc = resp_header_strdup(txn->resp, "Location");
           if (loc) {
+            DEBUGP(("[http-transaction] Location header found: %s\n", loc));
             xfree(txn->hs->newloc);
             txn->hs->newloc = loc;
+            DEBUGP(("[http-transaction] Redirect detected: %d -> %s\n", txn->hs->statcode, loc));
             txn_set_error(txn, NEWLOCATION, NULL);
             return;
+          }
+          else {
+            DEBUGP(("[http-transaction] No Location header for redirect %d\n", txn->hs->statcode));
           }
         }
 
@@ -640,7 +658,7 @@ static void on_readable(struct net_conn* c, void* arg) {
             xfree(txn->hs->error);
             txn->hs->error = msg;
           }
-          txn_finish(txn, RETROK);
+          txn_finish(txn, WRONGCODE);
           return;
         }
 
@@ -662,8 +680,15 @@ static void on_readable(struct net_conn* c, void* arg) {
           /* Don't set output_opened for stdout to avoid closing it */
         }
         else {
+          /* Check for no-clobber before opening file */
+          if (opt.noclobber && file_exists_p(txn->hs->local_file, NULL)) {
+            logprintf(LOG_VERBOSE, _("File %s already there; not retrieving.\n"), quote(txn->hs->local_file));
+            txn_set_error(txn, FOPEN_EXCL_ERR, "File exists and no-clobber is set");
+            return;
+          }
+
           mkalldirs(txn->hs->local_file);
-          txn->fp = fopen(txn->hs->local_file, mode); /* TODO: Respect clobber, etc. */
+          txn->fp = fopen(txn->hs->local_file, mode);
           if (txn->fp)
             txn->output_opened = true;
         }

@@ -176,12 +176,15 @@ class TestHTTPAdvanced(WgetTestBase):
 
     def test_range_request(self):
         """Test range request functionality"""
-        self.run_wget([
+        result = self.run_wget([
             '--no-config',
+            '--debug',
             '--start-pos=10',
             '--output-document=partial.txt',
             self.server.get_url('large-file.txt')
         ])
+        # Print debug output for investigation
+        print("STDERR:", result.stderr.decode('utf-8', errors='replace'))
 
         # Verify partial file was downloaded
         self.assertTrue(os.path.exists(os.path.join(self.temp_dir, 'partial.txt')))

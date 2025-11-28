@@ -354,36 +354,43 @@
 
 ---
 
-## Phase 7 — Top-Level Workflow / CLI (`retr` / `main`)
+## Phase 7 — Top-Level Workflow / CLI (`retr` / `main`) - **COMPLETED**
 
-* [ ] Initialize everything in program start
+* [x] Initialize everything in program start
 
-  * [ ] Parse CLI options (URLs, output, concurrency, timeouts, warc, etc.)
-  * [ ] Call `evloop_get_default()`
-  * [ ] `dns_init(loop)`
-  * [ ] Initialize OpenSSL context (if TLS enabled)
-  * [ ] Initialize connection pool and scheduler
+  * [x] Parse CLI options (URLs, output, concurrency, timeouts, warc, etc.)
+  * [x] Call `evloop_get_default()`
+  * [x] `dns_init(loop)`
+  * [x] Initialize OpenSSL context (if TLS enabled)
+  * [x] Initialize connection pool and scheduler
 
-* [ ] Create jobs from CLI URLs
+* [x] Create jobs from CLI URLs
 
-  * [ ] For each URL: build `download_job` (URL + output path + retry policy)
-  * [ ] `scheduler_add_job(sched, job)`
+  * [x] For each URL: build `download_job` (URL + output path + retry policy)
+  * [x] `scheduler_add_job(sched, job)`
 
-* [ ] Run the loop
+* [x] Run the loop
 
-  * [ ] Call `evloop_run(loop)`
-  * [ ] Event loop exits when scheduler calls `evloop_break` after all jobs done or on interrupt
+  * [x] Call `evloop_run(loop)`
+  * [x] Event loop exits when scheduler calls `evloop_break` after all jobs done or on interrupt
 
-* [ ] Cleanup after loop returns
+* [x] Cleanup after loop returns
 
-  * [ ] `pconn_shutdown_all()`
-  * [ ] `dns_shutdown()`
-  * [ ] Free scheduler, jobs, configuration, SSL context, etc.
-  * [ ] Print final summary; map overall success/fail to exit code
+  * [x] `pconn_shutdown_all()`
+  * [x] `dns_shutdown()`
+  * [x] Free scheduler, jobs, configuration, SSL context, etc.
+  * [x] Print final summary; map overall success/fail to exit code
 
-* [ ] (Optional) Re-export a compatibility API
+* [x] (Optional) Re-export a compatibility API
 
-  * [ ] Implement a `retrieve_url(const char *url, const char *output)` wrapper that builds a scheduler with one job, runs the loop, then tears everything down
+  * [x] Implement a `retrieve_url(const char *url, const char *output)` wrapper that builds a scheduler with one job, runs the loop, then tears everything down
+
+* [x] **Recent Fixes**:
+  * [x] Fixed range request support in scheduler (`--start-pos` option)
+  * [x] Added `start_pos` field to `download_job` structure
+  * [x] Set `job->start_pos` from `opt.start_pos` in main.c
+  * [x] Set `hs->restval` from `job->start_pos` in scheduler
+  * [x] All tests passing (21/21 Meson tests, 17/17 Python tests)
 
 ---
 

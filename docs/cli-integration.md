@@ -1,6 +1,6 @@
 # Top-Level Workflow and CLI Integration (`retr`)
 
-**Status Note**: This describes the **planned async workflow**. The current CLI uses synchronous execution in `main.c` and `retr.c`.
+**Status Note**: This describes the **IMPLEMENTED async workflow**. The CLI now uses async execution with event loop, scheduler, and connection pool integration in `main.c`.
 
 **Goal:** Provide CLI interface and orchestrate initialization, scheduling, event loop, and teardown.
 

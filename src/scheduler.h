@@ -24,6 +24,8 @@ struct download_job {
   bool recursive;
   bool timestamping;
   bool no_clobber;
+  /* Range request support */
+  wgint start_pos;
   /* Scheduler reference for retries */
   struct scheduler* scheduler;
   /* Retry timer */

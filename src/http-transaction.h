@@ -40,6 +40,9 @@ void http_txn_free(struct http_transaction* txn);
 /* Get the final error code */
 uerr_t http_txn_get_error(struct http_transaction* txn);
 
+/* Get the redirect location (if any) */
+const char* http_txn_get_newloc(struct http_transaction* txn);
+
 /*
  * Legacy Synchronous Wrapper
  * Executes a single transaction in a blocking manner using the event loop.

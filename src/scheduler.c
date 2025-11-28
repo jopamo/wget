@@ -6,6 +6,9 @@
 #include "url.h"
 #include "utils.h"
 #include "log.h"
+#include "http-transaction.h"
+#include "http-stat.h"
+#include "exits.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -19,6 +22,7 @@ static void scheduler_grow_pending(struct scheduler* s);
 static void scheduler_grow_host_counts(struct scheduler* s);
 static const char* extract_host_from_url(const char* url);
 static void scheduler_retry_callback(void* arg);
+static void scheduler_http_completion_cb(struct http_transaction* txn, void* arg);
 
 struct scheduler* scheduler_new(struct ev_loop* loop, int max_global, int max_per_host) {
   struct scheduler* s = xmalloc(sizeof(struct scheduler));
@@ -144,6 +148,7 @@ try_start_new_jobs:
   /* Check if we're done */
   if (s->pending_count == 0 && s->active_count == 0) {
     DEBUGP(("[scheduler] All jobs completed. Breaking event loop.\n"));
+    DEBUGP(("[scheduler] Completed: %zu, Failed: %zu, Total: %zu\n", s->completed_jobs, s->failed_jobs, s->total_jobs));
     evloop_break(s->loop);
   }
 }
@@ -157,6 +162,7 @@ struct download_job* download_job_new(const char* url, const char* output_path) 
   job->recursive = false;
   job->timestamping = false;
   job->no_clobber = false;
+  job->start_pos = -1; /* Default: no range request */
   job->scheduler = NULL;
   job->retry_timer = NULL;
   job->on_complete = NULL;
@@ -215,15 +221,44 @@ void scheduler_try_start_jobs(struct scheduler* s) {
 
     DEBUGP(("[scheduler] Starting job: %s (active: %zu, pending: %zu)\n", job->url, s->active_count, s->pending_count));
 
-    /* In a real implementation, this is where we would start the actual download */
-    /* For now, we'll just simulate job completion after a short delay */
-    /* This is a placeholder for the actual http-transaction integration */
+    /* Start the actual HTTP transaction for this job */
+    struct url* u = url_parse(job->url, NULL, NULL, false);
+    if (!u) {
+      /* Failed to parse URL, mark job as failed */
+      scheduler_job_completed(s, job, false);
+      continue;
+    }
 
-    /* Simulate job completion after 0.1 seconds */
-    struct evloop_timer* completion_timer = evloop_timer_start(s->loop, 0.1, 0.0, (ev_timer_cb_t)scheduler_job_completed, job);
+    /* Create HTTP stat structure to store results */
+    struct http_stat* hs = xnew0(struct http_stat);
+    int dt = 0;
 
-    /* Store timer reference (optional) */
-    (void)completion_timer; /* Prevent unused variable warning */
+    /* Set output file path from job */
+    if (job->output_path) {
+      hs->local_file = xstrdup(job->output_path);
+    }
+
+    /* Set range request start position from job */
+    if (job->start_pos >= 0) {
+      hs->restval = job->start_pos;
+      DEBUGP(("[scheduler] Setting hs->restval from job->start_pos: %lld\n", (long long)hs->restval));
+    }
+
+    /* Create and start HTTP transaction */
+    struct http_transaction* txn = http_txn_new(s->loop, u, u, hs, &dt, NULL, NULL, 0, (http_txn_cb)scheduler_http_completion_cb, job);
+    if (!txn) {
+      /* Failed to create transaction */
+      url_free(u);
+      xfree(hs);
+      scheduler_job_completed(s, job, false);
+      continue;
+    }
+
+    /* Store transaction reference in job */
+    job->user_data = txn;
+
+    /* Start the transaction */
+    http_txn_start(txn);
   }
 }
 
@@ -315,4 +350,94 @@ static void scheduler_retry_callback(void* arg) {
     DEBUGP(("[scheduler] Retry timer fired but no scheduler for job: %s\n", job->url));
     download_job_free(job);
   }
+}
+
+static void scheduler_http_completion_cb(struct http_transaction* txn, void* arg) {
+  struct download_job* job = (struct download_job*)arg;
+
+  if (!job || !job->scheduler) {
+    DEBUGP(("[scheduler] HTTP completion callback called with invalid job or no scheduler\n"));
+    if (txn) {
+      http_txn_free(txn);
+    }
+    return;
+  }
+
+  /* Determine if the job was successful */
+  uerr_t error = http_txn_get_error(txn);
+  bool success = (error == RETROK);
+  DEBUGP(("[scheduler] HTTP transaction completed: job=%s, error=%d, success=%d\n", job->url, error, success));
+
+  /* Handle redirects */
+  if (error == NEWLOCATION || error == NEWLOCATION_KEEP_POST) {
+    /* Get the redirect location from the transaction */
+    const char* newloc = http_txn_get_newloc(txn);
+    DEBUGP(("[scheduler] Redirect detected: error=%d, newloc=%s\n", error, newloc ? newloc : "NULL"));
+    if (newloc) {
+      DEBUGP(("[scheduler] Redirect detected: %s -> %s\n", job->url, newloc));
+
+      /* Resolve relative redirect URLs to absolute URLs */
+      char* resolved_url = uri_merge(job->url, newloc);
+      if (!resolved_url) {
+        DEBUGP(("[scheduler] Failed to resolve redirect URL: %s + %s\n", job->url, newloc));
+        success = false;
+        goto redirect_cleanup;
+      }
+
+      DEBUGP(("[scheduler] Resolved redirect URL: %s -> %s\n", newloc, resolved_url));
+
+      /* Create a new job for the redirect location */
+      struct download_job* redirect_job = download_job_new(resolved_url, job->output_path);
+      if (redirect_job) {
+        /* Copy job options */
+        redirect_job->recursive = job->recursive;
+        redirect_job->timestamping = job->timestamping;
+        redirect_job->no_clobber = job->no_clobber;
+        redirect_job->start_pos = job->start_pos;
+        redirect_job->retries_remaining = job->retries_remaining;
+        redirect_job->on_complete = job->on_complete;
+        redirect_job->user_data = job->user_data;
+
+        /* Add the redirect job to the scheduler */
+        scheduler_add_job(job->scheduler, redirect_job);
+
+        DEBUGP(("[scheduler] Added redirect job: %s\n", resolved_url));
+
+        /* Mark original job as completed (not failed) so it doesn't trigger retries */
+        success = true;
+      }
+      else {
+        DEBUGP(("[scheduler] Failed to create redirect job for %s\n", resolved_url));
+        success = false;
+      }
+
+      xfree(resolved_url);
+    }
+    else {
+      DEBUGP(("[scheduler] Redirect without location header\n"));
+      success = false;
+    }
+  }
+
+redirect_cleanup:
+
+  DEBUGP(("[scheduler] HTTP transaction completed for job: %s (success: %s, error: %d)\n", job->url, success ? "true" : "false", error));
+
+  /* Debug: print error code for investigation */
+  if (error != RETROK) {
+    DEBUGP(("[scheduler] Non-RETROK error code: %d\n", error));
+  }
+  else {
+    DEBUGP(("[scheduler] Success with RETROK\n"));
+  }
+
+  /* Report exit status for all jobs - both successful and failed */
+  inform_exit_status(error);
+
+  /* Free the transaction */
+  http_txn_free(txn);
+  job->user_data = NULL;
+
+  /* Notify scheduler that job is completed */
+  scheduler_job_completed(job->scheduler, job, success);
 }
